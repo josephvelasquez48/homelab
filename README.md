@@ -35,6 +35,12 @@ Load tested with k6 — 0% errors at ~480 req/s sustained over a 5.5-minute
 soak, rate limiter verified to trigger at exactly the right request, no
 memory growth under sustained load — see
 [docs/load-testing.md](docs/load-testing.md).
+Failure tested — zero-downtime pod kills, Postgres data confirmed to
+survive a pod restart, Argo CD self-heals live drift in ~11s (much
+faster than its ~3min git-polling interval), and a real gap found in
+the Ollama retry/timeout logic (a dead backend can hang a request for
+minutes instead of failing fast) — see
+[docs/failure-testing.md](docs/failure-testing.md).
 
 ## Target architecture
 
