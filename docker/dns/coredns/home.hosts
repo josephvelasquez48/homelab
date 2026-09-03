@@ -1,10 +1,10 @@
 # Internal service hostnames.
-# api.home and ai.home currently point at the same FastAPI process
-# (apps/api) since /v1/chat is served from the same gateway as /health.
-# grafana.home points at the Pi itself, where monitoring runs.
-# No reverse proxy in front of any of these yet, so URLs still need a
-# port (e.g. http://api.home:8000/health, http://grafana.home:3000)
-# until that's added.
-192.168.1.131 api.home
-192.168.1.131 ai.home
+# api.home and ai.home route through Traefik (K3s's bundled ingress
+# controller, listening on :80 on every node) to the backend/api Service
+# in the cluster - no port needed in the URL anymore, unlike the old
+# direct-to-container setup.
+# grafana.home still points at the old Docker Compose Grafana on the Pi
+# (port 3000) until monitoring is migrated onto the cluster too.
+192.168.1.253 api.home
+192.168.1.253 ai.home
 192.168.1.253 grafana.home

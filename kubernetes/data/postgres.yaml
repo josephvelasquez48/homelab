@@ -1,0 +1,78 @@
+apiVersion: v1
+kind: Secret
+metadata:
+  name: postgres-credentials
+  namespace: data
+type: Opaque
+stringData:
+  POSTGRES_USER: homelab
+  POSTGRES_PASSWORD: ON3enGsHxmlE7Y75APwloB2Q
+  POSTGRES_DB: homelab
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: postgres-data
+  namespace: data
+spec:
+  accessModes: ["ReadWriteOnce"]
+  storageClassName: local-path
+  resources:
+    requests:
+      storage: 5Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgres
+  namespace: data
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate  # local-path PVC is RWO; a rolling update would try to
+                     # schedule a second pod before the first releases it
+  selector:
+    matchLabels: { app: postgres }
+  template:
+    metadata:
+      labels: { app: postgres }
+    spec:
+      # local-path PVs are tied to whichever node first hosts them - pin to
+      # the Pi so this doesn't try to move to a different node's disk later.
+      nodeSelector:
+        kubernetes.io/hostname: joe
+      containers:
+        - name: postgres
+          image: pgvector/pgvector:pg17
+          envFrom:
+            - secretRef: { name: postgres-credentials }
+          ports:
+            - containerPort: 5432
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+          resources:
+            requests: { cpu: 100m, memory: 256Mi }
+            limits: { cpu: "1", memory: 512Mi }
+          readinessProbe:
+            exec: { command: ["pg_isready", "-U", "homelab"] }
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          livenessProbe:
+            exec: { command: ["pg_isready", "-U", "homelab"] }
+            initialDelaySeconds: 15
+            periodSeconds: 10
+      volumes:
+        - name: data
+          persistentVolumeClaim: { claimName: postgres-data }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+  namespace: data
+spec:
+  selector: { app: postgres }
+  ports:
+    - port: 5432
+      targetPort: 5432

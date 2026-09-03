@@ -1,0 +1,108 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: api-config
+  namespace: backend
+data:
+  OLLAMA_URL: "http://inference.ai.svc.cluster.local:11434"
+  OLLAMA_MODEL: "qwen2.5-coder:7b"
+  OLLAMA_EMBED_MODEL: "nomic-embed-text"
+  RATE_LIMIT_PER_MINUTE: "60"
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: api-secrets
+  namespace: backend
+type: Opaque
+stringData:
+  DATABASE_URL: "postgresql://homelab:ON3enGsHxmlE7Y75APwloB2Q@postgres.data.svc.cluster.local:5432/homelab"
+  REDIS_URL: "redis://redis.backend.svc.cluster.local:6379/0"
+  API_KEY: "6399ef52aae80b5c68e49f4ce44ac2bd7b5d1fd85a60cb49"
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: api-migrate
+  namespace: backend
+spec:
+  backoffLimit: 3
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: migrate
+          image: ghcr.io/josephvelasquez48/homelab-api:latest
+          command: ["alembic", "upgrade", "head"]
+          envFrom:
+            - configMapRef: { name: api-config }
+            - secretRef: { name: api-secrets }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api
+  namespace: backend
+spec:
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate: { maxUnavailable: 0, maxSurge: 1 }
+  selector:
+    matchLabels: { app: api }
+  template:
+    metadata:
+      labels: { app: api }
+    spec:
+      containers:
+        - name: api
+          image: ghcr.io/josephvelasquez48/homelab-api:latest
+          envFrom:
+            - configMapRef: { name: api-config }
+            - secretRef: { name: api-secrets }
+          ports:
+            - containerPort: 8000
+          resources:
+            requests: { cpu: 100m, memory: 128Mi }
+            limits: { cpu: 500m, memory: 256Mi }
+          readinessProbe:
+            httpGet: { path: /health, port: 8000 }
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: { path: /health, port: 8000 }
+            initialDelaySeconds: 15
+            periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: api
+  namespace: backend
+spec:
+  selector: { app: api }
+  ports:
+    - port: 8000
+      targetPort: 8000
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: api
+  namespace: backend
+spec:
+  rules:
+    - host: api.home
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service: { name: api, port: { number: 8000 } }
+    - host: ai.home
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service: { name: api, port: { number: 8000 } }

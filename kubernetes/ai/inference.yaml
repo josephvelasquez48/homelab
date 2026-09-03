@@ -1,0 +1,25 @@
+# Ollama runs natively on the desktop (GPU access), not as a pod - this
+# Service/Endpoints pair (no selector, no ExternalName) points in-cluster
+# traffic at it by IP directly, rather than relying on a pod's own upstream
+# DNS resolution to work for an external hostname. Standard Kubernetes
+# pattern for referencing a service that lives outside the cluster.
+apiVersion: v1
+kind: Service
+metadata:
+  name: inference
+  namespace: ai
+spec:
+  ports:
+    - port: 11434
+      targetPort: 11434
+---
+apiVersion: v1
+kind: Endpoints
+metadata:
+  name: inference
+  namespace: ai
+subsets:
+  - addresses:
+      - ip: 192.168.1.131
+    ports:
+      - port: 11434
