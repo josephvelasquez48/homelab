@@ -10,6 +10,7 @@ dependencies = [
     "redis>=5.2",
     "httpx>=0.28",
     "structlog>=24.4",
+    "tenacity>=9.0",
     "alembic>=1.14",
     "sqlalchemy>=2.0",
     "psycopg[binary]>=3.2",

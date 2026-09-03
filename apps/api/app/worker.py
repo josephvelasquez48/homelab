@@ -6,24 +6,14 @@ import httpx
 from app.config import JOB_QUEUE_KEY, OLLAMA_URL
 from app.db import create_pg_pool, create_redis_client
 from app.logging import configure_logging, get_logger
+from app.ollama import generate
 
 configure_logging()
 log = get_logger(__name__)
 
 
 async def process_chat(payload: dict, ollama: httpx.AsyncClient) -> dict:
-    r = await ollama.post(
-        "/api/generate",
-        json={
-            "model": payload.get("model", "qwen2.5-coder:7b"),
-            "prompt": payload["message"],
-            "stream": False,
-        },
-    )
-    r.raise_for_status()
-    data = r.json()
-    tps = data["eval_count"] / (data["eval_duration"] / 1e9) if data.get("eval_duration") else 0.0
-    return {"response": data["response"], "tokens_per_sec": round(tps, 1)}
+    return await generate(ollama, payload.get("model", "qwen2.5-coder:7b"), payload["message"])
 
 
 HANDLERS = {"chat": process_chat}

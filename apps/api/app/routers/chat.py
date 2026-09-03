@@ -1,10 +1,17 @@
-from fastapi import APIRouter, Depends, Request
+import hashlib
+import json
+
+import httpx
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 
 from app.config import OLLAMA_MODEL
+from app.ollama import generate
 from app.rate_limit import rate_limit
 
 router = APIRouter(dependencies=[Depends(rate_limit)])
+
+CACHE_TTL_SECONDS = 3600
 
 
 class ChatRequest(BaseModel):
@@ -16,15 +23,27 @@ class ChatResponse(BaseModel):
     response: str
     model: str
     tokens_per_sec: float
+    cached: bool
+
+
+def _cache_key(model: str, message: str) -> str:
+    digest = hashlib.sha256(f"{model}:{message}".encode()).hexdigest()
+    return f"chat:cache:{digest}"
 
 
 @router.post("/v1/chat", response_model=ChatResponse)
 async def chat(req: ChatRequest, request: Request) -> ChatResponse:
-    r = await request.app.state.ollama.post(
-        "/api/generate",
-        json={"model": req.model, "prompt": req.message, "stream": False},
-    )
-    r.raise_for_status()
-    data = r.json()
-    tps = data["eval_count"] / (data["eval_duration"] / 1e9) if data.get("eval_duration") else 0.0
-    return ChatResponse(response=data["response"], model=req.model, tokens_per_sec=round(tps, 1))
+    cache_key = _cache_key(req.model, req.message)
+
+    cached = await request.app.state.redis.get(cache_key)
+    if cached is not None:
+        data = json.loads(cached)
+        return ChatResponse(model=req.model, cached=True, **data)
+
+    try:
+        result = await generate(request.app.state.ollama, req.model, req.message)
+    except (httpx.TimeoutException, httpx.ConnectError) as exc:
+        raise HTTPException(status_code=502, detail="AI backend unavailable") from exc
+
+    await request.app.state.redis.set(cache_key, json.dumps(result), ex=CACHE_TTL_SECONDS)
+    return ChatResponse(model=req.model, cached=False, **result)
