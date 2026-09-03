@@ -208,3 +208,87 @@ CI/CD (roadmap step 11) is the natural next step now that there's an
 image registry and a real deployment target - `git push` -> tests -> build
 -> push to ghcr.io -> `kubectl apply`/rollout, replacing the manual
 build-and-push done by hand in this phase.
+
+## Log (continued) - flannel VXLAN silently dropped on the WSL2 worker
+
+- 2026-09-03: Triggered by, but ultimately unrelated to, the secrets
+  rotation incident in [docs/secrets.md](secrets.md) - fixing that
+  exposed a second, genuinely separate bug: any pod scheduled onto
+  `desktop-j1grrmu` (the WSL2 worker) couldn't reach *any* ClusterIP
+  service, including CoreDNS itself. `api-migrate` and rolled-out
+  `api`/`worker` pods crash-looped there with
+  `Temporary failure in name resolution` even after the credential
+  problem was fixed - a fresh, unrelated failure mode, not a symptom of
+  the same root cause.
+
+  **Isolating it**: raw LAN ping between the two hosts (`192.168.1.253` <->
+  `192.168.1.131`) was fine, 5-7ms - so this wasn't the underlying network,
+  it was specifically the flannel VXLAN overlay (UDP 8472) between nodes.
+  `ping` to the peer's `flannel.1` gateway address failed 100% in both
+  directions. Packet captures on both ends nailed down exactly where:
+  the Pi received the WSL2 side's outbound VXLAN-encapsulated ping and
+  sent a reply (visible leaving on `wlan0`) - but that reply never showed
+  up in a capture taken on the WSL2 side, even though the flannel kernel
+  socket was confirmed listening (`ss -lun` showed `UNCONN 0.0.0.0:8472`).
+  Something in the Windows host network stack was dropping inbound VXLAN
+  traffic before it ever reached the WSL2 VM.
+
+  **Ruled out, in order, each with real evidence rather than assumption:**
+  1. `ufw` on the Pi - already explicitly `ALLOW`s `8472/udp` from
+     `192.168.1.0/24`, and its logs showed zero blocked packets matching
+     that traffic.
+  2. Classic Windows Firewall (`New-NetFirewallRule`) - added an explicit
+     inbound allow for UDP 8472 from the LAN; no change. Restarting
+     `k3s-agent` to force flannel to re-establish its VXLAN state also
+     made no difference, ruling out stale routes/FDB entries.
+  3. The **Hyper-V firewall** - a separate rule store from the classic
+     Windows Firewall that specifically governs WSL2/Hyper-V VM traffic
+     (`New-NetFirewallHyperVRule`, keyed by a `VMCreatorId` GUID). Easy to
+     miss since `Get-NetFirewallHyperVRule` lists classic host rules
+     alongside real Hyper-V-layer ones, so a rule showing up there doesn't
+     mean it's actually enforced at that layer. Added the equivalent rule
+     here too (`VMCreatorId {40E0AC32-46A5-438A-A0B2-2B479E8F2E90}`,
+     confirmed as WSL's own ID via `Get-NetFirewallHyperVProfile`) -
+     `EnforcementStatus: OK`, still no change.
+  4. Confirmed WSL2's mirrored networking mode was genuinely active, not
+     silently falling back to NAT (a known failure mode for that
+     setting) - `ip addr` inside WSL2 showed the exact same IP
+     (`192.168.1.131`) as the Windows host's physical adapter, ruling
+     out NAT as the explanation for unsolicited inbound traffic being
+     dropped.
+
+  With both firewall layers confirmed open and mirrored mode confirmed
+  genuinely active, the packet was still being dropped somewhere in the
+  Windows host's own network stack before reaching the WSL2 VM - most
+  likely Windows Defender's Network Inspection System, which does deep
+  packet inspection and could plausibly flag an unusual UDP encapsulation
+  pattern (VXLAN/OTV) on a mirrored interface. Given the choice between
+  disabling part of Defender's real-time protection to confirm that, or
+  removing the encapsulation from the equation entirely, chose the
+  latter.
+
+  **Fix: switched K3s's flannel backend from `vxlan` to `host-gw`.**
+  Both nodes are on the same LAN segment, so flannel doesn't need UDP
+  encapsulation at all here - `host-gw` just adds a direct kernel route
+  to each peer's pod subnet via the peer's real LAN IP (`ip route` showed
+  `10.42.0.0/24 via 192.168.1.253 dev eth1` on the desktop node after the
+  switch) and lets normal IP routing do the rest. Changed via
+  `--flannel-backend=host-gw` on the k3s **server** (control plane only -
+  `/etc/systemd/system/k3s.service` on the Pi), confirmed the change
+  propagated to both nodes' `net-conf.json`, then restarted `k3s-agent`
+  on the desktop worker to pick it up. Rollback is symmetric: remove the
+  flag, restart both, flannel falls back to `vxlan` on its own.
+
+  **Verified with real traffic, not just ping**: after the switch,
+  `ping` to actual pod IPs across nodes (CoreDNS, Postgres) succeeded
+  with 0% loss, and a subsequent Argo CD sync scheduled one `api` replica
+  onto each node - both came up healthy, proving real Kubernetes
+  workloads (not just ICMP) now route correctly between them.
+
+  Worth noting since it's easy to read backwards: this was never a K3s,
+  ufw, or Kubernetes NetworkPolicy problem - every layer this project
+  controls directly was already correctly configured. It was a Windows
+  host networking quirk specific to WSL2 mirrored mode plus VXLAN, and
+  `host-gw` sidesteps it rather than fixing it - worth remembering if a
+  third node is ever added that *isn't* on the same L2 segment, since
+  `host-gw` requires that and `vxlan` doesn't.

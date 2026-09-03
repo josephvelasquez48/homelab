@@ -26,6 +26,11 @@ fixed by actually running it, verified idempotent (a second real run
 reports zero changes) — see [docs/ansible.md](docs/ansible.md).
 GitHub repo settings managed via Terraform (import, not create) — see
 [docs/terraform.md](docs/terraform.md).
+Secrets encrypted at rest with SOPS + age, out of Argo CD's sync path —
+a real incident along the way (a rotation-ordering mistake that cascaded
+into an unrelated flannel VXLAN bug on the WSL2 worker node) — see
+[docs/secrets.md](docs/secrets.md) and
+[docs/kubernetes.md](docs/kubernetes.md).
 
 ## Target architecture
 
