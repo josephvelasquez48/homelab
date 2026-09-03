@@ -1,7 +1,10 @@
-# Internal service hostnames -> desktop LAN IP.
+# Internal service hostnames.
 # api.joseph and ai.joseph currently point at the same FastAPI process
 # (apps/api) since /v1/chat is served from the same gateway as /health.
-# No reverse proxy in front of these yet, so URLs still need :8000
-# (e.g. http://api.joseph:8000/health) until that's added.
+# grafana.joseph points at the Pi itself, where monitoring runs.
+# No reverse proxy in front of any of these yet, so URLs still need a
+# port (e.g. http://api.joseph:8000/health, http://grafana.joseph:3000)
+# until that's added.
 192.168.1.131 api.joseph
 192.168.1.131 ai.joseph
+192.168.1.253 grafana.joseph
