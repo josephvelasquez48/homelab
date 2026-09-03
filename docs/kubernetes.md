@@ -292,3 +292,44 @@ build-and-push done by hand in this phase.
   `host-gw` sidesteps it rather than fixing it - worth remembering if a
   third node is ever added that *isn't* on the same L2 segment, since
   `host-gw` requires that and `vxlan` doesn't.
+
+## Log (continued) - actually fixing the WSL2 idle-timeout flakiness
+
+- 2026-09-03: The `vmIdleTimeout=-1` fix noted above kept resurfacing -
+  most recently, the desktop node sat `NotReady` for several minutes
+  and cycled through at least one full `k3s-agent` restart before
+  recovering, well past the "15-30s" pattern seen earlier. Worth
+  actually root-causing rather than continuing to just wake it by hand
+  each time it's needed.
+
+  **Ruled out, with evidence, before reaching for a workaround:**
+  - The whole machine sleeping - `powercfg /query SCHEME_CURRENT
+    SUB_SLEEP` showed `Sleep after` = 0 (never) on both AC and DC.
+  - `.wslconfig` losing the earlier fix - `vmIdleTimeout=-1` was still
+    present, unchanged.
+  - An obvious Windows power-throttling policy override - none found.
+
+  With the machine confirmed not sleeping and the existing config fix
+  confirmed still in place, this is WSL2's own idle/suspend heuristic
+  triggering on *something* Microsoft doesn't document precisely enough
+  to keep chasing with more configuration alone - `vmIdleTimeout`
+  governs the shared utility VM's teardown, not necessarily every path
+  that can pause an individual distro's own state.
+
+  **Fix: a Scheduled Task that touches the distro every minute**
+  (`wsl.exe -d Ubuntu-24.04 -e /bin/true`), triggered both at logon and
+  on a 1-minute repeating interval. Turns "figure out Microsoft's exact
+  undocumented idle heuristic" into "never let the gap between real
+  activity get long enough for any heuristic to matter" - a heartbeat
+  is the standard fix for exactly this class of WSL2 problem across the
+  community, and it sidesteps needing to reverse-engineer internals
+  this project doesn't control.
+
+  Verified the task itself actually runs, not just that it registered:
+  `Get-ScheduledTaskInfo` showed `LastTaskResult: 0` (success) with
+  `NextRunTime` exactly one minute later, confirming the repetition
+  trigger is real. Full confirmation that this fixes the underlying
+  flakiness - the node staying `Ready` over a real unattended idle
+  stretch, without anyone manually touching WSL2 in the meantime - is a
+  longer-running check; see the dated follow-up note once that window
+  has actually elapsed, not just "the task exists."
