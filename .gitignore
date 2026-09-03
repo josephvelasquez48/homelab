@@ -1,0 +1,34 @@
+# Secrets / env
+.env
+.env.*
+*.pem
+*.key
+!ansible/**/*.key.example
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+*.egg-info/
+
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.backup
+*.tfvars
+!*.tfvars.example
+
+# Ansible
+*.retry
+
+# Docker
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editors
+.vscode/
+.idea/

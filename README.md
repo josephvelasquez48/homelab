@@ -1,0 +1,78 @@
+# Homelab Cloud + AI Platform
+
+A self-hosted cloud/AI platform built across a Raspberry Pi 5 and a GPU-equipped
+Windows desktop, demonstrating production-style backend, infrastructure, and
+MLOps practices: Linux administration, Docker/Kubernetes, FastAPI, PostgreSQL +
+pgvector, Redis, local LLM inference (RAG), CI/CD, GitOps, and observability.
+
+## Status
+
+Currently on **Milestone 1** — see [docs/milestone-1.md](docs/milestone-1.md)
+for live progress and decisions.
+
+## Target architecture
+
+```
+Home Network
+      |
+Private DNS
+      |
+Reverse Proxy
+      |
+Kubernetes / K3s
+      |
++-----+--------+----------+
+|              |          |
+FastAPI     AI/RAG     Monitoring
+|              |          |
+Redis       Ollama     Prometheus
+|              |          |
+PostgreSQL   RTX GPU     Grafana
+|
+pgvector
+```
+
+## Hardware
+
+| Node | Role |
+|---|---|
+| Raspberry Pi 5 (NVMe) | Lightweight infra: Linux server, DNS, monitoring, Docker, eventually K3s |
+| Desktop (i7-14700K, RTX 3070 Ti 8GB, 32GB RAM) | FastAPI, PostgreSQL, Redis, Ollama/GPU inference, Docker/Kubernetes workloads |
+
+## Repo structure
+
+```
+homelab/
+├── apps/
+│   ├── api/        # FastAPI backend service
+│   └── ai/         # RAG / inference gateway
+├── docker/         # Compose files
+├── kubernetes/      # K3s manifests (later phase)
+├── ansible/         # Server configuration automation
+├── terraform/        # Infra-as-code where applicable
+├── monitoring/       # Prometheus/Grafana/Loki config
+├── scripts/          # Helper scripts
+├── diagrams/          # Architecture diagrams
+└── docs/              # Setup guides, decisions, benchmarks, incident reports
+```
+
+## Roadmap
+
+1. Linux/server setup
+2. Networking
+3. Docker
+4. Private DNS
+5. FastAPI
+6. PostgreSQL + Redis
+7. Ollama/GPU inference
+8. RAG
+9. Prometheus + Grafana
+10. Kubernetes/K3s
+11. CI/CD
+12. Argo CD
+13. Ansible
+14. Terraform
+15. Security
+16. Load testing
+17. Failure testing
+18. Documentation
