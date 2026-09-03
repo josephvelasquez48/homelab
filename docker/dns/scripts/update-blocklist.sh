@@ -7,6 +7,7 @@ URL="https://raw.githubusercontent.com/StevenBlack/hosts/master/hosts"
 
 TMP="$(mktemp)"
 curl -fsSL "$URL" -o "$TMP"
+chmod 644 "$TMP"
 mv "$TMP" "$DEST"
 
 echo "$(date -Iseconds) blocklist updated: $(wc -l < "$DEST") lines"
