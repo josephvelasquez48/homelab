@@ -63,6 +63,26 @@ Ollama setup this builds on.
   URL - 2 logged attempts, ~3.1s before final failure - and verified a
   cache hit returns identical output in ~40ms.
 
+- 2026-09-03: **`GET /metrics`** via `prometheus-fastapi-instrumentator`,
+  unauthenticated like `/health` (Prometheus will scrape it directly; the
+  LAN-only firewall is the real protection boundary here, not app auth).
+  Verified counts are real, not just exposed - a single `/health` hit
+  showed up as exactly `1` in the counter.
+- 2026-09-03: **`POST /v1/embed`**. Pulled `nomic-embed-text` on Ollama
+  (only a chat/code model existed before). Batches through Ollama's
+  `/api/embed`, single string or list. This is generation only - storing
+  and querying these in pgvector is the RAG step (roadmap step 8), not
+  this. Verified a 3-item batch returned three distinct 768-dim vectors
+  (not the same one duplicated three times) plus the empty-input and
+  missing-auth error paths.
+
+  **This closes out the original backend feature list**: auth, rate
+  limiting, caching, retries, migrations, structured logging, and all
+  five endpoints (`/health`, `/jobs`, `/jobs/{id}`, `/v1/chat`,
+  `/v1/embed`, plus `/metrics`) are in place and verified.
+
 ## Next
 
-`GET /metrics` (Prometheus format), `POST /v1/embed`.
+Whatever's next on the project roadmap - RAG (step 8, now unblocked -
+`/v1/embed` and pgvector both exist), Prometheus + Grafana (step 9, now
+unblocked - `/metrics` exists), or Kubernetes/K3s (step 10).
