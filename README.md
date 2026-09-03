@@ -159,6 +159,7 @@ homelab/
 ├── terraform/             # GitHub repo settings as code
 ├── load-testing/          # k6 scripts - see docs/load-testing.md
 ├── failure-testing/        # Fault-injection scripts - see docs/failure-testing.md
+├── gaming-mode/             # Cordon/drain the desktop K3s node for gaming - see docs/gaming-mode.md
 ├── diagrams/               # Architecture diagram
 └── docs/                   # Per-phase logs: what was built, bugs found, verification
 ```
