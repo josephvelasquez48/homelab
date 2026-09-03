@@ -1,12 +1,6 @@
-apiVersion: v1
-kind: Secret
-metadata:
-  name: grafana-admin
-  namespace: monitoring
-type: Opaque
-stringData:
-  GF_SECURITY_ADMIN_PASSWORD: "6rsO2PSdUTCvRBRICE"
----
+# The grafana-admin Secret this Deployment references lives in
+# kubernetes/secrets/grafana-admin.enc.yaml (SOPS-encrypted, not synced by
+# Argo CD - applied separately). See docs/secrets.md.
 apiVersion: v1
 kind: ConfigMap
 metadata:

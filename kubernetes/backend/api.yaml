@@ -8,17 +8,9 @@ data:
   OLLAMA_MODEL: "qwen2.5-coder:7b"
   OLLAMA_EMBED_MODEL: "nomic-embed-text"
   RATE_LIMIT_PER_MINUTE: "60"
----
-apiVersion: v1
-kind: Secret
-metadata:
-  name: api-secrets
-  namespace: backend
-type: Opaque
-stringData:
-  DATABASE_URL: "postgresql://homelab:ON3enGsHxmlE7Y75APwloB2Q@postgres.data.svc.cluster.local:5432/homelab"
-  REDIS_URL: "redis://redis.backend.svc.cluster.local:6379/0"
-  API_KEY: "6399ef52aae80b5c68e49f4ce44ac2bd7b5d1fd85a60cb49"
+# The api-secrets Secret referenced below lives in
+# kubernetes/secrets/api-secrets.enc.yaml (SOPS-encrypted, not synced by
+# Argo CD - applied separately). See docs/secrets.md.
 ---
 apiVersion: batch/v1
 kind: Job

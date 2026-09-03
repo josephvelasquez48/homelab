@@ -1,0 +1,5 @@
+creation_rules:
+  - path_regex: kubernetes/secrets/.*\.enc\.yaml$
+    key_groups:
+      - age:
+          - age1tsns9fmhenrdl5ufs2vs28gut2m464xlcp23440uxp4x3aqvdgzsytyjwx
