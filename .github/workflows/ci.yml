@@ -1,0 +1,73 @@
+name: CI/CD
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "apps/api/**"
+      - "kubernetes/backend/**"
+      - ".github/workflows/ci.yml"
+  pull_request:
+    paths:
+      - "apps/api/**"
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  IMAGE: ghcr.io/${{ github.repository_owner }}/homelab-api
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/api
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+      - run: uv sync
+      - run: uv run pytest -v
+
+  build-and-push:
+    needs: test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: tag
+        run: echo "tag=${GITHUB_SHA::12}" >> "$GITHUB_OUTPUT"
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: apps/api
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: |
+            ${{ env.IMAGE }}:latest
+            ${{ env.IMAGE }}:${{ steps.tag.outputs.tag }}
+
+  # Runs on the Pi's self-hosted runner (see docs/cicd.md) - the only step
+  # that actually needs to reach the private K3s API, so it's the only one
+  # that needs to be self-hosted. Test and build run on GitHub-hosted
+  # runners, which is faster (no QEMU emulation penalty on Pi hardware for
+  # the amd64 half of the multi-arch build) and has no reason to need
+  # private network access.
+  deploy:
+    needs: build-and-push
+    runs-on: [self-hosted, pi5]
+    steps:
+      - run: |
+          kubectl set image deployment/api api=${{ env.IMAGE }}:${{ needs.build-and-push.outputs.tag }} -n backend
+          kubectl set image deployment/worker worker=${{ env.IMAGE }}:${{ needs.build-and-push.outputs.tag }} -n backend
+          kubectl rollout status deployment/api -n backend --timeout=120s
+          kubectl rollout status deployment/worker -n backend --timeout=120s

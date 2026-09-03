@@ -15,6 +15,8 @@ Prometheus + Grafana deployed — see [docs/monitoring.md](docs/monitoring.md).
 Migrated onto a multi-node K3s cluster (Pi + desktop via WSL2) — backend,
 data, ai, and monitoring namespaces all live, old Docker Compose stacks
 decommissioned — see [docs/kubernetes.md](docs/kubernetes.md).
+CI/CD live — GitHub Actions tests, builds, and deploys on push, using a
+self-hosted runner on the Pi for the deploy step — see [docs/cicd.md](docs/cicd.md).
 
 ## Target architecture
 
