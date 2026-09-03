@@ -51,3 +51,13 @@ Reachable internally as `api.joseph`, `ai.joseph`, `grafana.joseph`.
   [josephvelasquez48/homelab](https://github.com/josephvelasquez48/homelab)
   (private). Docker Desktop engine verified working (`docker run hello-world`)
   — 28 CPUs / ~16GB RAM allocated to the WSL2 VM.
+- 2026-09-02: Discovered a pre-existing local `docker system prune`-style
+  cleanup (not run by this session) had removed all images/containers from an
+  unrelated prior project (`ChatBot`, on the Desktop, separate repo). Verified
+  it was fully rebuildable from its own git repo/Dockerfile before moving on
+  — no data lost, since only its Ollama model volume mattered and that
+  survived.
+- 2026-09-02: Minimal FastAPI service (`apps/api`, dependency-managed with
+  `uv`) running in Docker via `docker/docker-compose.yml`, `GET /health`
+  verified returning 200. Pi setup deferred by request — desktop track
+  continues first; Postgres + Redis are next.
