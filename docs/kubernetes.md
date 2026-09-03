@@ -163,6 +163,16 @@ limits.
   yet - the lowest-risk moment available, given how disruptive that
   command had already proven to be.
 
+  **`vmIdleTimeout=-1` didn't fully fix it** - the worker node went
+  `NotReady` again roughly 45 minutes into the session, after real
+  workloads existed. Waking the WSL2 distro with any command
+  (`wsl -d Ubuntu-24.04 -- ...`) reliably brought `k3s-agent` back within
+  15-30s and the node rejoined as `Ready` on its own, so this isn't
+  data-loss-risky, just an open annoyance - worth a proper fix (a
+  scheduled task pinging the distro, or investigating why the config
+  isn't sticking) before this cluster is depended on for anything that
+  needs to survive an unattended stretch of idle time.
+
   **Verified real functionality throughout, not just `kubectl apply`
   succeeding:** a rolling update on `api` (`maxUnavailable: 0`) replaced
   both pods with zero dropped requests; `/health`, `/v1/chat`, `/v1/embed`,
