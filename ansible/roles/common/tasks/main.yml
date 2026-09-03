@@ -8,6 +8,9 @@
   ansible.builtin.command: cat /boot/firmware/cmdline.txt
   register: cmdline_current
   changed_when: false
+  check_mode: false # a read-only check must actually run even in --check,
+  # or the `when` below sees an empty/undefined result and thinks the
+  # params are always missing - caught by --check --diff duplicating them
 
 - name: Back up cmdline.txt before editing (only on first run)
   ansible.builtin.copy:
