@@ -10,7 +10,7 @@ from prometheus_fastapi_instrumentator import Instrumentator
 from app.config import OLLAMA_URL
 from app.db import create_pg_pool, create_redis_client
 from app.logging import configure_logging, get_logger
-from app.routers import chat, embed, health, jobs
+from app.routers import chat, embed, health, jobs, rag
 
 configure_logging()
 log = get_logger(__name__)
@@ -34,6 +34,7 @@ app.include_router(health.router)
 app.include_router(chat.router)
 app.include_router(jobs.router)
 app.include_router(embed.router)
+app.include_router(rag.router)
 
 # Unauthenticated like /health - Prometheus scrapes this directly, and the
 # actual protection boundary is the LAN-only firewall, not app-level auth.
