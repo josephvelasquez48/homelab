@@ -24,6 +24,8 @@ to K3s) — see [docs/argocd.md](docs/argocd.md).
 Pi host setup codified in Ansible — six roles, three real bugs found and
 fixed by actually running it, verified idempotent (a second real run
 reports zero changes) — see [docs/ansible.md](docs/ansible.md).
+GitHub repo settings managed via Terraform (import, not create) — see
+[docs/terraform.md](docs/terraform.md).
 
 ## Target architecture
 
