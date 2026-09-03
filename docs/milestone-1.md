@@ -30,6 +30,15 @@ Reachable internally as `api.joseph`, `ai.joseph`, `grafana.joseph`.
 - OS already flashed to NVMe from a prior setup. Not currently powered on.
   Connection details (IP/hostname, SSH credentials) to be confirmed once
   powered on.
+- 2026-09-02, once powered on: found via LAN ping sweep + SSH banner
+  fingerprinting (`192.168.1.253`, `OpenSSH_10.0p2 Debian-7` matched current
+  Raspberry Pi OS; an initial candidate at `.57` had a decade-old OpenSSH
+  banner and turned out to be an unrelated device). Debian 13 (trixie),
+  kernel `6.12.47+rpt-rpi-2712`, arm64, 8GB RAM, 4 cores, booting from the
+  469GB NVMe as intended (SD card present but unused, just mounted as
+  removable media). Running the **Desktop** image (GUI stack: `wayvnc`,
+  `cupsd`) rather than Lite — left as-is for now, revisit if it needs
+  trimming down later.
 
 ## Decisions
 
@@ -42,6 +51,14 @@ Reachable internally as `api.joseph`, `ai.joseph`, `grafana.joseph`.
   GPU scheduling becomes valuable to demonstrate.
 - **New standalone repo** (`homelab`), separate from the personal portfolio
   site repo, so history and CI stay scoped to this project.
+- **Pi deploys via a read-only GitHub deploy key + `git pull`**, not scp.
+  Config lives in git as the source of truth from day one, which is also
+  the natural on-ramp to Argo CD later (same principle, more automation).
+- **CoreDNS over Pi-hole** for internal DNS — same ad-blocking result via
+  the `hosts` plugin loaded with a StevenBlack hosts-format blocklist, but
+  config-as-code (Corefile) instead of a web UI, and it's literally the DNS
+  server Kubernetes uses internally, which is more directly relevant to the
+  target roles than a consumer ad-blocker.
 
 ## Log
 
@@ -78,6 +95,33 @@ Reachable internally as `api.joseph`, `ai.joseph`, `grafana.joseph`.
   Windows/Mac) — verified end-to-end through the container at ~101 tok/s,
   confirming apps talk to the gateway, never straight to Ollama, per the
   design goal.
+
+- 2026-09-02: Pi provisioned: Docker CE (official repo) installed, `joe`
+  added to the `docker` group; `ufw` installed with default-deny incoming,
+  SSH and DNS (port 53) both scoped to `192.168.1.0/24` only, no external
+  exposure. SSH key auth set up from the desktop (ed25519, no passphrase —
+  it's a LAN-only automation key). Deploy key (read-only) added to the
+  `homelab` GitHub repo so the Pi can `git pull` its own config.
+- 2026-09-02: Deployed CoreDNS on the Pi (`docker/dns`, `network_mode: host`
+  for port 53). Two zones: `joseph:53` serves `api.joseph`/`ai.joseph` (both
+  → the desktop, same FastAPI process for now, no reverse proxy yet — URLs
+  still need `:8000`); `.:53` blocks ads via a StevenBlack blocklist
+  (85,427 entries) before forwarding everything else to `1.1.1.1`/`8.8.8.8`.
+  A weekly systemd timer refreshes the blocklist automatically.
+  **Debugging note:** ad-blocking silently didn't work on first deploy —
+  real answers came back for domains confirmed present in the blocklist.
+  Root cause: `mktemp` creates files mode `600`; the update script's `mv`
+  preserved that, and the CoreDNS image runs as a non-root distroless user
+  (`65532`) with no permission to read the file, so it silently loaded zero
+  entries and every query fell through to `forward`. The `.joseph` zone's
+  hosts file happened to be group/other-readable already, which is exactly
+  why *that* one worked and masked the bug for a while. Fixed by adding
+  `chmod 644` to the script; verified with a domain confirmed present in
+  the blocklist (`4436230.fls.doubleclick.net` → `0.0.0.0`) plus a real
+  domain still resolving normally, to rule out both directions of failure.
+  DNS is deployed and verified but nothing on the network is configured to
+  actually *use* it yet (router DHCP / per-device DNS) — that's a separate,
+  more impactful step to confirm before making it live network-wide.
 
 ## Baseline benchmark
 
