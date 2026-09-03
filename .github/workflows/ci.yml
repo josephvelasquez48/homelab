@@ -12,7 +12,7 @@ on:
       - "apps/api/**"
 
 permissions:
-  contents: read
+  contents: write
   packages: write
 
 env:
@@ -56,24 +56,23 @@ jobs:
             ${{ env.IMAGE }}:latest
             ${{ env.IMAGE }}:${{ steps.tag.outputs.tag }}
 
-  # Runs on the Pi's self-hosted runner (see docs/cicd.md) - the only step
-  # that actually needs to reach the private K3s API, so it's the only one
-  # that needs to be self-hosted. Test and build run on GitHub-hosted
-  # runners, which is faster (no QEMU emulation penalty on Pi hardware for
-  # the amd64 half of the multi-arch build) and has no reason to need
-  # private network access.
+  # Argo CD (roadmap step 12) watches this repo and applies whatever the
+  # manifests say - so "deploy" now means "update the manifests and let
+  # Argo CD do the rest", not "push changes into the cluster directly".
+  # This runs on a normal GitHub-hosted runner: committing to git needs no
+  # access to the private K3s API at all, unlike the kubectl-based deploy
+  # this replaced (see docs/cicd.md for why that needed a self-hosted
+  # runner on the Pi, and docs/argocd.md for why it doesn't anymore).
   deploy:
     needs: build-and-push
-    runs-on: [self-hosted, pi5]
-    env:
-      # kubectl defaults to /etc/rancher/k3s/k3s.yaml (root-only) when
-      # KUBECONFIG isn't set - the runner service's shell environment
-      # doesn't inherit the joe user's ~/.zshenv, so this needs to be
-      # explicit rather than assumed from the interactive shell setup.
-      KUBECONFIG: /home/joe/.kube/config
+    runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
       - run: |
-          kubectl set image deployment/api api=${{ env.IMAGE }}:${{ needs.build-and-push.outputs.tag }} -n backend
-          kubectl set image deployment/worker worker=${{ env.IMAGE }}:${{ needs.build-and-push.outputs.tag }} -n backend
-          kubectl rollout status deployment/api -n backend --timeout=120s
-          kubectl rollout status deployment/worker -n backend --timeout=120s
+          sed -i "s#image: ${{ env.IMAGE }}:.*#image: ${{ env.IMAGE }}:${{ needs.build-and-push.outputs.tag }}#" \
+            kubernetes/backend/api.yaml kubernetes/backend/worker.yaml
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add kubernetes/backend/api.yaml kubernetes/backend/worker.yaml
+          git diff --staged --quiet && echo "no image change" || git commit -m "Deploy ${{ needs.build-and-push.outputs.tag }} [skip ci]"
+          git push
