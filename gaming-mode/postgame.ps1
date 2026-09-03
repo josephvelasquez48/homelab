@@ -3,11 +3,22 @@
     Reverses pregame.ps1: starts k3s-agent, waits for the node to report
     Ready, then uncordons it so the scheduler considers it again.
 
-    Run manually after closing the game. See ../docs/gaming-mode.md.
+    Run manually after closing the game, via the desktop shortcut, or
+    remotely over SSH from the Pi dashboard (-NonInteractive). See
+    ../docs/gaming-mode.md.
+
+.PARAMETER NonInteractive
+    Skip the "Press Enter to close" pause - see pregame.ps1's param doc
+    for why this is required for any non-TTY caller.
 #>
+param(
+    [switch]$NonInteractive
+)
+
 $NodeName = "desktop-j1grrmu"
 $WslDistro = "Ubuntu-24.04"
 $ReadyTimeoutSeconds = 180
+$exitCode = 0
 
 try {
     Write-Output "==> Starting k3s-agent in WSL2 ($WslDistro)"
@@ -36,6 +47,7 @@ try {
     if (-not $ready) {
         Write-Warning "Node did not report Ready within ${ReadyTimeoutSeconds}s."
         Write-Warning "Not uncordoning automatically - check 'wsl -d $WslDistro -e sudo systemctl status k3s-agent' and 'kubectl get nodes' before retrying."
+        $exitCode = 1
         return
     }
 
@@ -47,5 +59,8 @@ try {
     Write-Output "    they'll spread across both nodes again on the next rollout. That's expected, not a problem."
 }
 finally {
-    Read-Host "Press Enter to close"
+    if (-not $NonInteractive) {
+        Read-Host "Press Enter to close"
+    }
+    exit $exitCode
 }

@@ -1,0 +1,155 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: dashboard
+  namespace: dashboard
+---
+# Read-only, cluster-scoped: the status page only ever GETs node/pod
+# state, never writes anything to the K8s API itself. The only writes
+# this app causes go through SSH to the desktop (see gaming-mode/), not
+# through the K8s API.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: dashboard
+rules:
+  - apiGroups: [""]
+    resources: ["nodes", "pods"]
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: dashboard
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: dashboard
+subjects:
+  - kind: ServiceAccount
+    name: dashboard
+    namespace: dashboard
+---
+# Namespaced to argocd, not cluster-wide - the dashboard only needs to
+# read Application status, not every resource Argo CD itself can touch.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: dashboard-read-applications
+  namespace: argocd
+rules:
+  - apiGroups: ["argoproj.io"]
+    resources: ["applications"]
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: dashboard-read-applications
+  namespace: argocd
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: dashboard-read-applications
+subjects:
+  - kind: ServiceAccount
+    name: dashboard
+    namespace: dashboard
+---
+# The desktop's SSH host key, so the dashboard can verify it instead of
+# either trusting-on-first-use blindly or disabling verification -
+# non-sensitive (it's a public key), so a plain ConfigMap, not a SOPS
+# secret. Get this line with:
+#   ssh-keyscan -t ed25519 192.168.1.131
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: dashboard-known-hosts
+  namespace: dashboard
+data:
+  known_hosts: |
+    192.168.1.131 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEmEz6U1ZsYJbD7ZDUnsnG6Jy1V875lCVW7GWh3oSgu6
+---
+# The private key half (kubernetes/secrets/dashboard-ssh-key.enc.yaml,
+# SOPS-encrypted) is deliberately NOT referenced by name here beyond the
+# secretRef below - same pattern as api-secrets/postgres-credentials/
+# grafana-admin: applied out-of-band via kubernetes/secrets/apply.sh,
+# not synced by Argo CD. See docs/secrets.md.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dashboard
+  namespace: dashboard
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: dashboard }
+  template:
+    metadata:
+      labels: { app: dashboard }
+    spec:
+      serviceAccountName: dashboard
+      # Pinned to the Pi so the dashboard stays reachable even while the
+      # desktop is cordoned/drained/off the cluster entirely - the whole
+      # point of gaming mode is to remove the desktop, and a dashboard
+      # that could itself land there would be unavailable exactly when
+      # someone might want to check on it or bring the desktop back.
+      nodeSelector:
+        kubernetes.io/hostname: joe
+      containers:
+        - name: dashboard
+          image: ghcr.io/josephvelasquez48/homelab-dashboard:latest
+          ports:
+            - containerPort: 8000
+          volumeMounts:
+            - name: ssh-key
+              mountPath: /secrets/ssh
+              readOnly: true
+            - name: known-hosts
+              mountPath: /config
+              readOnly: true
+          resources:
+            requests: { cpu: 50m, memory: 64Mi }
+            limits: { cpu: 200m, memory: 128Mi }
+          readinessProbe:
+            httpGet: { path: /health, port: 8000 }
+            initialDelaySeconds: 3
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: { path: /health, port: 8000 }
+            initialDelaySeconds: 10
+            periodSeconds: 10
+      volumes:
+        - name: ssh-key
+          secret:
+            secretName: dashboard-ssh-key
+            defaultMode: 0400
+        - name: known-hosts
+          configMap:
+            name: dashboard-known-hosts
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: dashboard
+  namespace: dashboard
+spec:
+  selector: { app: dashboard }
+  ports:
+    - port: 8000
+      targetPort: 8000
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: dashboard
+  namespace: dashboard
+spec:
+  rules:
+    - host: dashboard.home
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service: { name: dashboard, port: { number: 8000 } }

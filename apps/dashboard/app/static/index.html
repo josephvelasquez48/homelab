@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Homelab Dashboard</title>
+<style>
+  :root { color-scheme: dark; }
+  body { font-family: -apple-system, system-ui, sans-serif; background: #0d1117; color: #c9d1d9; margin: 0; padding: 24px; }
+  h1 { font-size: 1.4rem; margin-bottom: 4px; }
+  .sub { color: #8b949e; margin-bottom: 24px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; margin-bottom: 24px; }
+  .card { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 16px; }
+  .card h2 { font-size: 1rem; margin: 0 0 12px; color: #c9d1d9; }
+  .row { display: flex; justify-content: space-between; align-items: center; padding: 6px 0; border-bottom: 1px solid #21262d; font-size: 0.9rem; }
+  .row:last-child { border-bottom: none; }
+  .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 8px; }
+  .ok { background: #3fb950; }
+  .bad { background: #f85149; }
+  .warn { background: #d29922; }
+  .muted { color: #8b949e; font-size: 0.85rem; }
+  button { background: #238636; color: white; border: none; border-radius: 6px; padding: 10px 18px; font-size: 0.95rem; cursor: pointer; margin-right: 8px; }
+  button.off { background: #6e40c9; }
+  button:disabled { background: #30363d; cursor: not-allowed; }
+  #gaming-output { white-space: pre-wrap; background: #010409; border: 1px solid #30363d; border-radius: 6px; padding: 12px; margin-top: 12px; font-family: ui-monospace, monospace; font-size: 0.8rem; max-height: 300px; overflow-y: auto; display: none; }
+  #gaming-status { margin-bottom: 12px; font-size: 0.9rem; }
+</style>
+</head>
+<body>
+  <h1>Homelab Dashboard</h1>
+  <div class="sub">Pi 5 + desktop K3s cluster — refreshes every 10s</div>
+
+  <div class="grid">
+    <div class="card">
+      <h2>Nodes</h2>
+      <div id="nodes"></div>
+    </div>
+    <div class="card">
+      <h2>Argo CD Applications</h2>
+      <div id="argo-apps"></div>
+    </div>
+    <div class="card">
+      <h2>API</h2>
+      <div id="api-health"></div>
+    </div>
+    <div class="card">
+      <h2>Pods</h2>
+      <div id="pods" style="max-height: 220px; overflow-y: auto;"></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Gaming mode</h2>
+    <div id="gaming-status">Loading...</div>
+    <button id="btn-on" onclick="runGaming('on')">Start gaming mode</button>
+    <button id="btn-off" class="off" onclick="runGaming('off')">End gaming mode</button>
+    <div id="gaming-output"></div>
+  </div>
+
+<script>
+function dot(cls) { return `<span class="dot ${cls}"></span>`; }
+
+async function refresh() {
+  try {
+    const res = await fetch('/api/status');
+    const data = await res.json();
+
+    document.getElementById('nodes').innerHTML = data.nodes.map(n => `
+      <div class="row">
+        <span>${dot(n.ready ? 'ok' : 'bad')}${n.name}</span>
+        <span class="muted">${n.ready ? 'Ready' : 'NotReady'}${n.schedulable ? '' : ', cordoned'}</span>
+      </div>
+    `).join('') || '<div class="muted">no data</div>';
+
+    document.getElementById('argo-apps').innerHTML = data.argo_apps.map(a => `
+      <div class="row">
+        <span>${dot(a.sync_status === 'Synced' && a.health_status === 'Healthy' ? 'ok' : 'warn')}${a.name}</span>
+        <span class="muted">${a.sync_status} / ${a.health_status}</span>
+      </div>
+    `).join('') || '<div class="muted">no data</div>';
+
+    const api = data.api_health;
+    document.getElementById('api-health').innerHTML = api.reachable
+      ? `<div class="row">${dot(api.status_code === 200 ? 'ok' : 'bad')}api.home/health<span class="muted">HTTP ${api.status_code}</span></div>`
+      : `<div class="row">${dot('bad')}api.home/health<span class="muted">unreachable</span></div>`;
+
+    const podsByStatus = {};
+    data.pods.forEach(p => {
+      const key = p.phase === 'Running' && p.ready === p.total ? 'ok' : (p.phase === 'Succeeded' ? 'muted' : 'bad');
+      podsByStatus[key] = (podsByStatus[key] || 0) + 1;
+    });
+    document.getElementById('pods').innerHTML = data.pods.map(p => `
+      <div class="row">
+        <span>${dot(p.phase === 'Running' && p.ready === p.total ? 'ok' : (p.phase === 'Succeeded' ? 'ok' : 'bad'))}${p.name}</span>
+        <span class="muted">${p.namespace} · ${p.ready}/${p.total} · ${p.node || '?'}</span>
+      </div>
+    `).join('') || '<div class="muted">no data</div>';
+
+    const gamingStatus = document.getElementById('gaming-status');
+    gamingStatus.innerHTML = data.gaming_mode_active
+      ? `${dot('warn')}Gaming mode ON — desktop off the cluster`
+      : `${dot('ok')}Gaming mode OFF — desktop in the cluster`;
+  } catch (e) {
+    console.error('status refresh failed', e);
+  }
+}
+
+async function runGaming(action) {
+  const btnOn = document.getElementById('btn-on');
+  const btnOff = document.getElementById('btn-off');
+  const output = document.getElementById('gaming-output');
+  btnOn.disabled = true;
+  btnOff.disabled = true;
+  output.style.display = 'block';
+  output.textContent = `Running ${action === 'on' ? 'pregame' : 'postgame'}.ps1 over SSH — this can take up to ${action === 'on' ? '2' : '3'} minutes...`;
+
+  try {
+    const res = await fetch(`/api/gaming/${action}`, { method: 'POST' });
+    const data = await res.json();
+    output.textContent = (data.success ? '✔ succeeded\n\n' : '✘ failed\n\n') + (data.output || '');
+  } catch (e) {
+    output.textContent = 'Request failed: ' + e;
+  } finally {
+    btnOn.disabled = false;
+    btnOff.disabled = false;
+    refresh();
+  }
+}
+
+refresh();
+setInterval(refresh, 10000);
+</script>
+</body>
+</html>

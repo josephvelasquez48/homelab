@@ -160,6 +160,7 @@ homelab/
 ├── load-testing/          # k6 scripts - see docs/load-testing.md
 ├── failure-testing/        # Fault-injection scripts - see docs/failure-testing.md
 ├── gaming-mode/             # Cordon/drain the desktop K3s node for gaming - see docs/gaming-mode.md
+├── apps/dashboard/          # Status UI + gaming-mode trigger, runs in-cluster - see docs/dashboard.md
 ├── diagrams/               # Architecture diagram
 └── docs/                   # Per-phase logs: what was built, bugs found, verification
 ```

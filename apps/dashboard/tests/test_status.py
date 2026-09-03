@@ -1,0 +1,31 @@
+from tests.conftest import FAKE_ARGO_APPS, FAKE_NODES, FAKE_PODS
+
+
+def test_status_shape(client):
+    res = client.get("/api/status")
+    assert res.status_code == 200
+    data = res.json()
+    assert data["nodes"] == FAKE_NODES
+    assert data["argo_apps"] == FAKE_ARGO_APPS
+    assert len(data["pods"]) == len(FAKE_PODS) * 5  # one WATCHED_NAMESPACES entry per namespace
+    assert data["api_health"] == {"reachable": True, "status_code": 200, "body": {"status": "ok"}}
+
+
+def test_gaming_mode_inactive_when_desktop_schedulable(client):
+    res = client.get("/api/status")
+    data = res.json()
+    assert data["gaming_mode_active"] is False
+
+
+def test_gaming_mode_active_when_desktop_cordoned(client, monkeypatch):
+    from app import k8s
+    from unittest.mock import AsyncMock
+
+    cordoned_nodes = [
+        {"name": "joe", "ready": True, "schedulable": True, "roles": ["control-plane"]},
+        {"name": "desktop-j1grrmu", "ready": False, "schedulable": False, "roles": ["worker"]},
+    ]
+    monkeypatch.setattr(k8s, "get_nodes", AsyncMock(return_value=cordoned_nodes))
+
+    res = client.get("/api/status")
+    assert res.json()["gaming_mode_active"] is True
