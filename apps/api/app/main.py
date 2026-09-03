@@ -10,7 +10,7 @@ from prometheus_fastapi_instrumentator import Instrumentator
 from app.config import OLLAMA_URL
 from app.db import create_pg_pool, create_redis_client
 from app.logging import configure_logging, get_logger
-from app.routers import chat, health, jobs
+from app.routers import chat, embed, health, jobs
 
 configure_logging()
 log = get_logger(__name__)
@@ -33,6 +33,7 @@ app = FastAPI(title="Homelab API", lifespan=lifespan)
 app.include_router(health.router)
 app.include_router(chat.router)
 app.include_router(jobs.router)
+app.include_router(embed.router)
 
 # Unauthenticated like /health - Prometheus scrapes this directly, and the
 # actual protection boundary is the LAN-only firewall, not app-level auth.
