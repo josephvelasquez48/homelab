@@ -111,6 +111,30 @@ itself was even built.
   public key, there's nothing to protect, and putting it in a Secret
   would misrepresent what actually needs protecting in this setup.
 
+## Deployed and verified live, not just "it builds"
+
+Two more real things surfaced getting this actually running, on top of
+the SSH setup above:
+
+- `homelab-dashboard` is a brand-new `ghcr.io` package, and like
+  `homelab-api` before it (`docs/kubernetes.md`), a freshly-pushed
+  package defaults to private - K3s pulls images anonymously, so the
+  pod sat in `ImagePullBackOff` with a `401 Unauthorized` until the
+  package was made public (confirmed first, same reasoning as the
+  earlier `homelab-api` case: no secrets baked into the image, personal
+  project).
+- `dashboard.home` needed adding to CoreDNS's `home.hosts` - easy to
+  forget since every other service already had its entry from a prior
+  phase.
+
+End-to-end verification, through the deployed app itself rather than
+by re-running the scripts directly: `POST /api/gaming/on` against the
+live `dashboard.home` correctly cordoned, drained, and stopped
+`k3s-agent` (`gaming_mode_active` flipped to `true` in `/api/status`
+immediately after); `POST /api/gaming/off` correctly reversed it. All 7
+Argo CD Applications (including `dashboard` itself) confirmed
+`Synced`/`Healthy` afterward.
+
 ## Known gaps
 
 - No auth on the dashboard itself - it's reachable to anything on the
