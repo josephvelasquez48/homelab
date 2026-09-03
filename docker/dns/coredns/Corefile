@@ -1,14 +1,14 @@
 # Internal zone: *.joseph hostnames, served straight from a hosts file.
 # No fallthrough - anything under .joseph not listed here is NXDOMAIN.
 joseph:53 {
-    hosts joseph.hosts
+    hosts /etc/coredns/joseph.hosts
     log
     errors
 }
 
 # Everything else: block known ad/tracking domains, forward the rest upstream.
 .:53 {
-    hosts blocklist.hosts {
+    hosts /etc/coredns/blocklist.hosts {
         fallthrough
     }
     forward . 1.1.1.1 8.8.8.8
