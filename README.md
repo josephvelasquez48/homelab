@@ -37,10 +37,10 @@ memory growth under sustained load — see
 [docs/load-testing.md](docs/load-testing.md).
 Failure tested — zero-downtime pod kills, Postgres data confirmed to
 survive a pod restart, Argo CD self-heals live drift in ~11s (much
-faster than its ~3min git-polling interval), and a real gap found in
-the Ollama retry/timeout logic (a dead backend can hang a request for
-minutes instead of failing fast) — see
-[docs/failure-testing.md](docs/failure-testing.md).
+faster than its ~3min git-polling interval), and a real gap found (and
+fixed) in the Ollama retry/timeout logic — a dead backend used to hang
+a request past 180s unresolved, now fails in ~18s with the correct
+502 — see [docs/failure-testing.md](docs/failure-testing.md).
 
 ## Target architecture
 

@@ -113,8 +113,23 @@ bounds. A tight connect timeout (a few seconds - LAN, not internet) separate
 from a generous read timeout (real generation can legitimately take
 tens of seconds) would make a dead backend fail in seconds instead of
 minutes, without touching how long a slow-but-working generation is
-allowed to take. Recorded here as a finding, not fixed in this pass -
-worth a follow-up now that it's understood precisely.
+allowed to take.
+
+**Fixed and re-verified live, not just patched and assumed correct**:
+split `OLLAMA_TIMEOUT` into `httpx.Timeout(connect=5.0, read=120.0,
+write=10.0, pool=5.0)` (`apps/api/app/config.py`), pushed through the
+normal CI/CD -> Argo CD pipeline, then re-ran this exact scenario
+against the deployed fix - stopped Ollama again, sent the same request:
+
+```
+HTTP 502 in 18.03s   (was: still hanging past 180s, unresolved)
+```
+
+18s matches the math (3 attempts x 5s connect timeout, plus backoff
+between attempts) - a dead backend now fails in seconds instead of
+potentially minutes, and the response is the correct, already-documented
+`502 "AI backend unavailable"`. Confirmed full recovery afterward with
+Ollama restarted.
 
 Recovery: restarting Ollama also surfaced a smaller, separate issue -
 the relaunched process bound to `127.0.0.1:11434` instead of
@@ -162,5 +177,5 @@ almost in real time.
   the flannel VXLAN bug already found and fixed this session, which was
   a standing misconfiguration, not a fault-injection test). Deliberately
   not re-broken here given how much effort went into fixing it.
-- The Ollama timeout/retry gap found in scenario 4 is documented but not
-  yet fixed - a legitimate next step, not deferred by oversight.
+- ~~The Ollama timeout/retry gap found in scenario 4 is documented but not
+  yet fixed~~ - fixed and re-verified live, see scenario 4 above.
