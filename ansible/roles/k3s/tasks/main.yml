@@ -1,0 +1,44 @@
+---
+- name: Check if K3s is already installed
+  ansible.builtin.stat:
+    path: /usr/local/bin/k3s
+  register: k3s_binary
+
+- name: Install K3s server
+  ansible.builtin.shell: curl -sfL https://get.k3s.io | sh -
+  when: not k3s_binary.stat.exists
+  # common role must run first (cgroup fix + reboot) or this fails the
+  # same way the original manual install did.
+
+- name: Wait for K3s to be ready
+  ansible.builtin.wait_for:
+    path: /etc/rancher/k3s/k3s.yaml
+    timeout: 60
+
+- name: Ensure joe's .kube directory exists
+  ansible.builtin.file:
+    path: /home/joe/.kube
+    state: directory
+    owner: joe
+    group: joe
+    mode: "0700"
+
+- name: Copy kubeconfig for joe (root-owned original is unreadable otherwise)
+  ansible.builtin.copy:
+    src: /etc/rancher/k3s/k3s.yaml
+    dest: /home/joe/.kube/config
+    remote_src: true
+    owner: joe
+    group: joe
+    mode: "0600"
+
+# .zshrc only loads for interactive shells - non-interactive `ssh host
+# "kubectl ..."` calls (exactly how this whole project's automation runs)
+# need .zshenv instead. See docs/kubernetes.md for how this was found.
+- name: Export KUBECONFIG in .zshenv
+  ansible.builtin.lineinfile:
+    path: /home/joe/.zshenv
+    line: "export KUBECONFIG=$HOME/.kube/config"
+    create: true
+    owner: joe
+    group: joe

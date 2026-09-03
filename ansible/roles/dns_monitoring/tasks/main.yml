@@ -1,0 +1,55 @@
+---
+- name: Ensure ~/apps exists
+  ansible.builtin.file:
+    path: /home/joe/apps
+    state: directory
+    owner: joe
+    group: joe
+
+- name: Clone or update the homelab repo (deploy key must already exist)
+  ansible.builtin.git:
+    repo: git@github.com:josephvelasquez48/homelab.git
+    dest: /home/joe/apps/homelab
+    version: main
+    accept_hostkey: true
+  become: false # runs as joe implicitly via ansible_user, needs joe's own known_hosts/keys
+
+- name: Make the blocklist update script executable
+  ansible.builtin.file:
+    path: /home/joe/apps/homelab/docker/dns/scripts/update-blocklist.sh
+    mode: "0755"
+
+- name: Generate the initial ad-block list if missing
+  ansible.builtin.command: ./scripts/update-blocklist.sh
+  args:
+    chdir: /home/joe/apps/homelab/docker/dns
+    creates: /home/joe/apps/homelab/docker/dns/coredns/blocklist.hosts
+  become: false
+
+- name: Start the DNS stack (CoreDNS)
+  community.docker.docker_compose_v2:
+    project_src: /home/joe/apps/homelab/docker/dns
+    state: present
+  become: false
+
+- name: Install the blocklist-refresh systemd units
+  ansible.builtin.copy:
+    src: "/home/joe/apps/homelab/docker/dns/systemd/{{ item }}"
+    dest: "/etc/systemd/system/{{ item }}"
+    remote_src: true
+  loop:
+    - coredns-blocklist-update.service
+    - coredns-blocklist-update.timer
+
+- name: Enable the blocklist-refresh timer
+  ansible.builtin.systemd:
+    name: coredns-blocklist-update.timer
+    enabled: true
+    state: started
+    daemon_reload: true
+
+- name: Start the monitoring stack (node-exporter)
+  community.docker.docker_compose_v2:
+    project_src: /home/joe/apps/homelab/docker/monitoring
+    state: present
+  become: false

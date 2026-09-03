@@ -1,0 +1,11 @@
+---
+- name: Provision the Raspberry Pi
+  hosts: pi
+  become: true
+  roles:
+    - common # cgroup fix + reboot - must run before docker/k3s
+    - docker
+    - firewall
+    - k3s
+    - dns_monitoring
+    - github_runner

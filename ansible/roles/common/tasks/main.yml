@@ -1,0 +1,31 @@
+---
+# K3s (and any container runtime) needs the memory cgroup controller,
+# which Raspberry Pi OS doesn't enable by default - this was the very
+# first thing that broke when K3s was installed by hand (see
+# docs/kubernetes.md). Codified here so a fresh Pi doesn't hit the same
+# surprise.
+- name: Check current kernel cmdline for cgroup_memory
+  ansible.builtin.command: cat /boot/firmware/cmdline.txt
+  register: cmdline_current
+  changed_when: false
+
+- name: Back up cmdline.txt before editing (only on first run)
+  ansible.builtin.copy:
+    src: /boot/firmware/cmdline.txt
+    dest: /boot/firmware/cmdline.txt.bak
+    remote_src: true
+    force: false
+  when: "'cgroup_memory=1' not in cmdline_current.stdout"
+
+- name: Append cgroup_memory params to kernel cmdline
+  ansible.builtin.replace:
+    path: /boot/firmware/cmdline.txt
+    regexp: '^(.*)$'
+    replace: '\1 cgroup_memory=1 cgroup_enable=memory'
+  when: "'cgroup_memory=1' not in cmdline_current.stdout"
+  register: cmdline_updated
+
+- name: Reboot if cmdline changed (cgroup controller needs a fresh boot)
+  ansible.builtin.reboot:
+    reboot_timeout: 120
+  when: cmdline_updated is changed

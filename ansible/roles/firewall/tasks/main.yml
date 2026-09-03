@@ -1,0 +1,48 @@
+---
+- name: Install ufw
+  ansible.builtin.apt:
+    name: ufw
+    state: present
+
+- name: Set default policies
+  community.general.ufw:
+    direction: "{{ item.direction }}"
+    policy: "{{ item.policy }}"
+  loop:
+    - { direction: incoming, policy: deny }
+    - { direction: outgoing, policy: allow }
+
+# Kept in sync with what's actually running - see docs/kubernetes.md for
+# why K3s's own Service traffic (Traefik on :80/:443, i.e. api.home/
+# grafana.home/argocd.home) ISN'T listed here: kube-router/kube-proxy's
+# iptables chains process before ufw's, so a ufw rule for those ports
+# would be a no-op that implies protection it doesn't provide. That's
+# enforced at the Kubernetes NetworkPolicy layer instead
+# (kubernetes/argocd/traefik-security.yaml).
+- name: Allow LAN-scoped services (IPv4)
+  community.general.ufw:
+    rule: allow
+    from_ip: 192.168.1.0/24
+    port: "{{ item.port }}"
+    proto: "{{ item.proto }}"
+    comment: "{{ item.comment }}"
+  loop:
+    - { port: "22", proto: tcp, comment: "SSH - LAN only" }
+    - { port: "53", proto: any, comment: "DNS - LAN only" }
+    - { port: "6443", proto: tcp, comment: "K3s API - LAN only" }
+    - { port: "8472", proto: udp, comment: "K3s Flannel VXLAN - LAN only" }
+    - { port: "10250", proto: tcp, comment: "K3s kubelet - LAN only" }
+
+- name: Allow LAN-scoped services (IPv6 ULA)
+  community.general.ufw:
+    rule: allow
+    from_ip: "{{ lan_ipv6_ula_prefix }}"
+    port: "{{ item.port }}"
+    proto: "{{ item.proto }}"
+    comment: "{{ item.comment }}"
+  loop:
+    - { port: "53", proto: any, comment: "DNS - LAN IPv6 only" }
+
+- name: Enable ufw
+  community.general.ufw:
+    state: enabled

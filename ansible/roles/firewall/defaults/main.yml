@@ -1,0 +1,6 @@
+---
+# The router's self-generated ULA prefix (stable across ISP prefix churn -
+# see docs/kubernetes.md / docker/dns for why this was chosen over the
+# public GUA prefix). Specific to this network; override per-environment
+# if this playbook is ever pointed at a different one.
+lan_ipv6_ula_prefix: "fd00:f405:95c7:c412::/64"

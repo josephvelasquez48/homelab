@@ -1,0 +1,54 @@
+---
+# Registration tokens expire within an hour, so this can't be baked into
+# the playbook - pass it at run time:
+#   ansible-playbook playbooks/site.yml --tags github_runner \
+#     -e runner_token=$(gh api repos/josephvelasquez48/homelab/actions/runners/registration-token --jq .token)
+- name: Check if the runner is already configured
+  ansible.builtin.stat:
+    path: /home/joe/actions-runner/.runner
+  register: runner_configured
+
+- name: Fail fast if a token is needed but wasn't provided
+  ansible.builtin.fail:
+    msg: "Pass -e runner_token=<token> (see the comment at the top of this file for how to get one)"
+  when: not runner_configured.stat.exists and runner_token is not defined
+
+- name: Create the runner directory
+  ansible.builtin.file:
+    path: /home/joe/actions-runner
+    state: directory
+    owner: joe
+    group: joe
+  when: not runner_configured.stat.exists
+
+- name: Download and extract the runner
+  ansible.builtin.unarchive:
+    src: https://github.com/actions/runner/releases/download/v2.337.0/actions-runner-linux-arm64-2.337.0.tar.gz
+    dest: /home/joe/actions-runner
+    remote_src: true
+    owner: joe
+    group: joe
+  when: not runner_configured.stat.exists
+
+- name: Configure the runner
+  ansible.builtin.command: >
+    ./config.sh --url https://github.com/josephvelasquez48/homelab
+    --token {{ runner_token }} --name pi5-runner
+    --labels self-hosted,pi5,arm64 --work _work --unattended
+  args:
+    chdir: /home/joe/actions-runner
+  become: false
+  when: not runner_configured.stat.exists
+
+- name: Install the runner as a systemd service
+  ansible.builtin.command: ./svc.sh install
+  args:
+    chdir: /home/joe/actions-runner
+    creates: /etc/systemd/system/actions.runner.josephvelasquez48-homelab.pi5-runner.service
+  when: not runner_configured.stat.exists
+
+- name: Start the runner service
+  ansible.builtin.systemd:
+    name: actions.runner.josephvelasquez48-homelab.pi5-runner
+    enabled: true
+    state: started
