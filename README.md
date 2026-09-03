@@ -15,8 +15,12 @@ Prometheus + Grafana deployed — see [docs/monitoring.md](docs/monitoring.md).
 Migrated onto a multi-node K3s cluster (Pi + desktop via WSL2) — backend,
 data, ai, and monitoring namespaces all live, old Docker Compose stacks
 decommissioned — see [docs/kubernetes.md](docs/kubernetes.md).
-CI/CD live — GitHub Actions tests, builds, and deploys on push, using a
-self-hosted runner on the Pi for the deploy step — see [docs/cicd.md](docs/cicd.md).
+CI/CD live — GitHub Actions tests, builds, and pushes to ghcr.io on push
+— see [docs/cicd.md](docs/cicd.md).
+Argo CD live — git is now the actual source of truth for the cluster,
+CI commits new image tags instead of deploying directly, with a real
+network security fix along the way (ufw's LAN-only rules never applied
+to K3s) — see [docs/argocd.md](docs/argocd.md).
 
 ## Target architecture
 

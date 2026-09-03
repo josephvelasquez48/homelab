@@ -26,27 +26,38 @@
   workflow reported success), and `api.home/health` stayed green through
   the rollout.
 
+- 2026-09-03: **Superseded by Argo CD** (roadmap step 12, see
+  [docs/argocd.md](argocd.md)) later the same day - `deploy` no longer
+  runs `kubectl` against the cluster at all. It commits the new image tag
+  into `kubernetes/backend/*.yaml` instead and lets Argo CD apply it, which
+  also means it moved back to a GitHub-hosted runner (writing to git needs
+  no private network access, unlike the `kubectl`-based version below).
+  The self-hosted runner setup stays documented and installed - nothing
+  currently in the pipeline needs it, but it's available if a future step
+  does.
+
 Roadmap step 11:
 
 ```
 git push -> GitHub Actions -> Tests -> Build Docker image -> Container registry -> Deployment
 ```
 
-## Pipeline
+## Pipeline (current)
 
-`.github/workflows/ci.yml`, three jobs:
+`.github/workflows/ci.yml`, three jobs, all GitHub-hosted:
 
-1. **test** (GitHub-hosted) - `uv sync` + `pytest` against `apps/api`.
-2. **build-and-push** (GitHub-hosted, only on push to `main`) - multi-arch
+1. **test** - `uv sync` + `pytest` against `apps/api`.
+2. **build-and-push** (only on push to `main`) - multi-arch
    (`linux/amd64,linux/arm64`) build via `docker buildx`, pushed to
    `ghcr.io/josephvelasquez48/homelab-api` tagged both `:latest` and
    `:<12-char commit SHA>`.
-3. **deploy** (**self-hosted runner on the Pi**) - `kubectl set image` on
-   `backend/api` and `backend/worker` to the new SHA tag, then
-   `kubectl rollout status` to confirm it actually succeeded, not just that
-   the command was accepted.
+3. **deploy** - `sed`-replaces the image tag in
+   `kubernetes/backend/{api,worker}.yaml` and commits (`[skip ci]`, to
+   avoid the commit re-triggering this same workflow against itself).
+   Argo CD picks up the change on its own polling cycle - see
+   [docs/argocd.md](argocd.md) for that half of the pipeline.
 
-## Why a self-hosted runner
+## Why a self-hosted runner existed (historical - see the log above)
 
 GitHub-hosted runners can't reach `192.168.1.253:6443` (the K3s API server)
 - it's a private home network with no port forwarded, and it should stay
