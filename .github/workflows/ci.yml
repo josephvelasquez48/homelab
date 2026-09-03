@@ -65,6 +65,12 @@ jobs:
   deploy:
     needs: build-and-push
     runs-on: [self-hosted, pi5]
+    env:
+      # kubectl defaults to /etc/rancher/k3s/k3s.yaml (root-only) when
+      # KUBECONFIG isn't set - the runner service's shell environment
+      # doesn't inherit the joe user's ~/.zshenv, so this needs to be
+      # explicit rather than assumed from the interactive shell setup.
+      KUBECONFIG: /home/joe/.kube/config
     steps:
       - run: |
           kubectl set image deployment/api api=${{ env.IMAGE }}:${{ needs.build-and-push.outputs.tag }} -n backend
