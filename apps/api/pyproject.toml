@@ -17,6 +17,11 @@ dependencies = [
     "psycopg[binary]>=3.2",
 ]
 
+[dependency-groups]
+dev = [
+    "pytest>=8.3",
+]
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
