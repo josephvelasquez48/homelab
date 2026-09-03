@@ -69,3 +69,23 @@ Reachable internally as `api.joseph`, `ai.joseph`, `grafana.joseph`.
   `PING` via redis-py) instead of a static response — this becomes the
   container's readiness signal for Kubernetes later. Credentials live in
   `docker/.env` (gitignored); `docker/.env.example` documents the shape.
+- 2026-09-02: Confirmed Ollama (native Windows process) uses the GPU:
+  `qwen2.5-coder:7b`, 100% GPU per `ollama ps`, ~5.7GB/8GB VRAM, 94% GPU
+  utilization, **~105 tokens/sec** on a warm model (cold load ~0.1-12s
+  depending on idle timeout). Added `POST /v1/chat` to the FastAPI service,
+  proxying to Ollama over `http://host.docker.internal:11434` (the
+  container-to-host bridge Docker Desktop provides automatically on
+  Windows/Mac) — verified end-to-end through the container at ~101 tok/s,
+  confirming apps talk to the gateway, never straight to Ollama, per the
+  design goal.
+
+## Baseline benchmark
+
+| Metric | Value |
+|---|---|
+| Model | qwen2.5-coder:7b (Q4, 4.7GB) |
+| GPU | RTX 3070 Ti, 8GB VRAM |
+| Throughput (warm) | ~105 tokens/sec |
+| VRAM used | ~5.7GB |
+| GPU utilization | 94% |
+| Processor split | 100% GPU (`ollama ps`) |
