@@ -47,3 +47,7 @@ Reachable internally as `api.joseph`, `ai.joseph`, `grafana.joseph`.
 
 - 2026-09-02: Repo scaffolded, environment assessed. Docker Desktop started.
   Pi setup deferred until it's powered on.
+- 2026-09-02: GitHub CLI installed, repo pushed to
+  [josephvelasquez48/homelab](https://github.com/josephvelasquez48/homelab)
+  (private). Docker Desktop engine verified working (`docker run hello-world`)
+  — 28 CPUs / ~16GB RAM allocated to the WSL2 VM.
