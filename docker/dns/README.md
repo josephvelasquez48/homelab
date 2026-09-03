@@ -68,3 +68,25 @@ address used is the Pi's own static address inside the router's
 self-generated ULA prefix (`fd00:.../64`) rather than its public
 ISP-delegated one, since ULA doesn't change if Spectrum ever rotates the
 delegated prefix.
+
+**The Pi itself needs this too, and it's easy to forget** - running
+CoreDNS doesn't make the Pi's own OS use it for its own resolution.
+Found this the hard way: `*.home` worked from every other LAN client
+but failed to resolve from a browser running directly on the Pi's own
+desktop session, because `/etc/resolv.conf` (NetworkManager-managed)
+still pointed at the router. Fixed by pointing the Pi at itself instead
+of another host's IP - `127.0.0.1`/`::1` rather than `192.168.1.253`,
+since there's no reason to route through the LAN for a service running
+locally:
+
+```bash
+sudo nmcli connection modify <connection-name> ipv4.dns '127.0.0.1' ipv4.ignore-auto-dns yes
+sudo nmcli connection modify <connection-name> ipv6.dns '::1' ipv6.ignore-auto-dns yes
+sudo nmcli connection up <connection-name>
+```
+
+Verified both directions after: `*.home` resolves (`getent hosts
+dashboard.home`) and external resolution still forwards correctly
+(`getent hosts google.com`) - `ignore-auto-dns` only stops DHCP from
+overwriting the DNS *server* used, it doesn't break CoreDNS's own
+upstream forwarding for non-`.home` queries.
