@@ -1,0 +1,46 @@
+# Not part of the app-of-apps (deliberately not Argo-CD-managed) - this
+# configures K3s's own bundled Traefik, applied once directly like Argo CD
+# itself. See docs/kubernetes.md for the finding this fixes: ufw's
+# LAN-only rules never applied to anything K3s exposes, because
+# kube-router/kube-proxy's iptables chains (KUBE-ROUTER-INPUT,
+# KUBE-NODEPORTS, etc.) process before ufw's in the INPUT chain - Traefik
+# (and everything behind it: api.home, grafana.home, argocd.home) was
+# reachable from the whole LAN regardless of the ufw rules that implied
+# otherwise.
+#
+# HelmChartConfig is K3s's supported way to override its bundled Traefik
+# HelmChart - a raw `kubectl patch` on the Service would get reverted by
+# K3s's own Helm controller reconciliation.
+apiVersion: helm.cattle.io/v1
+kind: HelmChartConfig
+metadata:
+  name: traefik
+  namespace: kube-system
+spec:
+  valuesContent: |-
+    service:
+      spec:
+        externalTrafficPolicy: Local
+---
+# externalTrafficPolicy: Local preserves the real client source IP
+# (instead of kube-proxy SNAT'ing it to a cluster-internal address, which
+# would make source-IP-based filtering meaningless) - this NetworkPolicy
+# is what actually restricts who can reach Traefik, now that the source
+# IP surviving to the pod makes it possible at all. Enforced by
+# kube-router, which is already active in this cluster (confirmed via the
+# KUBE-NWPLCY-* iptables chains before this fix was written).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: traefik-lan-only
+  namespace: kube-system
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: traefik
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - ipBlock: { cidr: 192.168.1.0/24 }
+        - ipBlock: { cidr: fd00:f405:95c7:c412::/64 }
