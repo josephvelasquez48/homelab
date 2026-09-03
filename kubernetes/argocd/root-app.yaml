@@ -1,0 +1,24 @@
+# The one Application applied manually (bootstrap) - everything else is
+# "app of apps": this points at kubernetes/argocd/apps/, so adding or
+# removing a child Application file in git is enough to have Argo CD
+# manage (or stop managing) a whole component, no further kubectl needed.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: root
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/josephvelasquez48/homelab.git
+    targetRevision: main
+    path: kubernetes/argocd/apps
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
