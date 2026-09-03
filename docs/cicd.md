@@ -1,5 +1,31 @@
 # CI/CD
 
+## Log
+
+- 2026-09-03: Pipeline built and verified with real runs, not just written
+  and assumed correct - two real failures hit and fixed:
+  1. **`permission_denied: write_package`** on the first build-and-push
+     run. The `ghcr.io/homelab-api` package had been pushed manually (with
+     a personal token) back when it was first created for the Kubernetes
+     migration, so it was never linked to this repo's Actions permissions -
+     the default `GITHUB_TOKEN` had no write access to it. Fixed via the
+     package's own settings (Manage Actions access -> add the `homelab`
+     repo with `Write` role), not a workflow change.
+  2. **Same `KUBECONFIG` default-path issue as the original Pi kubectl
+     setup**, in a new context: the self-hosted runner's systemd service
+     environment doesn't inherit the `joe` user's interactive-shell
+     `.zshenv`, so `kubectl` fell back to `/etc/rancher/k3s/k3s.yaml`
+     (root-only) and failed with a permission error. Fixed by setting
+     `KUBECONFIG` explicitly in the deploy job rather than assuming the
+     shell environment carries it.
+
+  After both fixes, a real push ran clean end-to-end: `test` (11s) ->
+  `build-and-push` (63s, multi-arch) -> `deploy` (40s) on the self-hosted
+  runner, no manual `kubectl` intervention. Confirmed the running pods'
+  image tag matched the exact commit SHA CI built (not just that the
+  workflow reported success), and `api.home/health` stayed green through
+  the rollout.
+
 Roadmap step 11:
 
 ```
