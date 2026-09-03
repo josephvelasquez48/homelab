@@ -10,7 +10,8 @@ pgvector, Redis, local LLM inference (RAG), CI/CD, GitOps, and observability.
 Milestone 1 complete — see [docs/milestone-1.md](docs/milestone-1.md).
 Backend feature list (auth, rate limiting, caching, retries, metrics,
 jobs, embeddings) complete — see [docs/backend.md](docs/backend.md).
-RAG pipeline in progress — see [docs/rag.md](docs/rag.md).
+RAG pipeline complete — see [docs/rag.md](docs/rag.md).
+Prometheus + Grafana deployed — see [docs/monitoring.md](docs/monitoring.md).
 
 ## Target architecture
 
