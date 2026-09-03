@@ -52,8 +52,17 @@ Ollama setup this builds on.
   health, and a 65-request burst that produced exactly 60 successes then
   five `429`s.
 
+- 2026-09-03: **Retries + caching.** Consolidated the Ollama-call logic
+  `chat.py` and `worker.py` had each duplicated into `app/ollama.py` -
+  the one place that needed retry logic was duplicated, so it would have
+  needed retrying twice. `tenacity`, 3 attempts, exponential backoff, on
+  connect/timeout errors only (not on e.g. a 4xx from Ollama itself,
+  which retrying wouldn't fix). `/v1/chat` caches responses in Redis for
+  an hour keyed on `(model, message)`. Verified retries actually fire
+  (not just trusted the decorator) against a deliberately unreachable
+  URL - 2 logged attempts, ~3.1s before final failure - and verified a
+  cache hit returns identical output in ~40ms.
+
 ## Next
 
-Auth (API key, header-based), validation hardening, rate limiting,
-caching, retries on external calls, `GET /metrics` (Prometheus format),
-`POST /v1/embed`.
+`GET /metrics` (Prometheus format), `POST /v1/embed`.
