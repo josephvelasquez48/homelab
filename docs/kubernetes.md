@@ -346,3 +346,14 @@ build-and-push done by hand in this phase.
   tricks, which can still flash briefly). Confirmed the task still
   succeeds through the wrapper (`LastTaskResult: 0`, firing on
   schedule, no missed runs).
+
+  **Confirmed fixed, not just "the task exists and fires"**: checked
+  back after a real ~25-minute unattended idle stretch, with the only
+  thing touching WSL2 in that window being the keepalive task's own
+  automated schedule - no manual `wsl` command run by anyone in
+  between, which would have masked the exact failure mode being tested.
+  `kubectl get nodes` showed `desktop-j1grrmu` still `Ready`, and
+  `Get-ScheduledTaskInfo` confirmed the task had fired every minute the
+  whole time with `NumberOfMissedRuns: 0`. This is the first time this
+  session the node has stayed `Ready` across a real idle window without
+  needing to be woken by hand.
