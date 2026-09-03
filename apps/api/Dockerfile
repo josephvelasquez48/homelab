@@ -8,6 +8,8 @@ COPY pyproject.toml ./
 RUN uv sync --no-install-project
 
 COPY app ./app
+COPY alembic ./alembic
+COPY alembic.ini ./
 
 ENV PATH="/app/.venv/bin:$PATH"
 

@@ -9,6 +9,10 @@ dependencies = [
     "asyncpg>=0.30",
     "redis>=5.2",
     "httpx>=0.28",
+    "structlog>=24.4",
+    "alembic>=1.14",
+    "sqlalchemy>=2.0",
+    "psycopg[binary]>=3.2",
 ]
 
 [build-system]

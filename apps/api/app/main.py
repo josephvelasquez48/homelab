@@ -1,58 +1,53 @@
-import os
+import time
+import uuid
 from contextlib import asynccontextmanager
 
-import asyncpg
 import httpx
-import redis.asyncio as redis
-from fastapi import FastAPI
-from pydantic import BaseModel
+import structlog
+from fastapi import FastAPI, Request
 
-DATABASE_URL = os.environ["DATABASE_URL"]
-REDIS_URL = os.environ["REDIS_URL"]
-OLLAMA_URL = os.environ.get("OLLAMA_URL", "http://host.docker.internal:11434")
-OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "qwen2.5-coder:7b")
+from app.config import OLLAMA_URL
+from app.db import create_pg_pool, create_redis_client
+from app.logging import configure_logging, get_logger
+from app.routers import chat, health, jobs
+
+configure_logging()
+log = get_logger(__name__)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    app.state.pg_pool = await asyncpg.create_pool(DATABASE_URL, min_size=1, max_size=5)
-    app.state.redis = redis.from_url(REDIS_URL)
+    app.state.pg_pool = await create_pg_pool()
+    app.state.redis = create_redis_client()
     app.state.ollama = httpx.AsyncClient(base_url=OLLAMA_URL, timeout=120.0)
+    log.info("startup_complete")
     yield
     await app.state.pg_pool.close()
     await app.state.redis.aclose()
     await app.state.ollama.aclose()
+    log.info("shutdown_complete")
 
 
 app = FastAPI(title="Homelab API", lifespan=lifespan)
+app.include_router(health.router)
+app.include_router(chat.router)
+app.include_router(jobs.router)
 
 
-@app.get("/health")
-async def health() -> dict[str, str]:
-    async with app.state.pg_pool.acquire() as conn:
-        await conn.fetchval("SELECT 1")
-    await app.state.redis.ping()
-    return {"status": "ok", "postgres": "ok", "redis": "ok"}
-
-
-class ChatRequest(BaseModel):
-    message: str
-    model: str = OLLAMA_MODEL
-
-
-class ChatResponse(BaseModel):
-    response: str
-    model: str
-    tokens_per_sec: float
-
-
-@app.post("/v1/chat", response_model=ChatResponse)
-async def chat(req: ChatRequest) -> ChatResponse:
-    r = await app.state.ollama.post(
-        "/api/generate",
-        json={"model": req.model, "prompt": req.message, "stream": False},
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    request_id = str(uuid.uuid4())
+    structlog.contextvars.bind_contextvars(request_id=request_id)
+    start = time.perf_counter()
+    response = await call_next(request)
+    duration_ms = round((time.perf_counter() - start) * 1000, 2)
+    log.info(
+        "request_completed",
+        method=request.method,
+        path=request.url.path,
+        status_code=response.status_code,
+        duration_ms=duration_ms,
     )
-    r.raise_for_status()
-    data = r.json()
-    tps = data["eval_count"] / (data["eval_duration"] / 1e9) if data.get("eval_duration") else 0.0
-    return ChatResponse(response=data["response"], model=req.model, tokens_per_sec=round(tps, 1))
+    structlog.contextvars.clear_contextvars()
+    response.headers["X-Request-ID"] = request_id
+    return response
