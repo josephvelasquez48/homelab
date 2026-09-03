@@ -6,7 +6,7 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: https://github.com/josephvelasquez48/homelab.git
+    repoURL: git@github.com:josephvelasquez48/homelab.git
     targetRevision: main
     path: kubernetes/data
   destination:
