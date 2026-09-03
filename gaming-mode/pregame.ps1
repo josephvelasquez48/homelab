@@ -9,23 +9,27 @@
     why this is a manual trigger rather than automatic game detection,
     and postgame.ps1 for the reverse.
 #>
-$ErrorActionPreference = "Stop"
 $NodeName = "desktop-j1grrmu"
 $WslDistro = "Ubuntu-24.04"
 
-Write-Output "==> Cordoning $NodeName (no new pods will be scheduled here)"
-kubectl cordon $NodeName
+try {
+    Write-Output "==> Cordoning $NodeName (no new pods will be scheduled here)"
+    kubectl cordon $NodeName
 
-Write-Output "==> Draining $NodeName (evicting pods - api/worker will reschedule onto the Pi)"
-kubectl drain $NodeName --ignore-daemonsets --delete-emptydir-data --timeout=120s
-if ($LASTEXITCODE -ne 0) {
-    Write-Warning "drain did not complete cleanly - check 'kubectl get pods -A -o wide' before proceeding."
-    Write-Warning "Not stopping k3s-agent automatically; re-run this script once drain succeeds, or investigate first."
-    exit 1
+    Write-Output "==> Draining $NodeName (evicting pods - api/worker will reschedule onto the Pi)"
+    kubectl drain $NodeName --ignore-daemonsets --delete-emptydir-data --timeout=120s
+    if ($LASTEXITCODE -ne 0) {
+        Write-Warning "drain did not complete cleanly - check 'kubectl get pods -A -o wide' before proceeding."
+        Write-Warning "Not stopping k3s-agent automatically; re-run this script once drain succeeds, or investigate first."
+        return
+    }
+
+    Write-Output "==> Stopping k3s-agent in WSL2 ($WslDistro)"
+    wsl.exe -d $WslDistro -e sudo systemctl stop k3s-agent
+
+    Write-Output "==> Done. Desktop is off the cluster - GPU/CPU fully free for the game."
+    Write-Output "    Run postgame.ps1 when you're done to bring it back."
 }
-
-Write-Output "==> Stopping k3s-agent in WSL2 ($WslDistro)"
-wsl.exe -d $WslDistro -e sudo systemctl stop k3s-agent
-
-Write-Output "==> Done. Desktop is off the cluster - GPU/CPU fully free for the game."
-Write-Output "    Run postgame.ps1 when you're done to bring it back."
+finally {
+    Read-Host "Press Enter to close"
+}

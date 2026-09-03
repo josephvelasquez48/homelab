@@ -79,6 +79,28 @@ cd gaming-mode
 .\postgame.ps1    # after closing it
 ```
 
-Pin these to a desktop shortcut or a hotkey tool if running them from a
-terminal each time is friction - out of scope for this pass, but a
-reasonable next step.
+Or double-click **"Gaming Mode - ON"** / **"Gaming Mode - OFF"** on the
+desktop - shortcuts that run the scripts with a visible window (so
+drain/wait progress and any warnings are readable) and a "Press Enter
+to close" pause at the end rather than flashing shut immediately. Not
+committed to the repo (they're a Windows-user-specific `.lnk`, not
+portable infrastructure); recreate with:
+
+```powershell
+$desktop = [Environment]::GetFolderPath("Desktop")
+$WshShell = New-Object -ComObject WScript.Shell
+foreach ($pair in @(
+    @{Name="Gaming Mode - ON"; Script="pregame.ps1"},
+    @{Name="Gaming Mode - OFF"; Script="postgame.ps1"}
+)) {
+    $s = $WshShell.CreateShortcut("$desktop\$($pair.Name).lnk")
+    $s.TargetPath = "powershell.exe"
+    $s.Arguments = "-NoProfile -ExecutionPolicy Bypass -File `"D:\homelab\gaming-mode\$($pair.Script)`""
+    $s.WorkingDirectory = "D:\homelab\gaming-mode"
+    $s.Save()
+}
+```
+
+Both scripts wrap their logic in `try`/`finally` specifically so the
+pause always runs - a failure path that skipped it (e.g. the drain
+warning) would flash-close before it could be read.
