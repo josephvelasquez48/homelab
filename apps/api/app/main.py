@@ -5,6 +5,7 @@ from contextlib import asynccontextmanager
 import httpx
 import structlog
 from fastapi import FastAPI, Request
+from prometheus_fastapi_instrumentator import Instrumentator
 
 from app.config import OLLAMA_URL
 from app.db import create_pg_pool, create_redis_client
@@ -32,6 +33,10 @@ app = FastAPI(title="Homelab API", lifespan=lifespan)
 app.include_router(health.router)
 app.include_router(chat.router)
 app.include_router(jobs.router)
+
+# Unauthenticated like /health - Prometheus scrapes this directly, and the
+# actual protection boundary is the LAN-only firewall, not app-level auth.
+Instrumentator().instrument(app).expose(app, endpoint="/metrics", include_in_schema=False)
 
 
 @app.middleware("http")
