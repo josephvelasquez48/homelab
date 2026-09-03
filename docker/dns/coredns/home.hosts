@@ -1,0 +1,10 @@
+# Internal service hostnames.
+# api.home and ai.home currently point at the same FastAPI process
+# (apps/api) since /v1/chat is served from the same gateway as /health.
+# grafana.home points at the Pi itself, where monitoring runs.
+# No reverse proxy in front of any of these yet, so URLs still need a
+# port (e.g. http://api.home:8000/health, http://grafana.home:3000)
+# until that's added.
+192.168.1.131 api.home
+192.168.1.131 ai.home
+192.168.1.253 grafana.home

@@ -1,7 +1,7 @@
-# Internal zone: *.joseph hostnames, served straight from a hosts file.
-# No fallthrough - anything under .joseph not listed here is NXDOMAIN.
-joseph:53 {
-    hosts /etc/coredns/joseph.hosts
+# Internal zone: *.home hostnames, served straight from a hosts file.
+# No fallthrough - anything under .home not listed here is NXDOMAIN.
+home:53 {
+    hosts /etc/coredns/home.hosts
     log
     errors
 }

@@ -14,7 +14,7 @@ Raspberry Pi 5              Desktop
                              └── Ollama + RTX 3070 Ti
 ```
 
-Reachable internally as `api.joseph`, `ai.joseph`, `grafana.joseph`.
+Reachable internally as `api.home`, `ai.home`, `grafana.home`.
 
 ## Environment assessment (2026-09-02)
 
@@ -106,7 +106,7 @@ Reachable internally as `api.joseph`, `ai.joseph`, `grafana.joseph`.
   it's a LAN-only automation key). Deploy key (read-only) added to the
   `homelab` GitHub repo so the Pi can `git pull` its own config.
 - 2026-09-02: Deployed CoreDNS on the Pi (`docker/dns`, `network_mode: host`
-  for port 53). Two zones: `joseph:53` serves `api.joseph`/`ai.joseph` (both
+  for port 53). Two zones: `home:53` serves `api.home`/`ai.home` (both
   → the desktop, same FastAPI process for now, no reverse proxy yet — URLs
   still need `:8000`); `.:53` blocks ads via a StevenBlack blocklist
   (85,427 entries) before forwarding everything else to `1.1.1.1`/`8.8.8.8`.
@@ -116,7 +116,7 @@ Reachable internally as `api.joseph`, `ai.joseph`, `grafana.joseph`.
   Root cause: `mktemp` creates files mode `600`; the update script's `mv`
   preserved that, and the CoreDNS image runs as a non-root distroless user
   (`65532`) with no permission to read the file, so it silently loaded zero
-  entries and every query fell through to `forward`. The `.joseph` zone's
+  entries and every query fell through to `forward`. The `.home` zone's
   hosts file happened to be group/other-readable already, which is exactly
   why *that* one worked and masked the bug for a while. Fixed by adding
   `chmod 644` to the script; verified with a domain confirmed present in
@@ -156,10 +156,10 @@ Reachable internally as `api.joseph`, `ai.joseph`, `grafana.joseph`.
      modem reconnect) — `fd00:f405:95c7:c412::253`. Needed its own `ufw`
      IPv6 rule too, since ufw tracks IPv4/IPv6 rules separately.
 
-  Verified clean end-to-end afterward: `api.joseph`/`ai.joseph` resolve via
+  Verified clean end-to-end afterward: `api.home`/`ai.home` resolve via
   the plain default resolver (no explicit `-Server`), a known-blocked
   domain returns `0.0.0.0`, a real domain still resolves normally, and
-  `Invoke-RestMethod http://api.joseph:8000/health` returns a live
+  `Invoke-RestMethod http://api.home:8000/health` returns a live
   `{"status":"ok","postgres":"ok","redis":"ok"}` through the hostname.
 
 ## Baseline benchmark

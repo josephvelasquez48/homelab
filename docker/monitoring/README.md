@@ -40,6 +40,6 @@ curl -s localhost:9090/api/v1/targets | grep -o '"health":"[a-z]*"'   # all "up"
 curl -s -u admin:$GRAFANA_ADMIN_PASSWORD localhost:3000/api/health     # Grafana healthy
 ```
 
-Then `http://grafana.joseph:3000` (once DNS is pointed at the Pi on your
+Then `http://grafana.home:3000` (once DNS is pointed at the Pi on your
 client) - login `admin` / the password in `.env` - "Homelab Overview"
 dashboard should already be there with live data, not empty panels.
