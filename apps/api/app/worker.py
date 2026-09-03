@@ -3,7 +3,7 @@ import json
 
 import httpx
 
-from app.config import JOB_QUEUE_KEY, OLLAMA_URL
+from app.config import JOB_QUEUE_KEY, OLLAMA_TIMEOUT, OLLAMA_URL
 from app.db import create_pg_pool, create_redis_client
 from app.logging import configure_logging, get_logger
 from app.ollama import generate
@@ -58,7 +58,7 @@ async def run_job(job_id: str, pg_pool, ollama: httpx.AsyncClient) -> None:
 async def main() -> None:
     pg_pool = await create_pg_pool()
     redis_client = create_redis_client()
-    ollama = httpx.AsyncClient(base_url=OLLAMA_URL, timeout=120.0)
+    ollama = httpx.AsyncClient(base_url=OLLAMA_URL, timeout=OLLAMA_TIMEOUT)
     log.info("worker_started")
 
     try:

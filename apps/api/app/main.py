@@ -7,7 +7,7 @@ import structlog
 from fastapi import FastAPI, Request
 from prometheus_fastapi_instrumentator import Instrumentator
 
-from app.config import OLLAMA_URL
+from app.config import OLLAMA_TIMEOUT, OLLAMA_URL
 from app.db import create_pg_pool, create_redis_client
 from app.logging import configure_logging, get_logger
 from app.routers import chat, embed, health, jobs, rag
@@ -20,7 +20,7 @@ log = get_logger(__name__)
 async def lifespan(app: FastAPI):
     app.state.pg_pool = await create_pg_pool()
     app.state.redis = create_redis_client()
-    app.state.ollama = httpx.AsyncClient(base_url=OLLAMA_URL, timeout=120.0)
+    app.state.ollama = httpx.AsyncClient(base_url=OLLAMA_URL, timeout=OLLAMA_TIMEOUT)
     log.info("startup_complete")
     yield
     await app.state.pg_pool.close()
