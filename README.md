@@ -12,6 +12,7 @@ Backend feature list (auth, rate limiting, caching, retries, metrics,
 jobs, embeddings) complete — see [docs/backend.md](docs/backend.md).
 RAG pipeline complete — see [docs/rag.md](docs/rag.md).
 Prometheus + Grafana deployed — see [docs/monitoring.md](docs/monitoring.md).
+Multi-node K3s cluster (Pi + desktop via WSL2) up — see [docs/kubernetes.md](docs/kubernetes.md).
 
 ## Target architecture
 
