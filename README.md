@@ -31,6 +31,10 @@ a real incident along the way (a rotation-ordering mistake that cascaded
 into an unrelated flannel VXLAN bug on the WSL2 worker node) — see
 [docs/secrets.md](docs/secrets.md) and
 [docs/kubernetes.md](docs/kubernetes.md).
+Load tested with k6 — 0% errors at ~480 req/s sustained over a 5.5-minute
+soak, rate limiter verified to trigger at exactly the right request, no
+memory growth under sustained load — see
+[docs/load-testing.md](docs/load-testing.md).
 
 ## Target architecture
 
