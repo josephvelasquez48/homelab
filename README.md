@@ -21,6 +21,9 @@ Argo CD live — git is now the actual source of truth for the cluster,
 CI commits new image tags instead of deploying directly, with a real
 network security fix along the way (ufw's LAN-only rules never applied
 to K3s) — see [docs/argocd.md](docs/argocd.md).
+Pi host setup codified in Ansible — six roles, three real bugs found and
+fixed by actually running it, verified idempotent (a second real run
+reports zero changes) — see [docs/ansible.md](docs/ansible.md).
 
 ## Target architecture
 
