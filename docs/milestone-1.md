@@ -61,3 +61,11 @@ Reachable internally as `api.joseph`, `ai.joseph`, `grafana.joseph`.
   `uv`) running in Docker via `docker/docker-compose.yml`, `GET /health`
   verified returning 200. Pi setup deferred by request — desktop track
   continues first; Postgres + Redis are next.
+- 2026-09-02: Added PostgreSQL (`pgvector/pgvector:pg17` — pgvector chosen
+  now instead of plain `postgres` to avoid a data migration when RAG work
+  starts, extension not enabled by default) and Redis 7 to compose, both
+  with healthchecks. `pgvector` extension creation verified manually.
+  `/health` now does real connectivity checks (`SELECT 1` via asyncpg,
+  `PING` via redis-py) instead of a static response — this becomes the
+  container's readiness signal for Kubernetes later. Credentials live in
+  `docker/.env` (gitignored); `docker/.env.example` documents the shape.
