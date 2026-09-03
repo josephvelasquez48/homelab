@@ -1,0 +1,7 @@
+# Internal service hostnames -> desktop LAN IP.
+# api.joseph and ai.joseph currently point at the same FastAPI process
+# (apps/api) since /v1/chat is served from the same gateway as /health.
+# No reverse proxy in front of these yet, so URLs still need :8000
+# (e.g. http://api.joseph:8000/health) until that's added.
+192.168.1.131 api.joseph
+192.168.1.131 ai.joseph

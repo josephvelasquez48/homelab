@@ -1,0 +1,9 @@
+services:
+  coredns:
+    image: coredns/coredns:1.14.7
+    container_name: coredns
+    network_mode: host
+    volumes:
+      - ./coredns:/etc/coredns:ro
+    command: -conf /etc/coredns/Corefile
+    restart: unless-stopped

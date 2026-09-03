@@ -25,6 +25,9 @@ venv/
 # Docker
 *.log
 
+# DNS - generated blocklist, refreshed on a timer, not source
+docker/dns/coredns/blocklist.hosts
+
 # OS
 .DS_Store
 Thumbs.db
