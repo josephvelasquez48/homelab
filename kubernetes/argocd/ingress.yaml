@@ -1,0 +1,22 @@
+# Argo CD itself is installed via its official upstream manifest
+# (see docs/argocd.md) rather than a manifest in this repo - it's the
+# tool that manages everything else declaratively, so it doesn't make
+# sense to have it manage its own installation on day one. This Ingress
+# is the one piece of local config for it: exposing the UI at argocd.home
+# through the same Traefik setup as everything else. Server runs with
+# --insecure (plain HTTP) to match that pattern - confirmed with the user
+# first given Argo CD's broad cluster write access.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: argocd-server
+  namespace: argocd
+spec:
+  rules:
+    - host: argocd.home
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service: { name: argocd-server, port: { number: 80 } }
