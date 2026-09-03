@@ -1,9 +1,10 @@
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel
 
 from app.config import OLLAMA_MODEL
+from app.rate_limit import rate_limit
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(rate_limit)])
 
 
 class ChatRequest(BaseModel):

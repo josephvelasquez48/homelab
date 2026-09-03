@@ -21,6 +21,7 @@ services:
       REDIS_URL: redis://redis:6379/0
       OLLAMA_URL: http://host.docker.internal:11434
       OLLAMA_MODEL: qwen2.5-coder:7b
+      API_KEY: ${API_KEY}
     depends_on:
       postgres:
         condition: service_healthy
@@ -40,6 +41,7 @@ services:
       DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       REDIS_URL: redis://redis:6379/0
       OLLAMA_URL: http://host.docker.internal:11434
+      API_KEY: ${API_KEY}
     depends_on:
       postgres:
         condition: service_healthy

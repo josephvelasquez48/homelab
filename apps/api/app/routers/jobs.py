@@ -2,12 +2,13 @@ import json
 import uuid
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 
 from app.config import JOB_QUEUE_KEY
+from app.rate_limit import rate_limit
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(rate_limit)])
 
 ALLOWED_JOB_TYPES = {"chat"}
 
