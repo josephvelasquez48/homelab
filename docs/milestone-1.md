@@ -122,6 +122,42 @@ Reachable internally as `api.joseph`, `ai.joseph`, `grafana.joseph`.
   DNS is deployed and verified but nothing on the network is configured to
   actually *use* it yet (router DHCP / per-device DNS) — that's a separate,
   more impactful step to confirm before making it live network-wide.
+- 2026-09-02: Made the desktop actually use the Pi for DNS. **The router
+  (Spectrum SAX1V1S) doesn't support DHCP DNS override** — its app-level
+  "Manage DNS" setting only affects the router's own upstream queries, not
+  what it hands LAN clients. Fell back to setting DNS per-device instead of
+  network-wide. Three layered issues along the way, each confirmed by
+  testing rather than assumed fixed:
+  1. **Windows races configured DNS servers** rather than strictly
+     preferring primary over secondary — pointing at the Pi + a public
+     fallback (`1.1.1.1`) meant the fast public resolver almost always won,
+     silently defeating the whole point. Fixed by using the Pi as the sole
+     configured server (it already does its own upstream forwarding, so a
+     second OS-level fallback wasn't actually adding safety, just breaking
+     things).
+  2. Windows prefers IPv6 DNS servers over IPv4 when both are configured.
+     The Ethernet adapter had an **IPv6 DNS server learned dynamically from
+     the router's IPv6 Router Advertisements**, which we'd never touched —
+     so every "default resolver" query silently went there regardless of
+     the IPv4 override, even though explicit `-Server 192.168.1.253`
+     queries always worked (which is exactly what made this confusing:
+     partial evidence pointed different directions until isolating explicit
+     vs. default resolution paths cleanly).
+  3. `netsh interface ipv6 set dnsservers ... static none` didn't stick —
+     it only clears manually-set entries, not ones learned dynamically via
+     RA, so the IPv6 DNS server kept reappearing. Resolved by giving the Pi
+     a **static IPv6 address** instead, so it could be pointed at directly:
+     used the router's self-generated ULA prefix (`fd00:.../64`, stable
+     regardless of ISP prefix changes) rather than the public GUA
+     (Spectrum-delegated `2600:.../64`, dynamic and could rotate on a
+     modem reconnect) — `fd00:f405:95c7:c412::253`. Needed its own `ufw`
+     IPv6 rule too, since ufw tracks IPv4/IPv6 rules separately.
+
+  Verified clean end-to-end afterward: `api.joseph`/`ai.joseph` resolve via
+  the plain default resolver (no explicit `-Server`), a known-blocked
+  domain returns `0.0.0.0`, a real domain still resolves normally, and
+  `Invoke-RestMethod http://api.joseph:8000/health` returns a live
+  `{"status":"ok","postgres":"ok","redis":"ok"}` through the hostname.
 
 ## Baseline benchmark
 

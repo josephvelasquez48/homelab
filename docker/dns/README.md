@@ -22,12 +22,49 @@ cd ~/apps/homelab/docker/dns
 docker compose up -d
 sudo cp systemd/coredns-blocklist-update.* /etc/systemd/system/
 sudo systemctl enable --now coredns-blocklist-update.timer
+
+# Static IPv6 in the router's ULA prefix, so clients can point at a fixed
+# address instead of chasing SLAAC rotation. Replace the prefix/connection
+# name if the network changes. See "Client setup" below for why this needs
+# to exist at all.
+sudo nmcli connection modify <connection-name> +ipv6.addresses 'fd00:.../64::253/64'
+sudo nmcli connection up <connection-name>
+
+# ufw tracks IPv4/IPv6 separately - the IPv4 DNS rule earlier doesn't cover this
+sudo ufw allow from fd00:.../64 to any port 53 comment 'DNS - LAN IPv6 only'
 ```
 
 ## Verify
 
 ```bash
-dig @192.168.1.253 api.joseph +short          # -> 192.168.1.131
-dig @192.168.1.253 example.com +short         # -> real answer, forwarded upstream
-dig @192.168.1.253 doubleclick.net +short     # -> 0.0.0.0, blocked
+dig @192.168.1.253 api.joseph +short                       # -> 192.168.1.131
+dig @192.168.1.253 example.com +short                      # -> real answer, forwarded upstream
+dig @192.168.1.253 mediavisor.doubleclick.net +short        # -> 0.0.0.0, blocked
 ```
+
+(the bare apex `doubleclick.net` is *not* in the blocklist, only specific
+ad-serving subdomains are - a fine detail worth remembering before assuming
+a test failed)
+
+## Client setup
+
+**The router (Spectrum SAX1V1S) doesn't support DHCP DNS override** - its
+app's "Manage DNS" setting only affects the router's own upstream queries,
+not what it hands out to LAN clients via DHCP. So this has to be configured
+per-device rather than network-wide. On Windows, in an elevated PowerShell:
+
+```powershell
+Set-DnsClientServerAddress -InterfaceAlias "Ethernet" -ServerAddresses ("192.168.1.253","fd00:f405:95c7:c412::253")
+```
+
+Both an IPv4 and IPv6 address are needed - Windows prefers IPv6 for DNS
+when an IPv6 server is configured, and the router advertises one via IPv6
+Router Advertisements regardless of what's set here, so an IPv4-only
+override gets silently bypassed for anything using the OS's default
+resolver (`nslookup`/`Resolve-DnsName` with an explicit `-Server` flag
+isn't affected either way, which is what makes this confusing to debug -
+explicit-server tests pass while everyday resolution doesn't). The IPv6
+address used is the Pi's own static address inside the router's
+self-generated ULA prefix (`fd00:.../64`) rather than its public
+ISP-delegated one, since ULA doesn't change if Spectrum ever rotates the
+delegated prefix.
