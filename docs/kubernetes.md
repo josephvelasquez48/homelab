@@ -333,3 +333,16 @@ build-and-push done by hand in this phase.
   stretch, without anyone manually touching WSL2 in the meantime - is a
   longer-running check; see the dated follow-up note once that window
   has actually elapsed, not just "the task exists."
+
+  **Immediately caused a new, obvious problem**: `wsl.exe` is a console
+  application, so a Scheduled Task invoking it directly pops a real,
+  visible console window every single time it fires - once a minute,
+  on a desktop someone actually sits at and uses for gaming. Not a
+  subtle bug; noticed immediately. Fixed by wrapping the call in
+  `scripts/wsl-keepalive.vbs`, invoked via `wscript.exe //B` instead of
+  calling `wsl.exe` directly - `WScript.Shell.Run`'s hidden-window
+  argument is the standard, reliable way to make Task Scheduler run
+  something with zero visible window (more robust than `cmd.exe /min`
+  tricks, which can still flash briefly). Confirmed the task still
+  succeeds through the wrapper (`LastTaskResult: 0`, firing on
+  schedule, no missed runs).

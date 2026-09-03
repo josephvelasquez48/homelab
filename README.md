@@ -161,6 +161,7 @@ homelab/
 ├── failure-testing/        # Fault-injection scripts - see docs/failure-testing.md
 ├── gaming-mode/             # Cordon/drain the desktop K3s node for gaming - see docs/gaming-mode.md
 ├── apps/dashboard/          # Status UI + gaming-mode trigger, runs in-cluster - see docs/dashboard.md
+├── scripts/                # Small Windows-host utilities (e.g. the WSL2 keepalive task)
 ├── diagrams/               # Architecture diagram
 └── docs/                   # Per-phase logs: what was built, bugs found, verification
 ```
