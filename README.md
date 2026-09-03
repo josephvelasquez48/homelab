@@ -8,8 +8,9 @@ pgvector, Redis, local LLM inference (RAG), CI/CD, GitOps, and observability.
 ## Status
 
 Milestone 1 complete — see [docs/milestone-1.md](docs/milestone-1.md).
-Currently building out the FastAPI backend further — see
-[docs/backend.md](docs/backend.md) for live progress and decisions.
+Backend feature list (auth, rate limiting, caching, retries, metrics,
+jobs, embeddings) complete — see [docs/backend.md](docs/backend.md).
+RAG pipeline in progress — see [docs/rag.md](docs/rag.md).
 
 ## Target architecture
 
