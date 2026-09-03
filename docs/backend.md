@@ -1,0 +1,49 @@
+# Backend (apps/api)
+
+Tracks work on the FastAPI service beyond Milestone 1 - auth, validation,
+rate limiting, caching, retries, migrations, structured logging, `/metrics`,
+`/v1/embed` - per the original backend feature list. See
+[milestone-1.md](milestone-1.md) for the initial FastAPI/Postgres/Redis/
+Ollama setup this builds on.
+
+## Log
+
+- 2026-09-02: **Structured logging + module layout + background jobs.**
+  Split the single `main.py` into `app/routers/{health,chat,jobs}.py` with
+  shared `config.py`/`db.py`, since a flat file wasn't going to survive
+  auth/rate-limiting/metrics being added on top. Logging switched to
+  `structlog` (JSON output) with a request-logging middleware that stamps
+  each request with an ID (`X-Request-ID` response header) and logs
+  method/path/status/duration.
+
+  Added `POST /jobs` + `GET /jobs/{id}`: jobs are persisted in Postgres
+  (`jobs` table - id, type, status, payload, result, error, timestamps)
+  and queued via a Redis list; a separate `worker` container (same image,
+  different command) blocks on the queue and processes them. First job
+  type is `chat` - runs the same Ollama generation as `/v1/chat`, but off
+  the request path, which is the actual point: LLM generation is slow
+  enough that it shouldn't hold an HTTP connection open.
+
+  Schema is now managed with **Alembic** instead of hand-run SQL - a
+  `migrate` one-shot service runs `alembic upgrade head` and must exit 0
+  before `api`/`worker` start (`depends_on: condition:
+  service_completed_successfully`). Alembic runs synchronously via
+  `psycopg`, separate from the app's async `asyncpg` pool - normal split,
+  migrations don't need to be async.
+
+  **Debugging note:** the worker crashed on every single queue poll with a
+  `redis.exceptions.TimeoutError`, immediately after logging
+  `worker_started`. Root cause: the Redis client's default socket timeout
+  was shorter than the `BLPOP ... timeout=5` blocking wait - the client
+  gave up on the socket read before Redis's own blocking wait could
+  return, even with nothing wrong on the Redis side. Fixed by setting
+  `socket_timeout=10` on the client (must exceed any blocking command
+  timeout used against it). Verified with a full job lifecycle
+  (`pending` -> `running` -> `done`, result populated) plus the 404 and
+  422 error paths, not just the happy path.
+
+## Next
+
+Auth (API key, header-based), validation hardening, rate limiting,
+caching, retries on external calls, `GET /metrics` (Prometheus format),
+`POST /v1/embed`.

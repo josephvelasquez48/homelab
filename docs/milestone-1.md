@@ -1,5 +1,8 @@
 # Milestone 1
 
+**Status: complete.** Further backend work continues in
+[docs/backend.md](backend.md).
+
 Target:
 
 ```
