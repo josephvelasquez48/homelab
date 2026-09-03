@@ -1,5 +1,10 @@
 # Monitoring (Prometheus + Grafana)
 
+> **Retired** - superseded by `kubernetes/monitoring/`. Kept as-is for
+> reference; see [../README.md](../README.md) for status of everything
+> under `docker/`. The rest of this file describes how it worked when it
+> was the live deployment.
+
 Runs on the Raspberry Pi, `network_mode: host` (same pattern as `docker/dns`)
 so Prometheus/Grafana/node_exporter can reach each other over `localhost`
 without bridge-network plumbing, and node_exporter can read the host's own
