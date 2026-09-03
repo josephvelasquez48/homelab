@@ -12,7 +12,9 @@ Backend feature list (auth, rate limiting, caching, retries, metrics,
 jobs, embeddings) complete — see [docs/backend.md](docs/backend.md).
 RAG pipeline complete — see [docs/rag.md](docs/rag.md).
 Prometheus + Grafana deployed — see [docs/monitoring.md](docs/monitoring.md).
-Multi-node K3s cluster (Pi + desktop via WSL2) up — see [docs/kubernetes.md](docs/kubernetes.md).
+Migrated onto a multi-node K3s cluster (Pi + desktop via WSL2) — backend,
+data, ai, and monitoring namespaces all live, old Docker Compose stacks
+decommissioned — see [docs/kubernetes.md](docs/kubernetes.md).
 
 ## Target architecture
 
@@ -51,7 +53,7 @@ homelab/
 │   ├── api/        # FastAPI backend service
 │   └── ai/         # RAG / inference gateway
 ├── docker/         # Compose files
-├── kubernetes/      # K3s manifests (later phase)
+├── kubernetes/      # K3s manifests (ai/backend/data/monitoring namespaces)
 ├── ansible/         # Server configuration automation
 ├── terraform/        # Infra-as-code where applicable
 ├── monitoring/       # Prometheus/Grafana/Loki config
