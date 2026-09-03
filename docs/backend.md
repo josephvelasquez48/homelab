@@ -42,6 +42,16 @@ Ollama setup this builds on.
   (`pending` -> `running` -> `done`, result populated) plus the 404 and
   422 error paths, not just the happy path.
 
+- 2026-09-03: **API-key auth + rate limiting.** `X-API-Key` header,
+  constant-time compare, applied to `/v1/chat` and `/jobs` -
+  `/health` stays open since container healthchecks and uncredentialed
+  monitoring need to hit it. Rate limiting (60 req/min default, fixed
+  window, Redis `INCR`+`EXPIRE`) is keyed on the API key rather than IP,
+  so it rides the same auth dependency rather than being separate
+  middleware. Verified: no key / wrong key / correct key / unauthenticated
+  health, and a 65-request burst that produced exactly 60 successes then
+  five `429`s.
+
 ## Next
 
 Auth (API key, header-based), validation hardening, rate limiting,
