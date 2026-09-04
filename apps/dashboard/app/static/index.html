@@ -13,6 +13,9 @@
   .card h2 { font-size: 1.2rem; margin: 0 0 12px; color: #c9d1d9; }
   .row { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid #21262d; font-size: 1rem; gap: 8px; }
   .row:last-child { border-bottom: none; }
+  .multi-col { display: grid; grid-template-columns: repeat(2, 1fr); gap: 0 20px; }
+  .card.full { grid-column: 1 / -1; }
+  #pods.multi-col { grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
   .row > span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
   .row > span:last-child { flex-shrink: 0; }
   .dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 8px; }
@@ -44,9 +47,9 @@
       <h2>Nodes</h2>
       <div id="nodes"></div>
     </div>
-    <div class="card">
+    <div class="card wide">
       <h2>Argo CD Applications</h2>
-      <div id="argo-apps"></div>
+      <div id="argo-apps" class="multi-col"></div>
     </div>
     <div class="card">
       <h2>API</h2>
@@ -63,9 +66,9 @@
       <button id="btn-off" class="off" onclick="runGaming('off')">End gaming mode</button>
       <div id="gaming-output"></div>
     </div>
-    <div class="card">
+    <div class="card full">
       <h2>Pods</h2>
-      <div id="pods"></div>
+      <div id="pods" class="multi-col"></div>
     </div>
   </div>
 
