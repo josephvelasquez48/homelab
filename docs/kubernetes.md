@@ -357,3 +357,94 @@ build-and-push done by hand in this phase.
   whole time with `NumberOfMissedRuns: 0`. This is the first time this
   session the node has stayed `Ready` across a real idle window without
   needing to be woken by hand.
+
+## Log (continued) - a routine Pi reboot that cascaded into three separate problems
+
+- 2026-09-04: Rebooted `joe` for a pending kernel update
+  (`6.12.47+rpt-rpi-2712` -> `6.18.39+rpt-rpi-2712`). The reboot itself
+  was clean - node back `Ready` within about a minute, every pod that
+  restarted because of it recovered on its own. Everything after this
+  point was **triggered by** the reboot but not an inherent part of it.
+
+  **Problem 1: a stuck `svclb-traefik` pod turned into a desktop-wide
+  crash loop.** One `svclb-traefik` pod (k3s's built-in ServiceLB
+  sidecar) came back from the reboot in `Unknown` with 54 restarts and
+  no events at all - looked like simple kubelet/API desync, so it got
+  deleted to let the DaemonSet recreate it. The replacement scheduled
+  onto `desktop-j1grrmu` and sat `Pending` for 5+ minutes with *zero*
+  kubelet activity, not even an image pull attempt - despite the node
+  showing `Ready` and its Lease renewing normally seconds apart. That
+  split (Lease healthy, NodeStatus/pod-processing not) was the first
+  sign this wasn't the already-solved idle-timeout bug from the log
+  above.
+
+  **Ruled out before finding the real cause:**
+  - Idle-timeout recurring - the `WSL2-K3s-Keepalive` scheduled task
+    was still firing every minute exactly as designed
+    (`Get-ScheduledTaskInfo` showed `LastRunTime`/`NextRunTime` a
+    minute apart).
+  - The whole machine sleeping - `Get-WinEvent` against
+    `Microsoft-Windows-Kernel-Power` showed no sleep/wake events
+    anywhere near the incident window.
+  - Docker Desktop restarting the shared WSL2 utility VM - Docker
+    Desktop wasn't even running at the time.
+
+  **Actual cause**: `journalctl -u k3s-agent` showed repeated `PLEG is
+  not healthy` and `Failed to create existing container: ... task
+  <id> not found` errors, all referencing the *same* pod UID across
+  multiple separate crash cycles - the recreated `svclb-traefik` pod
+  itself. Its `lb-tcp-80`/`lb-tcp-443` sidecar containers
+  (`crictl ps -a`) were exiting with code 255 within seconds of
+  starting, every single time, and each failed reconciliation attempt
+  was severe enough to take the entire `k3s-agent` process down with
+  it - not a hung agent causing a stuck pod, but a broken pod crashing
+  a healthy agent. Confirmed no port conflict at the OS level
+  (`ss -tlnp` showed nothing bound to 80/443) - this looks like the
+  ServiceLB pause-FIFO mechanism itself failing in this specific WSL2
+  environment, not a resource or config problem.
+
+  **Where this landed**: deleting the pod cleanly (not force-deleted
+  this time) bought a stable, healthy `2/2 Running` replacement and a
+  `k3s-agent` that settled into `active/running` - but it recurred
+  again about 7 minutes later. Left as a **known, unresolved, recurring
+  issue** rather than force-fixed blind: the pod is not required for
+  the cluster's actual routing (the `joe`-side `svclb-traefik` replica
+  stays healthy throughout, and every ingress hostname resolves through
+  it fine), so the practical impact is limited to `kubectl get pods`
+  showing one flapping pod. Next step, if this needs a real fix rather
+  than tolerance: either exclude `desktop-j1grrmu` from this specific
+  DaemonSet, or trace the pause-FIFO exec failure inside the WSL2
+  container runtime directly (`strace`-level, not attempted here).
+
+  **Problem 2 (separate, unrelated): Grafana's own metrics scrape
+  target came back down.** `kubernetes-pods` job showed
+  `10.42.0.91:9100/metrics` (Traefik, on `joe`) as connection-refused
+  in Prometheus. Traefik's config is verified correct -
+  `--metrics.prometheus=true`, `--entryPoints.metrics.address=:9100`,
+  and `kubectl exec ... wget localhost:9100/metrics` returns real
+  metrics from inside the pod - yet Prometheus, on the *same node*,
+  gets refused hitting the pod IP on that port. Points to Traefik only
+  binding its metrics listener to loopback rather than all interfaces.
+  Confirmed this predates today entirely (restart count on the pod was
+  1, from today's reboot, and the annotation/config have clearly been
+  there longer) - **left unresolved**, cosmetic only, doesn't affect
+  Traefik's actual routing or any other Grafana panel.
+
+  **Problem 3 (separate, unrelated): Grafana OOMKilled again, past the
+  previous 512Mi fix.** The memory-limit fix from the original
+  OOMKilled incident (`docs/secrets.md`-adjacent Grafana notes) held
+  for hours, but OOMKilled again (exit 137) during this reboot's
+  recovery churn - many pods rescheduling/restarting simultaneously
+  across the cluster. `joe` had ample headroom throughout (55% of 8Gi
+  used, never memory-pressured node-wide), so this was Grafana's own
+  container hitting its cgroup limit, not the node running out.
+  Bumped `512Mi` -> `1Gi` (real breathing room, not another marginal
+  nudge) - confirmed stable afterward with 0 restarts.
+
+  **Net result**: reboot succeeded; Grafana OOM fixed properly this
+  time; the Traefik metrics scrape and the desktop `svclb-traefik` flap
+  are both pre-existing/recurring issues that were root-caused but
+  deliberately left open rather than papered over, since neither
+  affects real functionality and both would need deeper environment-
+  specific debugging (WSL2 container runtime internals; Traefik's
+  metrics-server bind address) to actually close out.
