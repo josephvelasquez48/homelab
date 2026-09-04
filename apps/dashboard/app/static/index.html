@@ -8,8 +8,8 @@
   body { font-family: -apple-system, system-ui, sans-serif; background: #0d1117; color: #c9d1d9; margin: 0; padding: 24px; font-size: 18px; }
   h1 { font-size: 1.8rem; margin-bottom: 4px; }
   .sub { color: #8b949e; font-size: 1.05rem; }
-  .header { display: flex; justify-content: space-between; align-items: center; gap: 16px; margin-bottom: 24px; flex-wrap: wrap; }
-  .header-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+  .header { margin-bottom: 16px; }
+  .header-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 24px; }
   .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; margin-bottom: 24px; align-items: start; }
   .card { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 16px; }
   .card h2 { font-size: 1.2rem; margin: 0 0 12px; color: #c9d1d9; }
@@ -35,22 +35,26 @@
   .stat-sub { font-size: 0.85rem; color: #8b949e; }
   .bar-track { background: #21262d; border-radius: 6px; height: 7px; overflow: hidden; }
   .bar-fill { height: 100%; border-radius: 6px; transition: width 0.5s ease, background-color 0.5s ease; }
+  .compact .stat-tile { padding: 12px; min-height: auto; gap: 6px; }
+  .compact .stat-num { font-size: 1.6rem; }
 </style>
 </head>
 <body>
   <div class="header">
-    <div>
-      <h1>Homelab Dashboard</h1>
-      <div class="sub">Pi 5 + desktop K3s cluster — refreshes every 10s</div>
-    </div>
-    <div class="header-actions">
-      <button id="btn-on" onclick="runGaming('on')">Start gaming mode</button>
-      <button id="btn-off" class="off" onclick="runGaming('off')">End gaming mode</button>
-    </div>
+    <h1>Homelab Dashboard</h1>
+    <div class="sub">Pi 5 + desktop K3s cluster — refreshes every 10s</div>
+  </div>
+  <div class="header-actions">
+    <button id="btn-on" onclick="runGaming('on')">Start gaming mode</button>
+    <button id="btn-off" class="off" onclick="runGaming('off')">End gaming mode</button>
   </div>
   <div id="gaming-output"></div>
 
   <div class="grid">
+    <div class="card full">
+      <h2>Pi metrics</h2>
+      <div id="pi-metrics" class="compact"></div>
+    </div>
     <div class="card full">
       <h2>Pods</h2>
       <div id="pods" class="multi-col"></div>
@@ -58,10 +62,6 @@
     <div class="card full">
       <h2>Argo CD Applications</h2>
       <div id="argo-apps" class="multi-col"></div>
-    </div>
-    <div class="card full">
-      <h2>Pi metrics</h2>
-      <div id="pi-metrics"></div>
     </div>
     <div class="card">
       <h2>Nodes</h2>
