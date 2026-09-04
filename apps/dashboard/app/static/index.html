@@ -23,6 +23,10 @@
   button:disabled { background: #30363d; cursor: not-allowed; }
   #gaming-output { white-space: pre-wrap; background: #010409; border: 1px solid #30363d; border-radius: 6px; padding: 12px; margin-top: 12px; font-family: ui-monospace, monospace; font-size: 0.8rem; max-height: 300px; overflow-y: auto; display: none; }
   #gaming-status { margin-bottom: 12px; font-size: 0.9rem; }
+  .metric-row { flex-direction: column; align-items: stretch; gap: 4px; }
+  .metric-head { display: flex; justify-content: space-between; align-items: center; }
+  .metric-head .val { color: #c9d1d9; font-variant-numeric: tabular-nums; }
+  .metric-row svg { display: block; width: 100%; height: 28px; }
 </style>
 </head>
 <body>
@@ -75,6 +79,30 @@ function fmtNum(v, digits = 1) {
   return (v === null || v === undefined) ? 'n/a' : v.toFixed(digits);
 }
 
+const HISTORY_LEN = 30; // 30 samples @ 10s refresh = 5 minutes
+const metricHistory = { cpu_temp_c: [], load1: [], net_rx_bytes_per_sec: [], disk_write_bytes_per_sec: [] };
+
+function pushHistory(key, value) {
+  if (value === null || value === undefined) return;
+  const arr = metricHistory[key];
+  arr.push(value);
+  if (arr.length > HISTORY_LEN) arr.shift();
+}
+
+function sparkline(key, color) {
+  const arr = metricHistory[key];
+  if (arr.length < 2) return '<svg viewBox="0 0 100 28"></svg>';
+  const min = Math.min(...arr), max = Math.max(...arr);
+  const range = (max - min) || 1;
+  const step = 100 / (arr.length - 1);
+  const points = arr.map((v, i) => {
+    const x = (i * step).toFixed(1);
+    const y = (26 - ((v - min) / range) * 24).toFixed(1);
+    return `${x},${y}`;
+  }).join(' ');
+  return `<svg viewBox="0 0 100 28" preserveAspectRatio="none"><polyline points="${points}" fill="none" stroke="${color}" stroke-width="2" vector-effect="non-scaling-stroke"/></svg>`;
+}
+
 async function refresh() {
   try {
     const res = await fetch('/api/status');
@@ -113,12 +141,31 @@ async function refresh() {
 
     const m = data.pi_metrics || {};
     const tempCls = m.cpu_temp_c == null ? 'muted' : (m.cpu_temp_c >= 80 ? 'bad' : (m.cpu_temp_c >= 60 ? 'warn' : 'ok'));
+    const tempColor = m.cpu_temp_c == null ? '#8b949e' : (m.cpu_temp_c >= 80 ? '#f85149' : (m.cpu_temp_c >= 60 ? '#d29922' : '#3fb950'));
     const oomCls = !m.oom_kills ? 'ok' : 'bad';
+
+    pushHistory('cpu_temp_c', m.cpu_temp_c);
+    pushHistory('load1', m.load1);
+    pushHistory('net_rx_bytes_per_sec', m.net_rx_bytes_per_sec);
+    pushHistory('disk_write_bytes_per_sec', m.disk_write_bytes_per_sec);
+
     document.getElementById('pi-metrics').innerHTML = `
-      <div class="row"><span>${dot(tempCls)}CPU temp</span><span class="muted">${m.cpu_temp_c != null ? m.cpu_temp_c.toFixed(1) + ' °C' : 'n/a'}</span></div>
-      <div class="row"><span>Load (1/5/15m)</span><span class="muted">${fmtNum(m.load1)} / ${fmtNum(m.load5)} / ${fmtNum(m.load15)}</span></div>
-      <div class="row"><span>Network RX/TX</span><span class="muted">${fmtBytesPerSec(m.net_rx_bytes_per_sec)} / ${fmtBytesPerSec(m.net_tx_bytes_per_sec)}</span></div>
-      <div class="row"><span>Disk read/write</span><span class="muted">${fmtBytesPerSec(m.disk_read_bytes_per_sec)} / ${fmtBytesPerSec(m.disk_write_bytes_per_sec)}</span></div>
+      <div class="row metric-row">
+        <div class="metric-head"><span>${dot(tempCls)}CPU temp</span><span class="val">${m.cpu_temp_c != null ? m.cpu_temp_c.toFixed(1) + ' °C' : 'n/a'}</span></div>
+        ${sparkline('cpu_temp_c', tempColor)}
+      </div>
+      <div class="row metric-row">
+        <div class="metric-head"><span>Load (1/5/15m)</span><span class="val">${fmtNum(m.load1)} / ${fmtNum(m.load5)} / ${fmtNum(m.load15)}</span></div>
+        ${sparkline('load1', '#58a6ff')}
+      </div>
+      <div class="row metric-row">
+        <div class="metric-head"><span>Network RX/TX</span><span class="val">${fmtBytesPerSec(m.net_rx_bytes_per_sec)} / ${fmtBytesPerSec(m.net_tx_bytes_per_sec)}</span></div>
+        ${sparkline('net_rx_bytes_per_sec', '#58a6ff')}
+      </div>
+      <div class="row metric-row">
+        <div class="metric-head"><span>Disk read/write</span><span class="val">${fmtBytesPerSec(m.disk_read_bytes_per_sec)} / ${fmtBytesPerSec(m.disk_write_bytes_per_sec)}</span></div>
+        ${sparkline('disk_write_bytes_per_sec', '#58a6ff')}
+      </div>
       <div class="row"><span>${dot(oomCls)}OOM kills</span><span class="muted">${m.oom_kills != null ? m.oom_kills : 'n/a'}</span></div>
     `;
 
