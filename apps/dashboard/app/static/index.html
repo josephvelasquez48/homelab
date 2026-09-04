@@ -7,7 +7,9 @@
   :root { color-scheme: dark; }
   body { font-family: -apple-system, system-ui, sans-serif; background: #0d1117; color: #c9d1d9; margin: 0; padding: 24px; font-size: 18px; }
   h1 { font-size: 1.8rem; margin-bottom: 4px; }
-  .sub { color: #8b949e; margin-bottom: 24px; font-size: 1.05rem; }
+  .sub { color: #8b949e; font-size: 1.05rem; }
+  .header { display: flex; justify-content: space-between; align-items: center; gap: 16px; margin-bottom: 24px; flex-wrap: wrap; }
+  .header-actions { display: flex; gap: 8px; flex-wrap: wrap; }
   .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; margin-bottom: 24px; align-items: start; }
   .card { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 16px; }
   .card h2 { font-size: 1.2rem; margin: 0 0 12px; color: #c9d1d9; }
@@ -22,12 +24,10 @@
   .bad { background: #f85149; }
   .warn { background: #d29922; }
   .muted { color: #8b949e; font-size: 0.95rem; }
-  button { background: #238636; color: white; border: none; border-radius: 6px; padding: 12px 20px; font-size: 1.05rem; cursor: pointer; margin-right: 8px; }
+  button { background: #238636; color: white; border: none; border-radius: 6px; padding: 12px 20px; font-size: 1.05rem; cursor: pointer; }
   button.off { background: #6e40c9; }
   button:disabled { background: #30363d; cursor: not-allowed; }
   #gaming-output { white-space: pre-wrap; background: #010409; border: 1px solid #30363d; border-radius: 6px; padding: 12px; margin-top: 12px; font-family: ui-monospace, monospace; font-size: 0.9rem; max-height: 300px; overflow-y: auto; display: none; }
-  #gaming-status { margin-bottom: 12px; font-size: 1rem; }
-  .card.wide { grid-column: span 2; }
   .stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 16px; }
   .stat-tile { display: flex; flex-direction: column; justify-content: center; gap: 10px; background: #0d1117; border: 1px solid #21262d; border-left: 3px solid #30363d; border-radius: 6px; padding: 20px; min-height: 140px; }
   .stat-label { font-size: 0.85rem; color: #8b949e; text-transform: uppercase; letter-spacing: 0.04em; }
@@ -38,8 +38,17 @@
 </style>
 </head>
 <body>
-  <h1>Homelab Dashboard</h1>
-  <div class="sub">Pi 5 + desktop K3s cluster — refreshes every 10s</div>
+  <div class="header">
+    <div>
+      <h1>Homelab Dashboard</h1>
+      <div class="sub">Pi 5 + desktop K3s cluster — refreshes every 10s</div>
+    </div>
+    <div class="header-actions">
+      <button id="btn-on" onclick="runGaming('on')">Start gaming mode</button>
+      <button id="btn-off" class="off" onclick="runGaming('off')">End gaming mode</button>
+    </div>
+  </div>
+  <div id="gaming-output"></div>
 
   <div class="grid">
     <div class="card full">
@@ -50,7 +59,7 @@
       <h2>Argo CD Applications</h2>
       <div id="argo-apps" class="multi-col"></div>
     </div>
-    <div class="card wide">
+    <div class="card full">
       <h2>Pi metrics</h2>
       <div id="pi-metrics"></div>
     </div>
@@ -61,13 +70,6 @@
     <div class="card">
       <h2>API</h2>
       <div id="api-health"></div>
-    </div>
-    <div class="card">
-      <h2>Gaming mode</h2>
-      <div id="gaming-status">Loading...</div>
-      <button id="btn-on" onclick="runGaming('on')">Start gaming mode</button>
-      <button id="btn-off" class="off" onclick="runGaming('off')">End gaming mode</button>
-      <div id="gaming-output"></div>
     </div>
   </div>
 
@@ -168,10 +170,8 @@ async function refresh() {
       </div>
     `;
 
-    const gamingStatus = document.getElementById('gaming-status');
-    gamingStatus.innerHTML = data.gaming_mode_active
-      ? `${dot('warn')}Gaming mode ON — desktop off the cluster`
-      : `${dot('ok')}Gaming mode OFF — desktop in the cluster`;
+    document.getElementById('btn-on').disabled = data.gaming_mode_active;
+    document.getElementById('btn-off').disabled = !data.gaming_mode_active;
   } catch (e) {
     console.error('status refresh failed', e);
   }
