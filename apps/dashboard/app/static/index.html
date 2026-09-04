@@ -23,13 +23,14 @@
   button:disabled { background: #30363d; cursor: not-allowed; }
   #gaming-output { white-space: pre-wrap; background: #010409; border: 1px solid #30363d; border-radius: 6px; padding: 12px; margin-top: 12px; font-family: ui-monospace, monospace; font-size: 0.8rem; max-height: 300px; overflow-y: auto; display: none; }
   #gaming-status { margin-bottom: 12px; font-size: 0.9rem; }
-  .stat-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; }
-  .stat-tile { display: flex; flex-direction: column; gap: 4px; }
-  .stat-label { font-size: 0.8rem; color: #8b949e; }
-  .stat-num { font-size: 1.5rem; font-weight: 600; font-variant-numeric: tabular-nums; line-height: 1.1; }
+  .card.wide { grid-column: span 2; }
+  .stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
+  .stat-tile { display: flex; flex-direction: column; gap: 6px; background: #0d1117; border: 1px solid #21262d; border-left: 3px solid #30363d; border-radius: 6px; padding: 10px 12px; }
+  .stat-label { font-size: 0.78rem; color: #8b949e; text-transform: uppercase; letter-spacing: 0.04em; }
+  .stat-num { font-size: 1.65rem; font-weight: 600; font-variant-numeric: tabular-nums; line-height: 1.15; letter-spacing: -0.01em; }
   .stat-sub { font-size: 0.75rem; color: #8b949e; }
-  .bar-track { background: #21262d; border-radius: 4px; height: 6px; overflow: hidden; }
-  .bar-fill { height: 100%; border-radius: 4px; }
+  .bar-track { background: #21262d; border-radius: 6px; height: 7px; overflow: hidden; }
+  .bar-fill { height: 100%; border-radius: 6px; transition: width 0.5s ease, background-color 0.5s ease; }
 </style>
 </head>
 <body>
@@ -53,7 +54,7 @@
       <h2>Pods</h2>
       <div id="pods" style="max-height: 220px; overflow-y: auto;"></div>
     </div>
-    <div class="card">
+    <div class="card wide">
       <h2>Pi metrics</h2>
       <div id="pi-metrics"></div>
     </div>
@@ -136,28 +137,28 @@ async function refresh() {
 
     document.getElementById('pi-metrics').innerHTML = `
       <div class="stat-grid">
-        <div class="stat-tile">
+        <div class="stat-tile" style="border-left-color:${tempColor}">
           <span class="stat-label">CPU temp</span>
           <span class="stat-num" style="color:${tempColor}">${m.cpu_temp_c != null ? m.cpu_temp_c.toFixed(1) + ' °C' : 'n/a'}</span>
           ${bar(m.cpu_temp_c != null ? m.cpu_temp_c : 0, tempColor)}
         </div>
-        <div class="stat-tile">
+        <div class="stat-tile" style="border-left-color:${loadColor}">
           <span class="stat-label">Load (1m)</span>
           <span class="stat-num" style="color:${loadColor}">${fmtNum(m.load1)}</span>
           ${bar(m.load1 != null ? (m.load1 / PI_CORES) * 100 : 0, loadColor)}
           <span class="stat-sub">5m ${fmtNum(m.load5)} · 15m ${fmtNum(m.load15)}</span>
         </div>
-        <div class="stat-tile">
+        <div class="stat-tile" style="border-left-color:#58a6ff">
           <span class="stat-label">Network RX / TX</span>
           <span class="stat-num">${fmtBytesPerSec(m.net_rx_bytes_per_sec)}</span>
           <span class="stat-sub">TX ${fmtBytesPerSec(m.net_tx_bytes_per_sec)}</span>
         </div>
-        <div class="stat-tile">
+        <div class="stat-tile" style="border-left-color:#58a6ff">
           <span class="stat-label">Disk read / write</span>
           <span class="stat-num">${fmtBytesPerSec(m.disk_read_bytes_per_sec)}</span>
           <span class="stat-sub">write ${fmtBytesPerSec(m.disk_write_bytes_per_sec)}</span>
         </div>
-        <div class="stat-tile">
+        <div class="stat-tile" style="border-left-color:${oomColor}">
           <span class="stat-label">OOM kills</span>
           <span class="stat-num" style="color:${oomColor}">${m.oom_kills != null ? m.oom_kills : 'n/a'}</span>
         </div>
