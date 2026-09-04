@@ -27,6 +27,8 @@
   button { background: #238636; color: white; border: none; border-radius: 6px; padding: 12px 20px; font-size: 1.05rem; cursor: pointer; }
   button.off { background: #6e40c9; }
   button:disabled { background: #30363d; cursor: not-allowed; }
+  .button-link { background: #21262d; color: #c9d1d9; border: 1px solid #30363d; border-radius: 6px; padding: 12px 20px; font-size: 1.05rem; text-decoration: none; display: inline-flex; align-items: center; }
+  .button-link:hover { background: #30363d; }
   #gaming-output { white-space: pre-wrap; background: #010409; border: 1px solid #30363d; border-radius: 6px; padding: 12px; margin-top: 12px; font-family: ui-monospace, monospace; font-size: 0.9rem; max-height: 300px; overflow-y: auto; display: none; }
   .stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 16px; }
   .stat-tile { display: flex; flex-direction: column; justify-content: center; gap: 10px; background: #0d1117; border: 1px solid #21262d; border-left: 3px solid #30363d; border-radius: 6px; padding: 20px; min-height: 140px; }
@@ -49,6 +51,7 @@
       <div class="header-actions">
         <button id="btn-on" onclick="runGaming('on')">Start gaming mode</button>
         <button id="btn-off" class="off" onclick="runGaming('off')">End gaming mode</button>
+        <a class="button-link" href="http://grafana.home" target="_blank" rel="noopener">Open Grafana</a>
       </div>
       <div id="gaming-output"></div>
     </div>
