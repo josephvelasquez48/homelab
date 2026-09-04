@@ -15,7 +15,7 @@
   .row:last-child { border-bottom: none; }
   .multi-col { display: grid; grid-template-columns: repeat(2, 1fr); gap: 0 20px; }
   .card.full { grid-column: 1 / -1; }
-  #pods.multi-col { grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+  #pods.multi-col { grid-template-columns: repeat(auto-fill, 240px); justify-content: start; }
   .row > span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
   .row > span:last-child { flex-shrink: 0; }
   .dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 8px; }
