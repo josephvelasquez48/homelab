@@ -8,15 +8,15 @@
   body { font-family: -apple-system, system-ui, sans-serif; background: #0d1117; color: #c9d1d9; margin: 0; padding: 24px; font-size: 18px; }
   h1 { font-size: 1.8rem; margin-bottom: 4px; }
   .sub { color: #8b949e; font-size: 1.05rem; }
-  .header { margin-bottom: 16px; }
-  .header-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 24px; }
+  .top-row { display: flex; gap: 20px; align-items: stretch; margin-bottom: 24px; flex-wrap: wrap; }
+  .top-left { display: flex; flex-direction: column; gap: 16px; flex: 0 0 auto; }
+  .top-right { flex: 1; min-width: 320px; }
+  .header-actions { display: flex; gap: 8px; flex-wrap: wrap; }
   .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; margin-bottom: 24px; align-items: start; }
   .card { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 16px; }
   .card h2 { font-size: 1.2rem; margin: 0 0 12px; color: #c9d1d9; }
-  .row { display: flex; justify-content: space-between; align-items: center; padding: 10px 12px; border: 1px solid #21262d; border-radius: 6px; font-size: 1rem; gap: 8px; margin-bottom: 8px; }
+  .row { display: flex; justify-content: space-between; align-items: center; padding: 6px 10px; border: 1px solid #21262d; border-radius: 6px; font-size: 1rem; gap: 8px; margin-bottom: 4px; }
   .row:last-child { margin-bottom: 0; }
-  .multi-col { display: grid; grid-template-columns: repeat(auto-fill, 240px); justify-content: start; gap: 0 20px; }
-  .card.full { grid-column: 1 / -1; }
   .row > span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
   .row > span:last-child { flex-shrink: 0; }
   .dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 8px; }
@@ -40,28 +40,32 @@
 </style>
 </head>
 <body>
-  <div class="header">
-    <h1>Homelab Dashboard</h1>
-    <div class="sub">Pi 5 + desktop K3s cluster — refreshes every 10s</div>
-  </div>
-  <div class="header-actions">
-    <button id="btn-on" onclick="runGaming('on')">Start gaming mode</button>
-    <button id="btn-off" class="off" onclick="runGaming('off')">End gaming mode</button>
-  </div>
-  <div id="gaming-output"></div>
-
-  <div class="grid">
-    <div class="card full">
+  <div class="top-row">
+    <div class="top-left">
+      <div class="header">
+        <h1>Homelab Dashboard</h1>
+        <div class="sub">Pi 5 + desktop K3s cluster — refreshes every 10s</div>
+      </div>
+      <div class="header-actions">
+        <button id="btn-on" onclick="runGaming('on')">Start gaming mode</button>
+        <button id="btn-off" class="off" onclick="runGaming('off')">End gaming mode</button>
+      </div>
+      <div id="gaming-output"></div>
+    </div>
+    <div class="card top-right">
       <h2>Pi metrics</h2>
       <div id="pi-metrics" class="compact"></div>
     </div>
-    <div class="card full">
+  </div>
+
+  <div class="grid">
+    <div class="card">
       <h2>Pods</h2>
-      <div id="pods" class="multi-col"></div>
+      <div id="pods"></div>
     </div>
-    <div class="card full">
+    <div class="card">
       <h2>Argo CD Applications</h2>
-      <div id="argo-apps" class="multi-col"></div>
+      <div id="argo-apps"></div>
     </div>
     <div class="card">
       <h2>Nodes</h2>
