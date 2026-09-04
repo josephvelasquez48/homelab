@@ -229,8 +229,8 @@ spec:
             - name: dashboard-json
               mountPath: /etc/grafana/provisioning/dashboards/json
           resources:
-            requests: { cpu: 50m, memory: 192Mi }
-            limits: { cpu: 500m, memory: 512Mi }
+            requests: { cpu: 50m, memory: 256Mi }
+            limits: { cpu: 500m, memory: 1Gi }
           readinessProbe:
             httpGet: { path: /api/health, port: 3000 }
             initialDelaySeconds: 10
