@@ -11,8 +11,10 @@
   .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; margin-bottom: 24px; align-items: start; }
   .card { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 16px; }
   .card h2 { font-size: 1.2rem; margin: 0 0 12px; color: #c9d1d9; }
-  .row { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid #21262d; font-size: 1rem; }
+  .row { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid #21262d; font-size: 1rem; gap: 8px; }
   .row:last-child { border-bottom: none; }
+  .row > span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+  .row > span:last-child { flex-shrink: 0; }
   .dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 8px; }
   .ok { background: #3fb950; }
   .bad { background: #f85149; }
@@ -50,10 +52,6 @@
       <h2>API</h2>
       <div id="api-health"></div>
     </div>
-    <div class="card">
-      <h2>Pods</h2>
-      <div id="pods"></div>
-    </div>
     <div class="card wide">
       <h2>Pi metrics</h2>
       <div id="pi-metrics"></div>
@@ -64,6 +62,10 @@
       <button id="btn-on" onclick="runGaming('on')">Start gaming mode</button>
       <button id="btn-off" class="off" onclick="runGaming('off')">End gaming mode</button>
       <div id="gaming-output"></div>
+    </div>
+    <div class="card">
+      <h2>Pods</h2>
+      <div id="pods"></div>
     </div>
   </div>
 
@@ -122,7 +124,7 @@ async function refresh() {
     });
     document.getElementById('pods').innerHTML = data.pods.map(p => `
       <div class="row">
-        <span>${dot(p.phase === 'Running' && p.ready === p.total ? 'ok' : (p.phase === 'Succeeded' ? 'ok' : 'bad'))}${p.name}</span>
+        <span title="${p.name}">${dot(p.phase === 'Running' && p.ready === p.total ? 'ok' : (p.phase === 'Succeeded' ? 'ok' : 'bad'))}${p.name}</span>
         <span class="muted">${p.namespace} · ${p.ready}/${p.total} · ${p.node || '?'}</span>
       </div>
     `).join('') || '<div class="muted">no data</div>';
