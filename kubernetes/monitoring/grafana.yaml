@@ -120,6 +120,65 @@ data:
             { "expr": "histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket[5m])) by (le, handler))", "legendFormat": "{{handler}}", "refId": "A" }
           ],
           "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] }
+        },
+        {
+          "id": 7,
+          "title": "Pi CPU Temperature",
+          "type": "timeseries",
+          "datasource": "Prometheus",
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 30 },
+          "targets": [
+            { "expr": "node_hwmon_temp_celsius{job=\"node-pi\",chip=\"thermal_thermal_zone0\",sensor=\"temp0\"}", "legendFormat": "SoC Temp", "refId": "A" }
+          ],
+          "fieldConfig": { "defaults": { "unit": "celsius", "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 60 }, { "color": "red", "value": 80 }] } }, "overrides": [] }
+        },
+        {
+          "id": 8,
+          "title": "Pi Load Average",
+          "type": "timeseries",
+          "datasource": "Prometheus",
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 30 },
+          "targets": [
+            { "expr": "node_load1{job=\"node-pi\"}", "legendFormat": "1m", "refId": "A" },
+            { "expr": "node_load5{job=\"node-pi\"}", "legendFormat": "5m", "refId": "B" },
+            { "expr": "node_load15{job=\"node-pi\"}", "legendFormat": "15m", "refId": "C" }
+          ],
+          "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] }
+        },
+        {
+          "id": 9,
+          "title": "Pi Network Throughput",
+          "type": "timeseries",
+          "datasource": "Prometheus",
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 38 },
+          "targets": [
+            { "expr": "rate(node_network_receive_bytes_total{job=\"node-pi\",device!=\"lo\"}[5m])", "legendFormat": "RX {{device}}", "refId": "A" },
+            { "expr": "rate(node_network_transmit_bytes_total{job=\"node-pi\",device!=\"lo\"}[5m])", "legendFormat": "TX {{device}}", "refId": "B" }
+          ],
+          "fieldConfig": { "defaults": { "unit": "Bps" }, "overrides": [] }
+        },
+        {
+          "id": 10,
+          "title": "Pi Disk I/O Throughput",
+          "type": "timeseries",
+          "datasource": "Prometheus",
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 38 },
+          "targets": [
+            { "expr": "rate(node_disk_read_bytes_total{job=\"node-pi\"}[5m])", "legendFormat": "Read {{device}}", "refId": "A" },
+            { "expr": "rate(node_disk_written_bytes_total{job=\"node-pi\"}[5m])", "legendFormat": "Write {{device}}", "refId": "B" }
+          ],
+          "fieldConfig": { "defaults": { "unit": "Bps" }, "overrides": [] }
+        },
+        {
+          "id": 11,
+          "title": "OOM Kills (since boot)",
+          "type": "stat",
+          "datasource": "Prometheus",
+          "gridPos": { "h": 6, "w": 24, "x": 0, "y": 46 },
+          "targets": [
+            { "expr": "node_vmstat_oom_kill{job=\"node-pi\"}", "legendFormat": "OOM Kills", "refId": "A" }
+          ],
+          "fieldConfig": { "defaults": { "unit": "short", "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "red", "value": 1 }] } }, "overrides": [] }
         }
       ]
     }
