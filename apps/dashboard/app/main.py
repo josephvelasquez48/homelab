@@ -6,7 +6,7 @@ from fastapi import FastAPI
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from app import k8s
+from app import k8s, prometheus
 from app.config import API_HEALTH_URL, GAMING_NODE_NAME, WATCHED_NAMESPACES
 from app.ssh_runner import run_gaming_script
 
@@ -42,10 +42,11 @@ async def health():
 async def status():
     k8s_client = app.state.k8s
 
-    nodes, pods_by_ns, argo_apps = await asyncio.gather(
+    nodes, pods_by_ns, argo_apps, pi_metrics = await asyncio.gather(
         k8s.get_nodes(k8s_client),
         asyncio.gather(*(k8s.get_pods(k8s_client, ns) for ns in WATCHED_NAMESPACES)),
         k8s.get_argo_applications(k8s_client),
+        prometheus.get_pi_metrics(app.state.http),
         return_exceptions=True,
     )
 
@@ -57,6 +58,8 @@ async def status():
             pods.extend(ns_pods)
     if isinstance(argo_apps, Exception):
         argo_apps = []
+    if isinstance(pi_metrics, Exception):
+        pi_metrics = dict.fromkeys(prometheus.QUERIES)
 
     gaming_node = next((n for n in nodes if n["name"] == GAMING_NODE_NAME), None)
     gaming_mode_active = bool(gaming_node) and not gaming_node["schedulable"]
@@ -73,6 +76,7 @@ async def status():
         "argo_apps": argo_apps,
         "gaming_mode_active": gaming_mode_active,
         "api_health": api_health,
+        "pi_metrics": pi_metrics,
     }
 
 

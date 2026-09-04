@@ -1,4 +1,6 @@
-from tests.conftest import FAKE_ARGO_APPS, FAKE_NODES, FAKE_PODS
+from unittest.mock import AsyncMock
+
+from tests.conftest import FAKE_ARGO_APPS, FAKE_NODES, FAKE_PI_METRICS, FAKE_PODS
 
 
 def test_status_shape(client):
@@ -9,6 +11,19 @@ def test_status_shape(client):
     assert data["argo_apps"] == FAKE_ARGO_APPS
     assert len(data["pods"]) == len(FAKE_PODS) * 5  # one WATCHED_NAMESPACES entry per namespace
     assert data["api_health"] == {"reachable": True, "status_code": 200, "body": {"status": "ok"}}
+    assert data["pi_metrics"] == FAKE_PI_METRICS
+
+
+def test_status_degrades_gracefully_when_prometheus_unreachable(client, monkeypatch):
+    from app import prometheus
+
+    monkeypatch.setattr(
+        prometheus, "get_pi_metrics", AsyncMock(side_effect=Exception("prometheus unreachable"))
+    )
+
+    res = client.get("/api/status")
+    assert res.status_code == 200
+    assert res.json()["pi_metrics"] == dict.fromkeys(prometheus.QUERIES)
 
 
 def test_gaming_mode_inactive_when_desktop_schedulable(client):

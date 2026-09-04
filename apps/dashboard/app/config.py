@@ -25,3 +25,8 @@ GAMING_SSH_KNOWN_HOSTS_PATH = os.environ.get(
 GAMING_SCRIPT_DIR = os.environ.get("GAMING_SCRIPT_DIR", "D:\\homelab\\gaming-mode")
 
 API_HEALTH_URL = os.environ.get("API_HEALTH_URL", "http://api.backend.svc.cluster.local:8000/health")
+
+# Same in-cluster Prometheus the Grafana datasource points at
+# (kubernetes/monitoring/grafana.yaml) - queried directly here rather than
+# through Grafana, since this page only needs a handful of instant values.
+PROMETHEUS_URL = os.environ.get("PROMETHEUS_URL", "http://prometheus.monitoring.svc.cluster.local:9090")
