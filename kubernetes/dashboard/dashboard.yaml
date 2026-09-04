@@ -98,7 +98,7 @@ spec:
         kubernetes.io/hostname: joe
       containers:
         - name: dashboard
-          image: ghcr.io/josephvelasquez48/homelab-dashboard:4e0444ff257f
+          image: ghcr.io/josephvelasquez48/homelab-dashboard:6d9ba060a98d
           ports:
             - containerPort: 8000
           volumeMounts:
