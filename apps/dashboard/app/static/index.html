@@ -5,30 +5,30 @@
 <title>Homelab Dashboard</title>
 <style>
   :root { color-scheme: dark; }
-  body { font-family: -apple-system, system-ui, sans-serif; background: #0d1117; color: #c9d1d9; margin: 0; padding: 24px; }
-  h1 { font-size: 1.4rem; margin-bottom: 4px; }
-  .sub { color: #8b949e; margin-bottom: 24px; }
+  body { font-family: -apple-system, system-ui, sans-serif; background: #0d1117; color: #c9d1d9; margin: 0; padding: 24px; font-size: 18px; }
+  h1 { font-size: 1.8rem; margin-bottom: 4px; }
+  .sub { color: #8b949e; margin-bottom: 24px; font-size: 1.05rem; }
   .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; margin-bottom: 24px; }
   .card { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 16px; }
-  .card h2 { font-size: 1rem; margin: 0 0 12px; color: #c9d1d9; }
-  .row { display: flex; justify-content: space-between; align-items: center; padding: 6px 0; border-bottom: 1px solid #21262d; font-size: 0.9rem; }
+  .card h2 { font-size: 1.2rem; margin: 0 0 12px; color: #c9d1d9; }
+  .row { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid #21262d; font-size: 1rem; }
   .row:last-child { border-bottom: none; }
-  .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 8px; }
+  .dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 8px; }
   .ok { background: #3fb950; }
   .bad { background: #f85149; }
   .warn { background: #d29922; }
-  .muted { color: #8b949e; font-size: 0.85rem; }
-  button { background: #238636; color: white; border: none; border-radius: 6px; padding: 10px 18px; font-size: 0.95rem; cursor: pointer; margin-right: 8px; }
+  .muted { color: #8b949e; font-size: 0.95rem; }
+  button { background: #238636; color: white; border: none; border-radius: 6px; padding: 12px 20px; font-size: 1.05rem; cursor: pointer; margin-right: 8px; }
   button.off { background: #6e40c9; }
   button:disabled { background: #30363d; cursor: not-allowed; }
-  #gaming-output { white-space: pre-wrap; background: #010409; border: 1px solid #30363d; border-radius: 6px; padding: 12px; margin-top: 12px; font-family: ui-monospace, monospace; font-size: 0.8rem; max-height: 300px; overflow-y: auto; display: none; }
-  #gaming-status { margin-bottom: 12px; font-size: 0.9rem; }
+  #gaming-output { white-space: pre-wrap; background: #010409; border: 1px solid #30363d; border-radius: 6px; padding: 12px; margin-top: 12px; font-family: ui-monospace, monospace; font-size: 0.9rem; max-height: 300px; overflow-y: auto; display: none; }
+  #gaming-status { margin-bottom: 12px; font-size: 1rem; }
   .card.wide { grid-column: span 2; }
   .stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
   .stat-tile { display: flex; flex-direction: column; gap: 6px; background: #0d1117; border: 1px solid #21262d; border-left: 3px solid #30363d; border-radius: 6px; padding: 10px 12px; }
-  .stat-label { font-size: 0.78rem; color: #8b949e; text-transform: uppercase; letter-spacing: 0.04em; }
-  .stat-num { font-size: 1.65rem; font-weight: 600; font-variant-numeric: tabular-nums; line-height: 1.15; letter-spacing: -0.01em; }
-  .stat-sub { font-size: 0.75rem; color: #8b949e; }
+  .stat-label { font-size: 0.85rem; color: #8b949e; text-transform: uppercase; letter-spacing: 0.04em; }
+  .stat-num { font-size: 1.9rem; font-weight: 600; font-variant-numeric: tabular-nums; line-height: 1.15; letter-spacing: -0.01em; }
+  .stat-sub { font-size: 0.85rem; color: #8b949e; }
   .bar-track { background: #21262d; border-radius: 6px; height: 7px; overflow: hidden; }
   .bar-fill { height: 100%; border-radius: 6px; transition: width 0.5s ease, background-color 0.5s ease; }
 </style>
