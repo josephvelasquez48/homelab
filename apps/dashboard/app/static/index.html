@@ -28,10 +28,10 @@
   #gaming-output { white-space: pre-wrap; background: #010409; border: 1px solid #30363d; border-radius: 6px; padding: 12px; margin-top: 12px; font-family: ui-monospace, monospace; font-size: 0.9rem; max-height: 300px; overflow-y: auto; display: none; }
   #gaming-status { margin-bottom: 12px; font-size: 1rem; }
   .card.wide { grid-column: span 2; }
-  .stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
-  .stat-tile { display: flex; flex-direction: column; gap: 6px; background: #0d1117; border: 1px solid #21262d; border-left: 3px solid #30363d; border-radius: 6px; padding: 10px 12px; }
+  .stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 16px; }
+  .stat-tile { display: flex; flex-direction: column; justify-content: center; gap: 10px; background: #0d1117; border: 1px solid #21262d; border-left: 3px solid #30363d; border-radius: 6px; padding: 20px; min-height: 140px; }
   .stat-label { font-size: 0.85rem; color: #8b949e; text-transform: uppercase; letter-spacing: 0.04em; }
-  .stat-num { font-size: 1.9rem; font-weight: 600; font-variant-numeric: tabular-nums; line-height: 1.15; letter-spacing: -0.01em; }
+  .stat-num { font-size: 2.4rem; font-weight: 600; font-variant-numeric: tabular-nums; line-height: 1.15; letter-spacing: -0.01em; }
   .stat-sub { font-size: 0.85rem; color: #8b949e; }
   .bar-track { background: #21262d; border-radius: 6px; height: 7px; overflow: hidden; }
   .bar-fill { height: 100%; border-radius: 6px; transition: width 0.5s ease, background-color 0.5s ease; }
@@ -50,6 +50,10 @@
       <h2>Argo CD Applications</h2>
       <div id="argo-apps" class="multi-col"></div>
     </div>
+    <div class="card wide">
+      <h2>Pi metrics</h2>
+      <div id="pi-metrics"></div>
+    </div>
     <div class="card">
       <h2>Nodes</h2>
       <div id="nodes"></div>
@@ -57,10 +61,6 @@
     <div class="card">
       <h2>API</h2>
       <div id="api-health"></div>
-    </div>
-    <div class="card wide">
-      <h2>Pi metrics</h2>
-      <div id="pi-metrics"></div>
     </div>
     <div class="card">
       <h2>Gaming mode</h2>
