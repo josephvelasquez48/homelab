@@ -506,3 +506,16 @@ build-and-push done by hand in this phase.
   boot. Left in place rather than removed: it's a no-op now, and having
   it there as a backstop costs nothing if `instanceIdleTimeout` ever
   stops being honored (e.g. a future WSL update).
+
+- Same day, immediately after: ran `wsl --update` while the cluster was
+  healthy and idle - `2.5.10.0` -> `2.7.13.0`, kernel `6.6.87.2` ->
+  `6.18.33.2`. A platform update only takes effect for a distro on its
+  next start, not the currently-running one, so this needed the same
+  `wsl --shutdown` + `k3s-agent` restart pattern as the
+  `instanceIdleTimeout` fix above. Confirmed the new kernel actually
+  took (`uname -r` inside the distro, not just `wsl --version` on the
+  Windows side) before considering it done. Node came back `Ready`,
+  full pod sweep clean, all 7 Argo CD Applications `Synced`/`Healthy`
+  afterward. No regression expected for `instanceIdleTimeout`, but
+  worth confirming it holds on this newer build over the next while
+  rather than assuming a platform update couldn't touch it.
