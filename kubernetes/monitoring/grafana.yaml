@@ -54,7 +54,7 @@ data:
           "datasource": "Prometheus",
           "gridPos": { "h": 6, "w": 24, "x": 0, "y": 0 },
           "targets": [
-            { "expr": "up", "legendFormat": "{{job}}: {{pod}}{{instance}}", "refId": "A", "instant": true, "range": false }
+            { "expr": "up", "legendFormat": "{{job}}: {{pod}}", "refId": "A", "instant": true, "range": false }
           ],
           "fieldConfig": {
             "defaults": {
