@@ -61,6 +61,11 @@
     </div>
   </div>
 
+  <div class="card" style="margin-bottom: 24px;">
+    <h2>Desktop metrics</h2>
+    <div id="desktop-metrics" class="compact"></div>
+  </div>
+
   <div class="grid">
     <div class="card">
       <h2>Pods</h2>
@@ -104,6 +109,49 @@ function bar(pct, color) {
   return `<div class="bar-track"><div class="bar-fill" style="width:${clamped}%;background:${color}"></div></div>`;
 }
 
+function renderMetricsCard(elementId, metrics, { cores, showTemp }) {
+  const m = metrics || {};
+  const loadColor = severityColor(m.load1, cores * 0.5, cores);
+  const oomColor = m.oom_kills ? '#f85149' : '#3fb950';
+
+  const tempTile = showTemp ? (() => {
+    const tempColor = severityColor(m.cpu_temp_c, 60, 80);
+    return `
+      <div class="stat-tile" style="border-left-color:${tempColor}">
+        <span class="stat-label">CPU temp</span>
+        <span class="stat-num" style="color:${tempColor}">${m.cpu_temp_c != null ? m.cpu_temp_c.toFixed(1) + ' °C' : 'n/a'}</span>
+        ${bar(m.cpu_temp_c != null ? m.cpu_temp_c : 0, tempColor)}
+      </div>
+    `;
+  })() : '';
+
+  document.getElementById(elementId).innerHTML = `
+    <div class="stat-grid">
+      ${tempTile}
+      <div class="stat-tile" style="border-left-color:${loadColor}">
+        <span class="stat-label">Load (1m)</span>
+        <span class="stat-num" style="color:${loadColor}">${fmtNum(m.load1)}</span>
+        ${bar(m.load1 != null ? (m.load1 / cores) * 100 : 0, loadColor)}
+        <span class="stat-sub">5m ${fmtNum(m.load5)} · 15m ${fmtNum(m.load15)}</span>
+      </div>
+      <div class="stat-tile" style="border-left-color:#58a6ff">
+        <span class="stat-label">Network RX / TX</span>
+        <span class="stat-num">${fmtBytesPerSec(m.net_rx_bytes_per_sec)}</span>
+        <span class="stat-sub">TX ${fmtBytesPerSec(m.net_tx_bytes_per_sec)}</span>
+      </div>
+      <div class="stat-tile" style="border-left-color:#58a6ff">
+        <span class="stat-label">Disk read / write</span>
+        <span class="stat-num">${fmtBytesPerSec(m.disk_read_bytes_per_sec)}</span>
+        <span class="stat-sub">write ${fmtBytesPerSec(m.disk_write_bytes_per_sec)}</span>
+      </div>
+      <div class="stat-tile" style="border-left-color:${oomColor}">
+        <span class="stat-label">OOM kills</span>
+        <span class="stat-num" style="color:${oomColor}">${m.oom_kills != null ? m.oom_kills : 'n/a'}</span>
+      </div>
+    </div>
+  `;
+}
+
 async function refresh() {
   try {
     const res = await fetch('/api/status');
@@ -140,42 +188,8 @@ async function refresh() {
       </div>
     `).join('') || '<div class="muted">no data</div>';
 
-    const m = data.pi_metrics || {};
-    // Raspberry Pi 5 is a fixed quad-core board, so load is scaled against 4 cores.
-    const PI_CORES = 4;
-    const tempColor = severityColor(m.cpu_temp_c, 60, 80);
-    const loadColor = severityColor(m.load1, PI_CORES * 0.5, PI_CORES);
-    const oomColor = m.oom_kills ? '#f85149' : '#3fb950';
-
-    document.getElementById('pi-metrics').innerHTML = `
-      <div class="stat-grid">
-        <div class="stat-tile" style="border-left-color:${tempColor}">
-          <span class="stat-label">CPU temp</span>
-          <span class="stat-num" style="color:${tempColor}">${m.cpu_temp_c != null ? m.cpu_temp_c.toFixed(1) + ' °C' : 'n/a'}</span>
-          ${bar(m.cpu_temp_c != null ? m.cpu_temp_c : 0, tempColor)}
-        </div>
-        <div class="stat-tile" style="border-left-color:${loadColor}">
-          <span class="stat-label">Load (1m)</span>
-          <span class="stat-num" style="color:${loadColor}">${fmtNum(m.load1)}</span>
-          ${bar(m.load1 != null ? (m.load1 / PI_CORES) * 100 : 0, loadColor)}
-          <span class="stat-sub">5m ${fmtNum(m.load5)} · 15m ${fmtNum(m.load15)}</span>
-        </div>
-        <div class="stat-tile" style="border-left-color:#58a6ff">
-          <span class="stat-label">Network RX / TX</span>
-          <span class="stat-num">${fmtBytesPerSec(m.net_rx_bytes_per_sec)}</span>
-          <span class="stat-sub">TX ${fmtBytesPerSec(m.net_tx_bytes_per_sec)}</span>
-        </div>
-        <div class="stat-tile" style="border-left-color:#58a6ff">
-          <span class="stat-label">Disk read / write</span>
-          <span class="stat-num">${fmtBytesPerSec(m.disk_read_bytes_per_sec)}</span>
-          <span class="stat-sub">write ${fmtBytesPerSec(m.disk_write_bytes_per_sec)}</span>
-        </div>
-        <div class="stat-tile" style="border-left-color:${oomColor}">
-          <span class="stat-label">OOM kills</span>
-          <span class="stat-num" style="color:${oomColor}">${m.oom_kills != null ? m.oom_kills : 'n/a'}</span>
-        </div>
-      </div>
-    `;
+    renderMetricsCard('pi-metrics', data.pi_metrics, { cores: 4, showTemp: true });
+    renderMetricsCard('desktop-metrics', data.desktop_metrics, { cores: 28, showTemp: false });
 
     document.getElementById('btn-on').disabled = data.gaming_mode_active;
     document.getElementById('btn-off').disabled = !data.gaming_mode_active;
