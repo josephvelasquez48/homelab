@@ -36,6 +36,33 @@
   currently in the pipeline needs it, but it's available if a future step
   does.
 
+- 2026-09-05: **Concurrent-deploy race, found by accident, not design.**
+  Bumping `actions/checkout`/`astral-sh/setup-uv` versions touched both
+  `ci.yml` and `ci-dashboard.yml` in one commit - the first time a single
+  push had triggered both pipelines' `deploy` jobs at once. Both commit a
+  manifest update straight to `main` with zero coordination between them;
+  whichever's `git push` lands second gets `! [rejected] ... (fetch
+  first)` since the branch moved out from under it. `ci.yml`'s deploy won
+  the race and succeeded; `ci-dashboard.yml`'s failed.
+
+  **`gh run rerun --failed` doesn't fix this** - it re-executes against
+  the *original* trigger commit (`actions/checkout` with no `ref` pins to
+  `github.sha`, not current `main`), so a rerun is permanently stale
+  once `main` has moved past it and just fails the same way again.
+  Confirmed by trying it.
+
+  **No actual content conflict is possible** - the two deploy jobs touch
+  entirely different files (`kubernetes/dashboard/dashboard.yaml` vs.
+  `kubernetes/backend/{api,worker}.yaml`), so this is purely a git-ref
+  race, not a merge conflict. Fixed with two things together, both
+  needed: a shared `concurrency: { group: git-deploy-main }` on both
+  deploy jobs (so the second waits instead of racing) plus `git pull
+  --rebase origin main` right before the `git push` (so the job that
+  waited, or one that's already mid-flight, still rebases onto whatever
+  the current tip actually is before pushing - concurrency alone only
+  serializes *when* each job runs, it doesn't refresh a checkout that
+  was already pinned to a now-stale commit at trigger time).
+
 Roadmap step 11:
 
 ```
