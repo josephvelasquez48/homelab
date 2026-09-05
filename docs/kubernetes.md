@@ -448,3 +448,61 @@ build-and-push done by hand in this phase.
   affects real functionality and both would need deeper environment-
   specific debugging (WSL2 container runtime internals; Traefik's
   metrics-server bind address) to actually close out.
+
+## Log (continued) - the keepalive task was masking the real WSL2 bug, not fixing it
+
+- 2026-09-04, later the same day: chasing the `svclb-traefik` flap above
+  led somewhere the "confirmed fixed" idle-timeout entry from
+  2026-09-03 turned out to be wrong about. `dmesg -T` on the desktop's
+  Ubuntu-24.04 instance showed `WaitForBootProcess: /sbin/init failed
+  to start within 10000ms` plus an EXT4 unmount/remount cycle, **every
+  single minute, over 100 times in a row** (`15:08` through at least
+  `16:49`) - predating today's Pi reboot entirely, so this had been
+  running the whole time, not something today's work triggered.
+
+  **What the previous fix actually did vs. what it looked like it did**:
+  the keepalive task doesn't keep the instance warm between pings - each
+  `/bin/true` invocation was forcing a full cold mount+boot of the
+  distro from scratch, every single time, because `vmIdleTimeout`
+  governs only the shared WSL2 utility VM (confirmed separately still
+  running continuously via `uptime -s`, up since 06:14 the whole day) -
+  it does nothing for an individual distro's own idle detection. The
+  2026-09-03 "confirmed fixed" test wasn't wrong that the node stayed
+  `Ready` - it just didn't know a full cold-boot was happening under the
+  hood every 60 seconds anyway, fast enough each time (~15-30s) to not
+  trip the `NotReady` grace period. Today's heavier concurrent load
+  (reboot recovery, multiple manual `wsl.exe` invocations while
+  debugging) pushed some of those cold-boots slow enough to actually
+  surface as visible cluster flapping - the keepalive task didn't cause
+  today's instability, it had been silently papering over a real bug
+  the entire time.
+
+  **Nearly disabled the keepalive task as "the fix"** based on the
+  crash-pattern evidence alone, before checking what it would actually
+  do: since it's the thing *reviving* the instance each cycle rather
+  than what's crashing it, disabling it would have left the node
+  permanently dead the next time WSL idled the instance out, not fixed
+  anything. Caught before doing it, not after.
+
+  **Actual fix**: `instanceIdleTimeout=-1` under `[general]` in
+  `.wslconfig` - the documented, correct setting for per-instance idle
+  detection, as distinct from `[wsl2]`'s `vmIdleTimeout` which only
+  ever covered the shared VM. Needed `wsl --shutdown` to take effect
+  (same requirement as the original `vmIdleTimeout` fix), applied while
+  the cluster was healthy and idle - lowest-risk moment, same reasoning
+  as the first time this command was needed.
+
+  **Confirmed fixed, not just "the setting is present"**: after the
+  `wsl --shutdown` + `k3s-agent` restart, watched `dmesg` across
+  multiple keepalive cycles (4+ minutes, several 60s ticks) with zero
+  `WaitForBootProcess` or unmount events - a first, given every single
+  prior minute for the past two hours had produced one. `k3s-agent`
+  held `active` continuously across the same window instead of
+  restarting on its usual cadence.
+
+  **The keepalive task itself is now redundant but harmless** - with
+  the instance no longer idling out, its once-a-minute `/bin/true` ping
+  just touches an already-running distro instead of forcing a cold
+  boot. Left in place rather than removed: it's a no-op now, and having
+  it there as a backstop costs nothing if `instanceIdleTimeout` ever
+  stops being honored (e.g. a future WSL update).
