@@ -44,3 +44,19 @@ spec:
     - from:
         - ipBlock: { cidr: 192.168.1.0/24 }
         - ipBlock: { cidr: fd00:f405:95c7:c412::/64 }
+    # Narrow, separate exception for in-cluster Prometheus scraping of
+    # Traefik's own metrics endpoint (see docs/kubernetes.md - discovered
+    # via Grafana's "Targets Up" panel showing this scrape as down).
+    # Scoped to just Prometheus's pod, in the monitoring namespace, on
+    # just the metrics port - the LAN-only restriction above is
+    # unchanged for every web-facing port (80/443/8080/8443).
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+          podSelector:
+            matchLabels:
+              app: prometheus
+      ports:
+        - protocol: TCP
+          port: 9100
