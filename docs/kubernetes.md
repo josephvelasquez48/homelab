@@ -542,3 +542,119 @@ build-and-push done by hand in this phase.
   afterward. No regression expected for `instanceIdleTimeout`, but
   worth confirming it holds on this newer build over the next while
   rather than assuming a platform update couldn't touch it.
+
+## Log (continued) - `host-gw` was never compatible with WSL2 mirrored mode, and the fix had its own bug
+
+- 2026-09-05: A routine post-PC-reboot check found both nodes `Ready`
+  and Argo CD healthy, but Prometheus showed one `api` replica
+  (scheduled on `desktop-j1grrmu`) permanently `down` - `context
+  deadline exceeded`, even on `/health`. Narrowed with direct tests
+  before touching anything: the same-node replica (on `joe`, same node
+  as Prometheus) scraped fine; `desktop -> joe` pod traffic worked
+  (the `worker` pod reached Postgres); `joe -> desktop` pod traffic was
+  100% packet loss to *any* IP in that subnet, even the `cni0` gateway
+  itself. A `tcpdump` on desktop's `eth1` during a ping from `joe`
+  captured **zero packets** - not a firewall drop inside Linux, the
+  traffic never arrived at the Windows-managed NIC at all.
+
+  **Ruled out, in order:**
+  - Windows network category (Public vs. Private) - was Public,
+    switched to Private, no change.
+  - Stale mirrored-networking state - `wsl --shutdown` (interface even
+    renumbered `eth0` -> `eth1` as expected from a full VM restart),
+    no change.
+
+  **Actual root cause, found via `pktmon` (not guessed):** captured on
+  the physical NIC while pinging from `joe` - the packet arrives, passes
+  the WFP filter cleanly, then `TCPIP` itself drops it: `DropReason Not
+  locally destined, DropLocation 0xE0004101`. Windows' own IP stack
+  refuses to route a packet whose destination isn't a locally-owned
+  address unless the interface has forwarding explicitly enabled, which
+  it didn't. This is a structural incompatibility, not a
+  misconfiguration: `host-gw` requires the desktop's Windows host to act
+  as a router for the `10.42.1.0/24` pod subnet, and Windows' strong-host
+  model blocks exactly that by default. Confirms this is a different
+  failure mode than the earlier VXLAN/`host-gw` switch documented above
+  - that fix (avoiding UDP encapsulation Windows' network stack didn't
+  like) doesn't help here, since plain routed IP has the opposite
+  problem (Windows refusing to forward it at all).
+
+  **Fix, part 1: switched flannel from `host-gw` to `wireguard-native`**
+  (`--flannel-backend=wireguard-native` on the k3s server, restart `k3s`
+  on `joe` then `k3s-agent` on desktop - same mechanism as the earlier
+  backend switch). This sidesteps the forwarding problem entirely rather
+  than fighting it: a WireGuard packet's destination is the peer's real
+  IP:port (a **locally-owned** address), so it's just normal inbound
+  traffic to a listening socket, never a "forward this to somewhere
+  else" decision. Confirmed kernel WireGuard support existed on both
+  nodes (`modprobe wireguard`) before switching.
+
+  **Fix, part 2: the existing WireGuard firewall rule was in the wrong
+  firewall.** A `K3s-WireGuard-Pi` rule already existed allowing UDP
+  51820 from the Pi - but it was a **Hyper-V firewall** rule
+  (`Get-NetFirewallHyperVRule`), which governs Hyper-V vSwitch traffic.
+  Mirrored-mode WSL2 doesn't create a separate vSwitch/adapter for this
+  (`Get-NetAdapter` showed no `vEthernet (WSL)` adapter, just the real
+  physical one) - so that rule likely never applied to this traffic path
+  at all. `Get-NetFirewallRule` (the classic Windows Defender Firewall,
+  which does govern the physical adapter) had no rule for port 51820 -
+  confirmed with packet captures on both ends: the Pi *was* sending its
+  handshake response, it just never reached desktop. Added the missing
+  classic-firewall counterpart, scoped the same way as the existing
+  kubelet-metrics rule (LAN/single-source only, not a blanket port
+  opening).
+
+  **That firewall rule alone didn't fix it, though** - a `tcpdump` on
+  desktop's `eth1` right after adding it still showed zero replies from
+  the Pi. The handshake only started succeeding after a second,
+  unrelated action: installing `iperf` and attempting
+  `iperf -u -s -p 51820` (expected to fail, since the kernel WireGuard
+  module already owns that port - `listener bind failed: Address
+  already in use`, confirmed via `ss -ulnp` beforehand). Immediately
+  after that failed bind attempt, `wg show` went from `0 B received`
+  (stuck there through dozens of retries) to a completed handshake.
+  Best explanation, not fully confirmed: WSL2 mirrored networking may
+  not always register a kernel-owned socket (as opposed to a normal
+  userspace `bind()`) for Windows-side inbound visibility on its own,
+  and a userspace bind attempt against that same port - even one that
+  fails - seems to trigger WSL2 to notice and register it. If a
+  WireGuard (or similar kernel-socket) port silently refuses inbound
+  traffic again despite correct firewall rules on both sides, try a
+  throwaway `iperf`/`nc` bind attempt against the same port before
+  assuming the firewall is still wrong.
+
+  **Fix, part 3 (the one that actually mattered): stale routes from the
+  old backend were shadowing the new one.** Even after both fixes above,
+  cross-node ping was still 100% loss. `wg show` showed one successful
+  handshake (proving the tunnel itself worked) but zero data bytes ever
+  received afterward - not a firewall problem at that point, something
+  routing traffic around the tunnel entirely. `ip route | grep 10.42` on
+  both nodes found it: a leftover `host-gw`-era route
+  (`10.42.1.0/24 via 192.168.1.131 dev wlan0` on the Pi;
+  `10.42.0.0/24 via 192.168.1.253 dev eth1` on desktop) still present
+  alongside the new `10.42.0.0/16 dev flannel-wg` route. Linux routing
+  is longest-prefix-match, so the old, more specific `/24` route was
+  winning over the new, broader `/16` route on **both** nodes - meaning
+  every packet since the backend switch had been going out the old raw
+  path and hitting the exact same "not locally destined" drop, making
+  it look like the WireGuard fix hadn't done anything. A live
+  `systemctl restart` of flannel's backend doesn't clean up routes
+  belonging to the *previous* backend - deleted both stale routes by
+  hand (`ip route del`), and cross-node ping went from 100% loss to 0%
+  loss immediately, no other change involved.
+
+  **Confirmed fixed with real traffic, not just ping**: `wg show`
+  climbed from 0 B to tens of KiB received on both ends: Prometheus's
+  `/api/v1/targets` flipped the previously-`down` desktop `api` replica
+  to `up`; full cluster sweep afterward showed every pod
+  `Running`/`Completed` and all 7 Argo CD Applications
+  `Synced`/`Healthy`.
+
+  **Takeaway for next time**: switching flannel backends via a live
+  `systemctl restart` (rather than a full reboot of both nodes) leaves
+  the old backend's routes in place, and they can silently take priority
+  over the new backend's route via longest-prefix-match without any
+  error or log message pointing at it. Any future flannel backend change
+  needs an explicit `ip route del` for the old backend's routes on every
+  node as part of the switch, not just a service restart - checked with
+  `ip route | grep 10.42`, not assumed clean.
