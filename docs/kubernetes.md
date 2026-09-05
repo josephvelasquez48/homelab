@@ -430,6 +430,29 @@ build-and-push done by hand in this phase.
   there longer) - **left unresolved**, cosmetic only, doesn't affect
   Traefik's actual routing or any other Grafana panel.
 
+  **Follow-up, same day - the loopback theory was wrong.** `netstat
+  -tlnp` inside the Traefik pod showed `:::9100 LISTEN` - a real
+  dual-stack bind, not loopback-only. `wget http://localhost:9100`
+  had been succeeding via `::1` (confirmed via `getent hosts
+  localhost`), which masked the actual cause: curling the pod's own
+  IPv4 address *from inside the same pod* also worked fine, but the
+  identical request from Prometheus - a different pod - was refused.
+  That pointed at something enforcing traffic *between* pods rather
+  than anything about the listening socket, and `kubectl get
+  networkpolicy -A` found it immediately: `traefik-lan-only`
+  (`kubernetes/argocd/traefik-security.yaml`), a deliberate policy
+  restricting Traefik ingress to the LAN CIDR only. Not a bug at all -
+  the policy was doing exactly what it was written to do, it just had
+  no exception for legitimate in-cluster traffic like Prometheus's own
+  scrape. Fixed with a second, narrowly-scoped `ingress` rule limited
+  to the `monitoring` namespace's `app: prometheus` pod, on port 9100
+  only - every other port and every other source stays LAN-restricted
+  exactly as before. Applied directly (this file is explicitly
+  not-Argo-managed, same as the rest of `traefik-security.yaml`).
+  Confirmed both ways: `wget` from the Prometheus pod to Traefik's pod
+  IP succeeded immediately after applying, and Prometheus's own
+  `/api/v1/targets` flipped this target to `up` on its next scrape.
+
   **Problem 3 (separate, unrelated): Grafana OOMKilled again, past the
   previous 512Mi fix.** The memory-limit fix from the original
   OOMKilled incident (`docs/secrets.md`-adjacent Grafana notes) held
