@@ -64,3 +64,26 @@ async def get_pi_metrics(client: httpx.AsyncClient) -> dict[str, float | None]:
 
 async def get_desktop_metrics(client: httpx.AsyncClient) -> dict[str, float | None]:
     return await _gather_metrics(client, DESKTOP_QUERIES)
+
+
+# Targets whose instance IP falls in the desktop's pod subnet (10.42.1.0/24)
+# only exist via regular (non-hostNetwork) pod-to-pod traffic crossing the
+# flannel-wg tunnel to reach Prometheus on joe - node-exporter-desktop uses
+# hostNetwork and is reachable via the desktop's real LAN IP instead, so it
+# stays "up" even when the tunnel itself is down and can't be used as this
+# signal. See docs/kubernetes.md for the incident this is meant to surface.
+CROSS_NODE_QUERY = 'up{job="kubernetes-pods", instance=~"10\\.42\\.1\\..*"}'
+
+
+async def get_cross_node_status(client: httpx.AsyncClient) -> str | None:
+    """"up"/"down" from live scrape targets on the desktop's pod subnet, or
+    None if nothing is currently scheduled there to check."""
+    try:
+        r = await client.get(f"{PROMETHEUS_URL}/api/v1/query", params={"query": CROSS_NODE_QUERY})
+        r.raise_for_status()
+        result = r.json()["data"]["result"]
+        if not result:
+            return None
+        return "down" if any(float(item["value"][1]) == 0 for item in result) else "up"
+    except Exception:
+        return None

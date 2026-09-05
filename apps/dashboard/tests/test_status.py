@@ -1,6 +1,13 @@
 from unittest.mock import AsyncMock
 
-from tests.conftest import FAKE_ARGO_APPS, FAKE_DESKTOP_METRICS, FAKE_NODES, FAKE_PI_METRICS, FAKE_PODS
+from tests.conftest import (
+    FAKE_ARGO_APPS,
+    FAKE_CROSS_NODE_STATUS,
+    FAKE_DESKTOP_METRICS,
+    FAKE_NODES,
+    FAKE_PI_METRICS,
+    FAKE_PODS,
+)
 
 
 def test_status_shape(client):
@@ -13,6 +20,7 @@ def test_status_shape(client):
     assert data["api_health"] == {"reachable": True, "status_code": 200, "body": {"status": "ok"}}
     assert data["pi_metrics"] == FAKE_PI_METRICS
     assert data["desktop_metrics"] == FAKE_DESKTOP_METRICS
+    assert data["cross_node_status"] == FAKE_CROSS_NODE_STATUS
 
 
 def test_status_degrades_gracefully_when_prometheus_unreachable(client, monkeypatch):
@@ -24,11 +32,15 @@ def test_status_degrades_gracefully_when_prometheus_unreachable(client, monkeypa
     monkeypatch.setattr(
         prometheus, "get_desktop_metrics", AsyncMock(side_effect=Exception("prometheus unreachable"))
     )
+    monkeypatch.setattr(
+        prometheus, "get_cross_node_status", AsyncMock(side_effect=Exception("prometheus unreachable"))
+    )
 
     res = client.get("/api/status")
     assert res.status_code == 200
     assert res.json()["pi_metrics"] == dict.fromkeys(prometheus.QUERIES)
     assert res.json()["desktop_metrics"] == dict.fromkeys(prometheus.DESKTOP_QUERIES)
+    assert res.json()["cross_node_status"] is None
 
 
 def test_gaming_mode_inactive_when_desktop_schedulable(client):

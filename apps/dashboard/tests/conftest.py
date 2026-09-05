@@ -35,6 +35,7 @@ FAKE_DESKTOP_METRICS = {
     "disk_write_bytes_per_sec": 512.0,
     "oom_kills": 0.0,
 }
+FAKE_CROSS_NODE_STATUS = "up"
 
 
 @pytest.fixture
@@ -47,6 +48,7 @@ def client(monkeypatch):
     monkeypatch.setattr(k8s, "get_argo_applications", AsyncMock(return_value=FAKE_ARGO_APPS))
     monkeypatch.setattr(prometheus, "get_pi_metrics", AsyncMock(return_value=FAKE_PI_METRICS))
     monkeypatch.setattr(prometheus, "get_desktop_metrics", AsyncMock(return_value=FAKE_DESKTOP_METRICS))
+    monkeypatch.setattr(prometheus, "get_cross_node_status", AsyncMock(return_value=FAKE_CROSS_NODE_STATUS))
 
     fake_http = MagicMock()
     fake_http.get = AsyncMock(

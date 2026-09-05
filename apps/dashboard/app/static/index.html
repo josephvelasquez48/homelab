@@ -63,6 +63,7 @@
 
   <div class="card" style="margin-bottom: 24px;">
     <h2>Desktop metrics</h2>
+    <div id="cross-node-status" style="margin-bottom: 12px;"></div>
     <div id="desktop-metrics" class="compact"></div>
   </div>
 
@@ -190,6 +191,16 @@ async function refresh() {
 
     renderMetricsCard('pi-metrics', data.pi_metrics, { cores: 4, showTemp: true });
     renderMetricsCard('desktop-metrics', data.desktop_metrics, { cores: 28, showTemp: false });
+
+    const crossNode = data.cross_node_status;
+    const crossNodeDot = crossNode === 'up' ? 'ok' : (crossNode === 'down' ? 'bad' : 'warn');
+    const crossNodeLabel = crossNode === 'up' ? 'Up' : (crossNode === 'down' ? 'Down — pods here can\'t reach the Pi' : 'Unknown — no desktop pods to check right now');
+    document.getElementById('cross-node-status').innerHTML = `
+      <div class="row">
+        <span>${dot(crossNodeDot)}Cross-node networking</span>
+        <span class="muted">${crossNodeLabel}</span>
+      </div>
+    `;
 
     document.getElementById('btn-on').disabled = data.gaming_mode_active;
     document.getElementById('btn-off').disabled = !data.gaming_mode_active;
