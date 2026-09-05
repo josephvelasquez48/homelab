@@ -103,3 +103,39 @@ needs to write to git, so it moved back to a GitHub-hosted runner).
   from scratch means re-running that command with whatever `stable` points
   to at the time, not a pinned version. Fine for a homelab, worth pinning
   a version if this were closer to production.
+
+## Log
+
+- 2026-09-05: **`repo-server` rescheduled onto the desktop node and took
+  every Application down with it.** A `kubectl rollout restart` of
+  `argocd-repo-server` (to clear a wedged `git` process holding its
+  internal per-repo lock - one stuck fetch blocks every other app's
+  manifest generation, since Argo CD serializes git operations per repo
+  URL, which is why all 7 apps failed together with `DeadlineExceeded`
+  instead of just one) came back up on `desktop-j1grrmu` instead of
+  `joe`, since nothing pins it - every other Argo CD component happened
+  to already be on `joe` from whenever they were first scheduled, so this
+  had never come up before. On desktop, its liveness probe
+  (`/healthz?full=true`) started timing out (`context deadline
+  exceeded`) - almost certainly the same WSL2 mirrored-networking
+  cross-node flakiness this whole session was already fighting, this
+  time hitting Argo CD's own control plane (reaching `argocd-redis` on
+  `joe`) rather than a workload pod - and it got killed and restarted by
+  its own liveness probe roughly every 90 seconds, repeatedly, with the
+  replacement landing on desktop again each time.
+
+  **Fix**: `kubectl patch deployment argocd-repo-server -n argocd`
+  adding `nodeSelector: {kubernetes.io/hostname: joe}` - same reasoning
+  already applied to the dashboard app (`kubernetes/dashboard/
+  dashboard.yaml`): critical infrastructure that needs to stay reliable
+  shouldn't be schedulable onto the optional, removable, and
+  networking-flaky desktop node. This is a live patch, not a git change -
+  Argo CD's own install isn't tracked in this repo (see above), so this
+  won't survive a from-scratch reinstall and should be re-applied if that
+  ever happens.
+
+  Confirmed fixed: pod stable on `joe` past the ~90s mark where every
+  desktop-scheduled instance had been dying, and all 7 Applications
+  recovered `Synced`/`Healthy` within about 3 minutes (Argo's normal
+  staggered reconciliation cadence) once repo-server itself was stable -
+  no other intervention needed once it was on the right node.
