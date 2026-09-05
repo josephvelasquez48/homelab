@@ -13,7 +13,7 @@ spec:
     spec:
       containers:
         - name: worker
-          image: ghcr.io/josephvelasquez48/homelab-api:fcdf56381a4e
+          image: ghcr.io/josephvelasquez48/homelab-api:14a458b77fcf
           command: ["python", "-m", "app.worker"]
           envFrom:
             - configMapRef: { name: api-config }
