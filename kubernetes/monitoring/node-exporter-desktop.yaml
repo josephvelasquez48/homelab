@@ -1,0 +1,68 @@
+# node_exporter for the desktop node - the Pi's equivalent (job "node-pi")
+# runs directly on the Pi's host OS, outside the cluster entirely, since
+# the Pi *is* the control plane. The desktop is a normal worker node, so
+# this runs as a regular pod pinned there via nodeSelector instead of
+# needing a separate host-level systemd service inside its WSL2 instance.
+#
+# hostNetwork + hostPID + hostPath mounts for /proc and /sys: without
+# these, node_exporter would report the *container's* own isolated
+# network/proc namespace (near-zero traffic, container-only process
+# list) rather than the actual desktop node's real usage - the same
+# "see the real host, not the container" reasoning as any standard
+# node_exporter DaemonSet. hostNetwork means this binds directly to the
+# node's real IP on port 9100, same as kubelet's metrics port did -
+# needs the equivalent LAN-scoped Windows Firewall rule to be reachable
+# cross-node (see docs/kubernetes.md).
+#
+# Discovered automatically by Prometheus's existing `kubernetes-pods` SD
+# job via the scrape annotations below - no prometheus.yml change needed.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: node-exporter-desktop
+  namespace: monitoring
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: node-exporter-desktop }
+  template:
+    metadata:
+      labels: { app: node-exporter-desktop }
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9100"
+    spec:
+      nodeSelector:
+        kubernetes.io/hostname: desktop-j1grrmu
+      hostNetwork: true
+      hostPID: true
+      containers:
+        - name: node-exporter
+          image: prom/node-exporter:v1.9.1
+          args:
+            - --path.procfs=/host/proc
+            - --path.sysfs=/host/sys
+            - --path.rootfs=/host/root
+            - --collector.filesystem.mount-points-exclude=^/(dev|proc|sys|host/.+)($|/)
+          ports:
+            - containerPort: 9100
+          volumeMounts:
+            - name: proc
+              mountPath: /host/proc
+              readOnly: true
+            - name: sys
+              mountPath: /host/sys
+              readOnly: true
+            - name: root
+              mountPath: /host/root
+              readOnly: true
+          resources:
+            requests: { cpu: 20m, memory: 32Mi }
+            limits: { cpu: 100m, memory: 64Mi }
+      volumes:
+        - name: proc
+          hostPath: { path: /proc }
+        - name: sys
+          hostPath: { path: /sys }
+        - name: root
+          hostPath: { path: / }
