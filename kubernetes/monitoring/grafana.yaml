@@ -56,6 +56,13 @@ data:
           "targets": [
             { "expr": "up", "legendFormat": "{{job}}: {{pod}}", "refId": "A", "instant": true, "range": false }
           ],
+          "options": {
+            "textMode": "value_and_name",
+            "colorMode": "background",
+            "graphMode": "none",
+            "justifyMode": "center",
+            "text": { "titleSize": 16, "valueSize": 28 }
+          },
           "fieldConfig": {
             "defaults": {
               "mappings": [
