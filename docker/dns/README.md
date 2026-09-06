@@ -57,6 +57,15 @@ Then, one-time setup for AdGuard Home:
 log/stats, not source) - back them up manually if you care about
 history/stats surviving a Pi rebuild.
 
+The admin login itself is backed up separately, SOPS-encrypted, at
+`docker/dns/secrets/adguard-admin.enc.yaml` (`sops --decrypt` to read it -
+see [docs/secrets.md](../../docs/secrets.md)). This is a plain reference
+copy only, not wired into `kubernetes/secrets/apply.sh` or anything
+automated - AdGuard's real, live credential is the bcrypt hash already
+sitting in `adguard/conf/AdGuardHome.yaml`. If that file is ever lost
+(Pi rebuild without an `adguard/` backup), this encrypted copy tells you
+what the login *was*, not a source of truth AdGuard reads from.
+
 ## Verify
 
 ```bash

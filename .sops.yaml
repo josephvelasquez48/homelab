@@ -3,3 +3,12 @@ creation_rules:
     key_groups:
       - age:
           - age1tsns9fmhenrdl5ufs2vs28gut2m464xlcp23440uxp4x3aqvdgzsytyjwx
+  # Non-Kubernetes credentials (Docker Compose services on the Pi, outside
+  # the cluster entirely) - kept separate from kubernetes/secrets/ since
+  # apply.sh blindly kubectl-applies everything there; a plain key/value
+  # file like this one isn't a valid Secret manifest and would break that
+  # loop for everyone else's real secrets.
+  - path_regex: docker/.*/secrets/.*\.enc\.yaml$
+    key_groups:
+      - age:
+          - age1tsns9fmhenrdl5ufs2vs28gut2m464xlcp23440uxp4x3aqvdgzsytyjwx
