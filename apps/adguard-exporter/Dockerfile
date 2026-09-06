@@ -9,7 +9,14 @@ RUN uv sync --no-install-project --no-dev
 
 COPY main.py ./
 
-ENV PATH="/app/.venv/bin:$PATH"
+ENV PATH="/app/.venv/bin:$PATH" \
+    PYTHONDONTWRITEBYTECODE=1
+
+# Non-root - nothing here needs root, and Compose additionally runs this
+# with read_only + cap_drop: [ALL] + no-new-privileges (docker-compose.yml).
+RUN useradd --create-home --uid 1000 --shell /usr/sbin/nologin exporter \
+    && chown -R exporter:exporter /app
+USER exporter
 
 EXPOSE 9618
 

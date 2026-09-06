@@ -50,3 +50,18 @@ services:
     restart: unless-stopped
     depends_on:
       - adguardhome
+    # Already runs as a non-root user (Dockerfile) - this is the rest of
+    # the same "it only needs to poll two read-only HTTP endpoints and
+    # serve /metrics" argument, enforced instead of just true by
+    # convention: no writable filesystem beyond the one thing Python
+    # itself expects (tmpfs /tmp - PYTHONDONTWRITEBYTECODE in the
+    # Dockerfile means it's otherwise unused), every Linux capability
+    # dropped, no privilege-escalation path even if something upstream
+    # of it did allow setuid/setgid.
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
