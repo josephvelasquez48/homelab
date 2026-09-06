@@ -99,6 +99,19 @@ spec:
       containers:
         - name: dashboard
           image: ghcr.io/josephvelasquez48/homelab-dashboard:7a3416406394
+          # DASHBOARD_PASSWORD + SESSION_SECRET for the session auth on
+          # /api/gaming/* (see apps/dashboard/app/auth.py).
+          #
+          # optional: true is deliberate. A required secretRef would leave
+          # the pod in CreateContainerConfigError until the Secret is
+          # applied - i.e. an unapplied Secret would take the whole status
+          # page down, including the part that tells you the cluster is
+          # unhealthy. Optional instead means the pod starts and the app
+          # fails closed on its own: with no password configured nobody can
+          # log in, so the gaming endpoints are unreachable rather than
+          # open. The page says so explicitly via /api/session.
+          envFrom:
+            - secretRef: { name: dashboard-auth, optional: true }
           ports:
             - containerPort: 8000
           volumeMounts:

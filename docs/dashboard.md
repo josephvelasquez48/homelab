@@ -135,12 +135,114 @@ immediately after); `POST /api/gaming/off` correctly reversed it. All 7
 Argo CD Applications (including `dashboard` itself) confirmed
 `Synced`/`Healthy` afterward.
 
+## Auth on the gaming-mode endpoints
+
+`/api/gaming/on` and `/api/gaming/off` require a session. Everything else
+- the status page, `/api/status`, `/health` - stays open on the LAN, the
+same trust boundary as Grafana's and Argo CD's own UIs here.
+
+The split exists because the read-only parts and the state-changing parts
+are not the same risk. This app's POST endpoints SSH to the desktop and
+run PowerShell, so "reachable by anything on the LAN" meant an
+unauthenticated remote-execution path. Worse, it was reachable from
+*off* the LAN: a bodyless `fetch(url, {method: 'POST'})` is a CORS-simple
+request, so any page on the internet could make a LAN user's browser send
+it, and `traefik-lan-only` would see a legitimate LAN source IP. The
+NetworkPolicy controls who can reach the endpoint, not who can cause the
+request.
+
+Two layers, in order of importance:
+
+1. **A session cookie** (`apps/dashboard/app/auth.py`), signed by
+   starlette's `SessionMiddleware`, `HttpOnly` and `SameSite=Strict`.
+   Deliberately *not* the API's `X-API-Key` pattern: this is a browser
+   app, so any key the page could send would have to be embedded in
+   JavaScript that anyone able to load the dashboard can read - a public
+   string, not a credential. The cookie keeps the secret out of the page.
+2. **`Content-Type: application/json` required**, which makes the request
+   non-simple and forces a preflight this app answers no CORS for. This
+   is defence in depth behind the session check, not a boundary of its
+   own - `SameSite=Strict` is what actually stops the cross-site cookie.
+
+`https_only` on the cookie is still `False`, only because the Ingress is
+plain HTTP. Flip it when TLS lands (docs/security-testing.md, finding 5).
+
+### The dashboard-auth Secret
+
+```bash
+sops kubernetes/secrets/dashboard-auth.enc.yaml
+```
+
+```yaml
+apiVersion: v1
+kind: Secret
+metadata:
+  name: dashboard-auth
+  namespace: dashboard
+type: Opaque
+stringData:
+  DASHBOARD_PASSWORD: <a long random password>
+  SESSION_SECRET: <openssl rand -base64 32>
+```
+
+Then `kubernetes/secrets/apply.sh`, same out-of-band path as the others.
+
+The Deployment's `secretRef` is `optional: true`. A required one would
+park the pod in `CreateContainerConfigError` until the Secret existed,
+taking down the status page - the thing you look at to find out whether
+the cluster is healthy - because of a missing credential. Optional means
+the pod starts and the app fails closed instead: with no
+`DASHBOARD_PASSWORD`, `check_password` always returns false, nobody can
+log in, and the gaming endpoints are unreachable rather than open.
+`/api/session` reports `configured: false` so the page can say why the
+buttons are dead instead of silently rejecting a correct password.
+
+### What a missing Secret does, precisely
+
+The one failure this design must never have is: Secret missing, auth
+silently disabled, old unauthenticated behaviour returns. It cannot,
+because nothing about the guard is conditional on the password existing:
+
+- `require_session` is an unconditional dependency on both endpoints. It
+  checks the session, and only the session.
+- The only way to get a session is `/api/login`, and `check_password`
+  returns False outright when no password is configured. A rejected login
+  sets no cookie at all.
+- `SESSION_SECRET` falls back to a freshly generated random value, never
+  a fixed default, so a missing Secret cannot make cookies forgeable
+  either. The cost is that sessions do not survive a pod restart.
+
+So the states are "closed and usable" or "closed and unusable" - never
+open. What a missing Secret costs is gaming mode, not the boundary.
+
+It is also not silent:
+
+- The pod logs `WARNING: DASHBOARD_PASSWORD is not set: /api/gaming/* is
+  unreachable` at startup.
+- `/api/session` returns `configured: false`, and the page renders an
+  explicit note instead of leaving the buttons mysteriously dead.
+- `scripts/verify-dashboard-auth.sh` treats it as a **failure**, not a
+  warning. Every authorization check passes in that state, for the wrong
+  reason, and a script exiting 0 there would report "secure" for a
+  deployment that is merely broken.
+
+Verify against the deployed host, not just in unit tests:
+
+```bash
+./scripts/verify-dashboard-auth.sh http://dashboard.home
+```
+
+Every request it sends is unauthenticated and expected to be rejected, so
+a passing run never triggers a drain.
+
 ## Known gaps
 
-- No auth on the dashboard itself - it's reachable to anything on the
-  LAN, same trust boundary as Grafana/Argo CD's own UIs in this
-  project. Acceptable for a single-operator homelab; would need real
-  auth before this pattern scaled to more users.
+- No auth on the read-only surface - `/`, `/api/status` and `/health` are
+  reachable by anything on the LAN. That exposes cluster topology, pod
+  names, and node metrics, which is acceptable for a single-operator
+  homelab but would need to change before this scaled to more users.
+- A single shared password with no user accounts, lockout, or audit of
+  who triggered a drain. Fine for one operator; not a multi-user design.
 - The gaming-mode buttons block on the full script duration (up to
   ~2-3 minutes for `postgame.ps1`'s Ready-wait) rather than streaming
   progress - the browser shows a static "running..." message the whole
