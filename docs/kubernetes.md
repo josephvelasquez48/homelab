@@ -658,3 +658,50 @@ build-and-push done by hand in this phase.
   needs an explicit `ip route del` for the old backend's routes on every
   node as part of the switch, not just a service restart - checked with
   `ip route | grep 10.42`, not assumed clean.
+
+## Log (continued) - moving adguard-exporter into the cluster to get a real NetworkPolicy boundary
+
+- 2026-09-06: `adguard-exporter` (Prometheus metrics for AdGuard Home,
+  `docs`/`docker/dns`) started life as a Docker Compose container on the
+  Pi alongside AdGuard itself. Its `:9618` turned out to be reachable by
+  any pod scheduled on `joe` (confirmed directly: a pod forced onto `joe`
+  via `nodeSelector` could reach it, one forced onto `desktop-j1grrmu`
+  could not, same as a genuine LAN client) - same-node pod traffic to the
+  Pi's own IP bypasses ufw's INPUT chain the way kube-router traffic
+  already does elsewhere in this file. A Compose container isn't a pod,
+  so there's no ingress boundary a NetworkPolicy can attach to - that gap
+  was left as a documented, accepted limitation rather than chased with
+  ufw rules that can't actually see this traffic.
+
+  **Fix: moved it into the cluster** (`kubernetes/monitoring/
+  adguard-exporter.yaml`) specifically so a NetworkPolicy could restrict
+  ingress to the Prometheus pod only. Deliberately *not* `hostNetwork`,
+  even though that's the more direct way to reach AdGuard's
+  loopback-bound API on the Pi - a hostNetwork pod shares the node's real
+  network namespace the same way the Compose container did, and
+  kube-router's NetworkPolicy enforcement doesn't apply to it any more
+  than it applied there. Stayed `nodeSelector`-pinned to `joe` and now
+  reaches AdGuard over the Pi's real LAN IP (`192.168.1.253:3000`)
+  instead of loopback, using the same same-node ufw-bypass mechanism as
+  before - just with real enforcement on the other side now. Ingress-only
+  policy (no `Egress` policyType), which matters: an `Egress` lockdown
+  would need every other same-node pod's legitimate traffic enumerated
+  first to avoid breaking something, which is exactly why the Compose-era
+  gap wasn't closed that way. Restricting who can reach *this one pod*
+  carries none of that risk.
+
+  **Verified the policy actually blocks the right things, not just that
+  it applied**: Prometheus's own scrape target stayed `up` with a fresh
+  timestamp throughout. A throwaway pod with no `nodeSelector` (landed on
+  `desktop-j1grrmu`) got `curl: (28) Connection timed out`. A throwaway
+  pod forced onto `joe` via `nodeSelector` got `curl: (7) ... Connection
+  refused` at 0ms - a different failure mode than the cross-node case,
+  worth understanding rather than waving off: same-node blocked traffic
+  gets an active reject from kube-router's local iptables rule, while
+  cross-node blocked traffic just times out with no RST able to cross
+  back through the tunnel. Confirmed this wasn't specific to the
+  synthetic test pod either - exec'd into the real, already-running
+  Grafana pod (same node as the exporter, same namespace) and got the
+  identical `Connection refused`. Four pods, three outcomes (allowed /
+  refused / timed out), all consistent with one policy and two different
+  network paths - not three different bugs.
