@@ -162,6 +162,25 @@ Reachable internally as `api.home`, `ai.home`, `grafana.home`.
   `Invoke-RestMethod http://api.home:8000/health` returns a live
   `{"status":"ok","postgres":"ok","redis":"ok"}` through the hostname.
 
+- 2026-09-05: **Layered AdGuard Home behind CoreDNS instead of replacing
+  it.** The original "CoreDNS over Pi-hole" call above was made for the
+  portfolio narrative - config-as-code over a consumer ad-blocker's web
+  UI. Wanted a real query log and per-client stats without giving that up,
+  so instead of swapping tools, AdGuard Home now runs as a second
+  container in `docker/dns`, DNS listener bound to `127.0.0.1:5353`
+  (loopback-only, reachable only from CoreDNS on the same host, never
+  from the LAN directly). CoreDNS is still the only thing any client
+  actually points at and still serves `*.home` exactly as before; its `.`
+  zone now forwards to AdGuard instead of `1.1.1.1`/`8.8.8.8` directly,
+  and the StevenBlack hosts-file blocklist + its weekly-refresh systemd
+  timer were retired in favor of AdGuard's own filter management. Net
+  effect: same LAN-facing, config-as-code DNS server as before, plus a
+  real UI/query log/per-client visibility layer behind it - not a
+  reversal of the original decision, an addition to it. See
+  `docker/dns/README.md` for the setup (AdGuard's own first-run wizard
+  needs its DNS listener pointed at `127.0.0.1:5353` manually - it isn't
+  a wizard default).
+
 ## Baseline benchmark
 
 | Metric | Value |

@@ -1,9 +1,0 @@
-[Unit]
-Description=Weekly refresh of the CoreDNS ad-block hosts file
-
-[Timer]
-OnCalendar=weekly
-Persistent=true
-
-[Install]
-WantedBy=timers.target
