@@ -6,12 +6,13 @@ home:53 {
     errors
 }
 
-# Everything else: block known ad/tracking domains, forward the rest upstream.
+# Everything else: hand off to AdGuard Home (127.0.0.1:5335, same host,
+# network_mode: host) for ad/tracker filtering + its own upstream
+# forwarding, instead of forwarding to a public resolver directly. The
+# StevenBlack hosts-file blocklist this used to load lives in AdGuard's
+# own filter config now - see docker/dns/README.md.
 .:53 {
-    hosts /etc/coredns/blocklist.hosts {
-        fallthrough
-    }
-    forward . 1.1.1.1 8.8.8.8
+    forward . 127.0.0.1:5335
     cache 30
     log
     errors

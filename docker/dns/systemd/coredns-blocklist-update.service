@@ -1,7 +1,0 @@
-[Unit]
-Description=Refresh CoreDNS ad-block hosts file
-
-[Service]
-Type=oneshot
-User=joe
-ExecStart=/home/joe/apps/homelab/docker/dns/scripts/update-blocklist.sh
