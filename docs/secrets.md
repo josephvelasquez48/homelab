@@ -51,6 +51,17 @@ for why that exclusion has to be real, not just a convention.
   on path-based rule matching for anything not already sitting at its
   final path.
 
+- **Gotcha, Windows sops.exe**: even with the file already sitting at its
+  final path, path-regex matching failed outright (`error loading config:
+  no matching creation rules found`) for a rule that works fine elsewhere -
+  reproduced against the pre-existing `kubernetes/secrets/` rule too, so
+  not specific to a new rule being wrong. `--age <pubkey>` alone didn't
+  fix it either - this build still attempts config-based rule discovery
+  first regardless. Only `--config /dev/null --age <pubkey>` together
+  actually bypassed rule matching entirely and worked. If path-based
+  matching ever needs to work on Windows, this needs isolating properly;
+  for now, always pass both flags explicitly there.
+
 - `kubernetes/secrets/apply.sh` decrypts and `kubectl apply`s every
   `*.enc.yaml` in the directory:
 
