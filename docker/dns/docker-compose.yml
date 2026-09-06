@@ -27,23 +27,26 @@ services:
       - ./adguard/work:/opt/adguardhome/work
     restart: unless-stopped
 
-  # Polls AdGuard's own /control/stats API and re-exposes it as Prometheus
-  # metrics on :9618 - AdGuard has no native /metrics endpoint. host
-  # networking so it can reach AdGuard over 127.0.0.1:3000 the same way
-  # CoreDNS reaches AdGuard's DNS listener, and so Prometheus (in the
-  # cluster) can reach it via the Pi's real IP, matching how it already
-  # reaches node_exporter's node-pi target - see kubernetes/monitoring.
-  # ADGUARD_PASSWORD comes from .env (gitignored) - see
-  # docker/dns/secrets/write-env.sh.
+  # Polls AdGuard's own /control/status + /control/stats API and re-exposes
+  # exactly what kubernetes/monitoring/grafana.yaml's dashboard queries as
+  # Prometheus metrics on :9618 - AdGuard has no native /metrics endpoint.
+  # Own tiny exporter (apps/adguard-exporter), not a third-party image -
+  # built natively here since this only ever runs on the Pi (arm64), no
+  # multi-arch buildx needed unlike apps/api and apps/dashboard, which run
+  # on both cluster nodes. host networking so it can reach AdGuard over
+  # 127.0.0.1:3000 the same way CoreDNS reaches AdGuard's DNS listener,
+  # and so Prometheus (in the cluster) can reach it via the Pi's real IP,
+  # matching how it already reaches node_exporter's node-pi target - see
+  # kubernetes/monitoring. ADGUARD_PASSWORD comes from .env (gitignored) -
+  # see docker/dns/secrets/write-env.sh.
   adguard-exporter:
-    image: ghcr.io/henrywhitaker3/adguard-exporter:v1.2.1
+    build: ../../apps/adguard-exporter
     container_name: adguard-exporter
     network_mode: host
     environment:
-      ADGUARD_SERVERS: http://127.0.0.1:3000
-      ADGUARD_USERNAMES: admin
-      ADGUARD_PASSWORDS: ${ADGUARD_PASSWORD}
-      BIND_ADDR: ":9618"
+      ADGUARD_URL: http://127.0.0.1:3000
+      ADGUARD_USERNAME: admin
+      ADGUARD_PASSWORD: ${ADGUARD_PASSWORD}
     restart: unless-stopped
     depends_on:
       - adguardhome
