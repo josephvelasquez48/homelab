@@ -11,6 +11,33 @@ def test_chat_rejects_wrong_key(client):
     assert r.status_code == 401
 
 
+def test_chat_rejects_non_ascii_key(client):
+    """A high byte in the header must be a 401, not an unhandled 500.
+
+    Header values arrive latin-1 decoded, and secrets.compare_digest
+    raises TypeError on non-ASCII str - so before this was compared as
+    bytes, any unauthenticated client could turn the auth check into a
+    500 just by sending one.
+    """
+    # Sent as raw bytes: httpx refuses to encode a non-ASCII str header,
+    # but nothing stops a raw socket or curl from putting a high byte on
+    # the wire, and Starlette decodes it latin-1 on the way in.
+    r = client.post(
+        "/v1/chat", json={"message": "hi"}, headers={"X-API-Key": b"wr\xf6ng"}
+    )
+    assert r.status_code == 401
+
+
+def test_chat_rejects_empty_key_against_empty_configured_key(client, monkeypatch):
+    """compare_digest("", "") is True, so an unset key must not fail open."""
+    from app import auth
+
+    monkeypatch.setattr(auth, "API_KEY", "")
+
+    r = client.post("/v1/chat", json={"message": "hi"}, headers={"X-API-Key": ""})
+    assert r.status_code == 401
+
+
 def test_chat_accepts_correct_key(client, auth_headers):
     r = client.post("/v1/chat", json={"message": "hi"}, headers=auth_headers)
     assert r.status_code == 200
