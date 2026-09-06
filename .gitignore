@@ -26,8 +26,9 @@ venv/
 # Docker
 *.log
 
-# DNS - generated blocklist, refreshed on a timer, not source
-docker/dns/coredns/blocklist.hosts
+# DNS - AdGuard Home's live config/state (query log, stats, filter
+# cache), not source
+docker/dns/adguard/
 
 # OS
 .DS_Store

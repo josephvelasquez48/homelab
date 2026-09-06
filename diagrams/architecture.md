@@ -11,7 +11,8 @@ flowchart TB
 
     subgraph LAN["Home network (192.168.1.0/24)"]
         subgraph Pi["Raspberry Pi 5 — node 'joe' (K3s control-plane)"]
-            DNS["CoreDNS (Docker Compose)<br/>*.home resolution, whole-LAN"]
+            DNS["CoreDNS (Docker Compose)<br/>*.home resolution, LAN-facing"]
+            AdGuard["AdGuard Home (Docker Compose)<br/>ad/tracker filtering, loopback-only"]
             Traefik["Traefik Ingress<br/>(K3s-bundled, LAN-only NetworkPolicy)"]
             subgraph PiWorkloads["K3s workloads pinned here (local-path PVCs)"]
                 PG[("Postgres<br/>+ pgvector")]
@@ -38,6 +39,7 @@ flowchart TB
     end
 
     Client -->|DNS lookup| DNS
+    DNS -->|forward, non-.home| AdGuard
     Client -->|HTTPS| Traefik
     Traefik --> API
     API --> PG

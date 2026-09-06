@@ -1,4 +1,7 @@
 services:
+  # Front door: LAN clients point at this, unchanged since Milestone 1.
+  # Serves *.home from a hosts file and forwards everything else to
+  # AdGuard Home instead of a public resolver directly - see README.md.
   coredns:
     image: coredns/coredns:1.14.7
     container_name: coredns
@@ -6,4 +9,20 @@ services:
     volumes:
       - ./coredns:/etc/coredns:ro
     command: -conf /etc/coredns/Corefile
+    restart: unless-stopped
+    depends_on:
+      - adguardhome
+
+  # Filtering + observability layer, not the LAN-facing server - its DNS
+  # listener is loopback-only (127.0.0.1:5335, set during its own setup
+  # wizard), reachable only from CoreDNS on the same host. Only its web
+  # UI (:3000) is LAN-reachable, for the query log/per-client stats/
+  # blocklist management CoreDNS's hosts-file approach didn't have.
+  adguardhome:
+    image: adguard/adguardhome:v0.107.79
+    container_name: adguardhome
+    network_mode: host
+    volumes:
+      - ./adguard/conf:/opt/adguardhome/conf
+      - ./adguard/work:/opt/adguardhome/work
     restart: unless-stopped
