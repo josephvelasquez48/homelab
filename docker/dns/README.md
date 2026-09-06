@@ -11,7 +11,7 @@ Two layers, not one tool doing both jobs:
   internal hostnames from `home.hosts`; `.:53` forwards everything else
   to AdGuard Home instead of a public resolver directly.
 - **AdGuard Home** sits behind it, not in front - its DNS listener is
-  bound to `127.0.0.1:5353` (loopback-only, set during its own setup
+  bound to `127.0.0.1:5335` (loopback-only, set during its own setup
   wizard), reachable only from CoreDNS on the same host, never directly
   from the LAN. It owns ad/tracker filtering and forwards the survivors
   upstream to `1.1.1.1`/`8.8.8.8`. Only its web UI (`:3000`) is
@@ -39,13 +39,13 @@ Then, one-time setup for AdGuard Home:
 1. Browse to `http://192.168.1.253:3000` (LAN only).
 2. Work through the setup wizard:
    - Admin Web Interface: `0.0.0.0`, port `3000` (already exposed this way).
-   - **DNS server: set the listen interface/port to `127.0.0.1:5353`
+   - **DNS server: set the listen interface/port to `127.0.0.1:5335`
      explicitly** - do not accept a default of `0.0.0.0:53`, that's
      CoreDNS's port and AdGuard will fail to bind it anyway. If the
      wizard doesn't offer a custom port field, finish the wizard with
      whatever port it picked, then `docker compose stop adguardhome`,
      edit `adguard/conf/AdGuardHome.yaml` (`dns.bind_hosts: ["127.0.0.1"]`,
-     `dns.port: 5353`), and `docker compose start adguardhome`.
+     `dns.port: 5335`), and `docker compose start adguardhome`.
    - Upstream DNS servers: `1.1.1.1`, `8.8.8.8` (matches what CoreDNS used
      to forward to directly).
    - Create the admin account.

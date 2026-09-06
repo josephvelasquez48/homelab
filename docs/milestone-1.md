@@ -167,7 +167,7 @@ Reachable internally as `api.home`, `ai.home`, `grafana.home`.
   portfolio narrative - config-as-code over a consumer ad-blocker's web
   UI. Wanted a real query log and per-client stats without giving that up,
   so instead of swapping tools, AdGuard Home now runs as a second
-  container in `docker/dns`, DNS listener bound to `127.0.0.1:5353`
+  container in `docker/dns`, DNS listener bound to `127.0.0.1:5335`
   (loopback-only, reachable only from CoreDNS on the same host, never
   from the LAN directly). CoreDNS is still the only thing any client
   actually points at and still serves `*.home` exactly as before; its `.`
@@ -178,7 +178,7 @@ Reachable internally as `api.home`, `ai.home`, `grafana.home`.
   real UI/query log/per-client visibility layer behind it - not a
   reversal of the original decision, an addition to it. See
   `docker/dns/README.md` for the setup (AdGuard's own first-run wizard
-  needs its DNS listener pointed at `127.0.0.1:5353` manually - it isn't
+  needs its DNS listener pointed at `127.0.0.1:5335` manually - it isn't
   a wizard default).
 
 ## Baseline benchmark

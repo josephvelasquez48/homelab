@@ -14,7 +14,7 @@ services:
       - adguardhome
 
   # Filtering + observability layer, not the LAN-facing server - its DNS
-  # listener is loopback-only (127.0.0.1:5353, set during its own setup
+  # listener is loopback-only (127.0.0.1:5335, set during its own setup
   # wizard), reachable only from CoreDNS on the same host. Only its web
   # UI (:3000) is LAN-reachable, for the query log/per-client stats/
   # blocklist management CoreDNS's hosts-file approach didn't have.
