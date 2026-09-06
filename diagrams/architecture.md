@@ -20,6 +20,7 @@ flowchart TB
                 ArgoCD["Argo CD"]
                 Prom["Prometheus"]
                 Graf["Grafana"]
+                AdGuardExporter["adguard-exporter<br/>NetworkPolicy: ingress from Prometheus only"]
             end
         end
 
@@ -49,6 +50,8 @@ flowchart TB
     Worker -->|HTTP, LAN| Ollama
     Prom -.->|scrape /metrics| API
     Prom -.->|scrape /metrics| Worker
+    Prom -.->|scrape /metrics, only pod NetworkPolicy allows in| AdGuardExporter
+    AdGuardExporter -->|/control/status, /control/stats| AdGuard
     Graf -->|query| Prom
 
     ArgoCD -->|poll ~3min: new commits<br/>real-time: live drift| Repo
