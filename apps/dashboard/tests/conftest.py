@@ -38,9 +38,17 @@ FAKE_DESKTOP_METRICS = {
 FAKE_CROSS_NODE_STATUS = "up"
 
 
+TEST_PASSWORD = "correct-horse-battery-staple"
+
+
 @pytest.fixture
 def client(monkeypatch):
-    from app import k8s, main, prometheus
+    from app import auth, k8s, main, prometheus
+
+    # config values are read at import time, so patch the already-bound
+    # module attribute rather than the environment.
+    monkeypatch.setattr(auth, "DASHBOARD_PASSWORD", TEST_PASSWORD)
+    monkeypatch.setattr(main, "DASHBOARD_PASSWORD", TEST_PASSWORD)
 
     monkeypatch.setattr(k8s, "make_client", lambda: MagicMock(aclose=AsyncMock()))
     monkeypatch.setattr(k8s, "get_nodes", AsyncMock(return_value=FAKE_NODES))
@@ -59,3 +67,16 @@ def client(monkeypatch):
 
     with TestClient(main.app) as c:
         yield c
+
+
+@pytest.fixture
+def password():
+    return TEST_PASSWORD
+
+
+@pytest.fixture
+def authed_client(client):
+    """A client that has completed a real login, cookie and all."""
+    res = client.post("/api/login", json={"password": TEST_PASSWORD})
+    assert res.status_code == 200
+    return client

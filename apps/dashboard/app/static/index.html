@@ -29,6 +29,10 @@
   button:disabled { background: #30363d; cursor: not-allowed; }
   .button-link { background: #21262d; color: #c9d1d9; border: 1px solid #30363d; border-radius: 6px; padding: 12px 20px; font-size: 1.05rem; text-decoration: none; display: inline-flex; align-items: center; }
   .button-link:hover { background: #30363d; }
+  #login-row { display: none; gap: 8px; align-items: center; flex-wrap: wrap; }
+  #login-row input { background: #0d1117; color: #c9d1d9; border: 1px solid #30363d; border-radius: 6px; padding: 12px; font-size: 1.05rem; }
+  #login-error { color: #f85149; font-size: 0.95rem; }
+  #auth-note { color: #8b949e; font-size: 0.95rem; display: none; }
   #gaming-output { white-space: pre-wrap; background: #010409; border: 1px solid #30363d; border-radius: 6px; padding: 12px; margin-top: 12px; font-family: ui-monospace, monospace; font-size: 0.9rem; max-height: 300px; overflow-y: auto; display: none; }
   .stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 16px; }
   .stat-tile { display: flex; flex-direction: column; justify-content: center; gap: 10px; background: #0d1117; border: 1px solid #21262d; border-left: 3px solid #30363d; border-radius: 6px; padding: 20px; min-height: 140px; }
@@ -52,7 +56,14 @@
         <button id="btn-on" onclick="runGaming('on')">Start gaming mode</button>
         <button id="btn-off" class="off" onclick="runGaming('off')">End gaming mode</button>
         <a class="button-link" href="http://grafana.home" target="_blank" rel="noopener">Open Grafana</a>
+        <button id="btn-logout" class="button-link" onclick="logout()" style="display:none;">Log out</button>
       </div>
+      <form id="login-row" onsubmit="login(event)">
+        <input id="login-password" type="password" autocomplete="current-password" placeholder="Dashboard password">
+        <button type="submit">Log in</button>
+        <span id="login-error"></span>
+      </form>
+      <div id="auth-note"></div>
       <div id="gaming-output"></div>
     </div>
     <div class="card top-right">
@@ -202,10 +213,78 @@ async function refresh() {
       </div>
     `;
 
-    document.getElementById('btn-on').disabled = data.gaming_mode_active;
-    document.getElementById('btn-off').disabled = !data.gaming_mode_active;
+    gamingModeActive = data.gaming_mode_active;
+    applyAuthState();
   } catch (e) {
     console.error('status refresh failed', e);
+  }
+}
+
+// Sent with every state-changing request. The JSON content type is what
+// makes these non-simple, so a cross-origin copy of this call has to clear
+// a preflight the server never answers - a second line behind the session
+// cookie, not a replacement for it.
+const JSON_POST = { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' };
+
+let authed = false;
+let authConfigured = true;
+let gamingModeActive = false;
+
+function applyAuthState() {
+  document.getElementById('btn-on').disabled = !authed || gamingModeActive;
+  document.getElementById('btn-off').disabled = !authed || !gamingModeActive;
+  document.getElementById('btn-logout').style.display = authed ? 'inline-flex' : 'none';
+  document.getElementById('login-row').style.display = (!authed && authConfigured) ? 'flex' : 'none';
+
+  const note = document.getElementById('auth-note');
+  if (!authConfigured) {
+    note.style.display = 'block';
+    note.textContent = 'Gaming mode is unavailable: the dashboard-auth Secret has not been applied. See docs/dashboard.md.';
+  } else {
+    note.style.display = 'none';
+  }
+}
+
+async function refreshSession() {
+  try {
+    const res = await fetch('/api/session');
+    const data = await res.json();
+    authed = data.authenticated;
+    authConfigured = data.configured;
+  } catch (e) {
+    authed = false;
+  }
+  applyAuthState();
+}
+
+async function login(event) {
+  event.preventDefault();
+  const input = document.getElementById('login-password');
+  const error = document.getElementById('login-error');
+  error.textContent = '';
+
+  try {
+    const res = await fetch('/api/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password: input.value }),
+    });
+    if (!res.ok) {
+      error.textContent = res.status === 401 ? 'Incorrect password.' : `Login failed (HTTP ${res.status}).`;
+      return;
+    }
+    input.value = '';
+    await refreshSession();
+  } catch (e) {
+    error.textContent = 'Login request failed: ' + e;
+  }
+}
+
+async function logout() {
+  try {
+    await fetch('/api/logout', JSON_POST);
+  } finally {
+    await refreshSession();
   }
 }
 
@@ -219,18 +298,24 @@ async function runGaming(action) {
   output.textContent = `Running ${action === 'on' ? 'pregame' : 'postgame'}.ps1 over SSH — this can take up to ${action === 'on' ? '2' : '3'} minutes...`;
 
   try {
-    const res = await fetch(`/api/gaming/${action}`, { method: 'POST' });
+    const res = await fetch(`/api/gaming/${action}`, JSON_POST);
+    if (res.status === 401) {
+      output.textContent = 'Session expired — log in again.';
+      await refreshSession();
+      return;
+    }
     const data = await res.json();
     output.textContent = (data.success ? '✔ succeeded\n\n' : '✘ failed\n\n') + (data.output || '');
   } catch (e) {
     output.textContent = 'Request failed: ' + e;
   } finally {
-    btnOn.disabled = false;
-    btnOff.disabled = false;
+    applyAuthState();
     refresh();
   }
 }
 
+applyAuthState();
+refreshSession();
 refresh();
 setInterval(refresh, 10000);
 </script>

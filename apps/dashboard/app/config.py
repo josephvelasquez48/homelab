@@ -1,4 +1,5 @@
 import os
+import secrets
 
 # In-cluster K8s API access - no kubeconfig needed, every pod gets a
 # ServiceAccount token + CA cert mounted automatically.
@@ -30,3 +31,21 @@ API_HEALTH_URL = os.environ.get("API_HEALTH_URL", "http://api.backend.svc.cluste
 # (kubernetes/monitoring/grafana.yaml) - queried directly here rather than
 # through Grafana, since this page only needs a handful of instant values.
 PROMETHEUS_URL = os.environ.get("PROMETHEUS_URL", "http://prometheus.monitoring.svc.cluster.local:9090")
+
+# Session auth for the state-changing gaming-mode endpoints. Both values
+# come from the dashboard-auth Secret
+# (kubernetes/secrets/dashboard-auth.enc.yaml, SOPS-encrypted and applied
+# out-of-band like the others - see docs/secrets.md).
+#
+# DASHBOARD_PASSWORD unset means nobody can authenticate, so /api/gaming/*
+# is unreachable rather than open: the failure mode of a missing Secret is
+# "gaming mode is broken", never "gaming mode is public".
+DASHBOARD_PASSWORD = os.environ.get("DASHBOARD_PASSWORD", "")
+
+# A generated fallback keeps the pod starting without the Secret. The cost
+# is that sessions do not survive a restart, which is the right way round
+# for a single-replica dashboard - and far better than shipping a default
+# signing key that would let anyone forge a session cookie.
+SESSION_SECRET = os.environ.get("SESSION_SECRET") or secrets.token_urlsafe(32)
+
+SESSION_MAX_AGE = int(os.environ.get("SESSION_MAX_AGE", str(12 * 60 * 60)))
