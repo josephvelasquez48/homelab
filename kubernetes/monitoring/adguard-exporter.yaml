@@ -1,0 +1,113 @@
+# Moved in from Docker Compose (docker/dns) specifically so a
+# NetworkPolicy can restrict who reaches it - that's not possible for a
+# host-network Compose container, which isn't a pod at all and has no
+# ingress boundary a NetworkPolicy can attach to. This is why it's NOT
+# hostNetwork here either, even though that would be the more direct way
+# to reach AdGuard's loopback-bound API: a hostNetwork pod shares the
+# node's real network namespace the same way, and kube-router's
+# NetworkPolicy enforcement doesn't apply to hostNetwork pods any more
+# than it applies to a plain Compose container - it would defeat the
+# entire point of this move.
+#
+# nodeSelector: joe is required, not just a placement preference - it
+# reaches AdGuard over the Pi's real LAN IP (192.168.1.253:3000, AdGuard's
+# already-LAN-reachable web/API port), and only same-node pod traffic to
+# the Pi's own IP bypasses ufw's INPUT chain the way kube-router traffic
+# already does elsewhere in this repo (confirmed directly: a pod forced
+# onto joe could reach it, a pod forced onto desktop-j1grrmu could not,
+# same as a real LAN client). Off joe, this would need a ufw rule for a
+# pod-subnet source it doesn't have.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: adguard-exporter
+  namespace: monitoring
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: adguard-exporter }
+  template:
+    metadata:
+      labels: { app: adguard-exporter }
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9618"
+    spec:
+      nodeSelector:
+        kubernetes.io/hostname: joe
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+      containers:
+        - name: adguard-exporter
+          image: ghcr.io/josephvelasquez48/homelab-adguard-exporter:latest
+          env:
+            - name: ADGUARD_URL
+              value: http://192.168.1.253:3000
+            - name: ADGUARD_USERNAME
+              valueFrom:
+                secretKeyRef: { name: adguard-exporter, key: username }
+            - name: ADGUARD_PASSWORD
+              valueFrom:
+                secretKeyRef: { name: adguard-exporter, key: password }
+          ports:
+            - containerPort: 9618
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+          resources:
+            requests: { cpu: 10m, memory: 32Mi }
+            limits: { cpu: 100m, memory: 64Mi }
+          readinessProbe:
+            httpGet: { path: /metrics, port: 9618 }
+            initialDelaySeconds: 5
+          livenessProbe:
+            httpGet: { path: /metrics, port: 9618 }
+            initialDelaySeconds: 10
+            periodSeconds: 30
+      volumes:
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: adguard-exporter
+  namespace: monitoring
+spec:
+  selector: { app: adguard-exporter }
+  ports:
+    - port: 9618
+      targetPort: 9618
+---
+# The actual point of moving this into the cluster: only Prometheus can
+# reach it. Ingress-only (no Egress policyType) deliberately - this pod's
+# own outbound traffic (to AdGuard on the Pi, DNS) isn't restricted here,
+# since locking that down would require enumerating every other pod's
+# needs the way an Egress policy does (see docker/dns/README.md's "Known
+# gap" note for why that was judged not worth the risk for the Compose
+# version this replaces). Restricting who can reach *this* pod carries
+# none of that risk - it only affects traffic to adguard-exporter itself.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: adguard-exporter-prometheus-only
+  namespace: monitoring
+spec:
+  podSelector:
+    matchLabels: { app: adguard-exporter }
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels: { app: prometheus }
+      ports:
+        - protocol: TCP
+          port: 9618

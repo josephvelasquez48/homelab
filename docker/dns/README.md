@@ -17,38 +17,20 @@ Two layers, not one tool doing both jobs:
   upstream to `1.1.1.1`/`8.8.8.8`. Only its web UI (`:3000`) is
   LAN-reachable, for the query log, per-client stats, and blocklist
   management the old hosts-file approach didn't have.
-- **adguard-exporter** (`apps/adguard-exporter`) polls AdGuard's
-  `/control/status` + `/control/stats` and re-exposes exactly the
-  metrics `kubernetes/monitoring/grafana.yaml`'s dashboard queries as
-  Prometheus metrics on `:9618` - AdGuard has no native `/metrics`
-  endpoint. Own code, not a third-party image - built natively on the
-  Pi (`docker compose build`), since this only ever runs there (arm64)
-  and doesn't need the multi-arch buildx setup `apps/api`/`apps/dashboard`
-  use for the two-node cluster. `uv run pytest` from that directory
-  covers the field-mapping logic against real response shapes captured
-  from the live API, not guessed from AdGuard's docs.
-
-## Known gap: `:9618` is node-scoped, not Prometheus-scoped
-
-The exporter's `:9618` isn't reachable from the LAN or from other cluster
-nodes - confirmed with a real LAN client (connection timed out, ufw's
-default-deny) and a throwaway pod forced onto `desktop-j1grrmu` (also
-timed out). But a pod scheduled on `joe` itself *can* reach it regardless
-of which pod it is - confirmed with a pod forced onto `joe` via
-`nodeSelector` - because that traffic never crosses ufw's INPUT chain the
-way genuinely external traffic does. Several other pods already run on
-`joe` (grafana, postgres, redis, dashboard, argocd components), so the
-real boundary today is "same node as the Pi," not "Prometheus
-specifically."
-
-Closing that gap needs a NetworkPolicy restricting those other same-node
-pods' egress to this one destination - deliberately not done yet.
-Kubernetes NetworkPolicy egress rules are default-deny-the-rest once any
-rule is added for a pod, so doing this without breaking something means
-correctly enumerating everything grafana/postgres/argocd/etc. actually
-need first. Judged not worth that risk for a read-only stats endpoint
-whose only sensitive content is DNS query history - left as a known,
-accepted gap rather than rushed.
+- **adguard-exporter** polls AdGuard's `/control/status` + `/control/stats`
+  and re-exposes exactly the metrics `kubernetes/monitoring/grafana.yaml`'s
+  dashboard queries as Prometheus metrics - AdGuard has no native
+  `/metrics` endpoint. Code lives in `apps/adguard-exporter`, but it runs
+  as a real pod (`kubernetes/monitoring/adguard-exporter.yaml`), not a
+  Compose service here - moved off Compose specifically so a NetworkPolicy
+  could restrict ingress to it to Prometheus only, which isn't possible
+  for a host-network Compose container (it's not a pod, so there's no
+  ingress boundary a NetworkPolicy can attach to). It's still
+  `nodeSelector`-pinned to `joe` and still reaches AdGuard over the Pi's
+  real LAN IP rather than a public resolver - same underlying
+  same-node-bypasses-ufw mechanism this file used to document as an
+  accepted gap when the exporter ran here; moving it into the cluster is
+  what actually closed that gap instead of just accepting it.
 
 This replaced a single-layer CoreDNS setup that did its own ad-blocking
 via a `hosts`-plugin blocklist (StevenBlack's list, refreshed by a
@@ -63,9 +45,11 @@ getting AdGuard's per-client visibility for actual day-to-day use.
 
 ```bash
 cd ~/apps/homelab/docker/dns
-docker compose build adguard-exporter   # only needed after changing apps/adguard-exporter
 docker compose up -d
 ```
+
+(adguard-exporter deploys separately now - CI on `apps/adguard-exporter/**`,
+same as `apps/api`/`apps/dashboard`, not part of this Compose project.)
 
 Then, one-time setup for AdGuard Home:
 

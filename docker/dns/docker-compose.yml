@@ -27,41 +27,10 @@ services:
       - ./adguard/work:/opt/adguardhome/work
     restart: unless-stopped
 
-  # Polls AdGuard's own /control/status + /control/stats API and re-exposes
-  # exactly what kubernetes/monitoring/grafana.yaml's dashboard queries as
-  # Prometheus metrics on :9618 - AdGuard has no native /metrics endpoint.
-  # Own tiny exporter (apps/adguard-exporter), not a third-party image -
-  # built natively here since this only ever runs on the Pi (arm64), no
-  # multi-arch buildx needed unlike apps/api and apps/dashboard, which run
-  # on both cluster nodes. host networking so it can reach AdGuard over
-  # 127.0.0.1:3000 the same way CoreDNS reaches AdGuard's DNS listener,
-  # and so Prometheus (in the cluster) can reach it via the Pi's real IP,
-  # matching how it already reaches node_exporter's node-pi target - see
-  # kubernetes/monitoring. ADGUARD_PASSWORD comes from .env (gitignored) -
-  # see docker/dns/secrets/write-env.sh.
-  adguard-exporter:
-    build: ../../apps/adguard-exporter
-    container_name: adguard-exporter
-    network_mode: host
-    environment:
-      ADGUARD_URL: http://127.0.0.1:3000
-      ADGUARD_USERNAME: admin
-      ADGUARD_PASSWORD: ${ADGUARD_PASSWORD}
-    restart: unless-stopped
-    depends_on:
-      - adguardhome
-    # Already runs as a non-root user (Dockerfile) - this is the rest of
-    # the same "it only needs to poll two read-only HTTP endpoints and
-    # serve /metrics" argument, enforced instead of just true by
-    # convention: no writable filesystem beyond the one thing Python
-    # itself expects (tmpfs /tmp - PYTHONDONTWRITEBYTECODE in the
-    # Dockerfile means it's otherwise unused), every Linux capability
-    # dropped, no privilege-escalation path even if something upstream
-    # of it did allow setuid/setgid.
-    read_only: true
-    tmpfs:
-      - /tmp
-    cap_drop:
-      - ALL
-    security_opt:
-      - no-new-privileges:true
+  # adguard-exporter (Prometheus metrics for AdGuard) used to run here -
+  # moved into the cluster (kubernetes/monitoring/adguard-exporter.yaml)
+  # so a NetworkPolicy can actually restrict who reaches it, which isn't
+  # possible for a plain Compose container: it's not a pod, so there's no
+  # ingress boundary a NetworkPolicy can attach to. See that file's
+  # comments and docker/dns/README.md for the node-pinning/ufw reasoning
+  # this move was built around.
