@@ -54,13 +54,10 @@ data:
         static_configs:
           - targets: ["192.168.1.253:9100"]
 
-      # AdGuard Home has no native /metrics endpoint - this polls its
-      # stats API and re-exposes Prometheus metrics (docker/dns,
-      # adguard-exporter). Same "Pi, outside the cluster" static-target
-      # pattern as node-pi above.
-      - job_name: adguard-exporter
-        static_configs:
-          - targets: ["192.168.1.253:9618"]
+      # adguard-exporter is a real in-cluster pod now (moved off Docker
+      # Compose specifically so a NetworkPolicy could restrict it - see
+      # kubernetes/monitoring/adguard-exporter.yaml), discovered the same
+      # way as everything else below rather than a static target.
 
       # In-cluster pods, discovered dynamically instead of a static list -
       # only scraped if annotated prometheus.io/scrape: "true".
