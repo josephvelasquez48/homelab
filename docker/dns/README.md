@@ -17,6 +17,16 @@ Two layers, not one tool doing both jobs:
   upstream to `1.1.1.1`/`8.8.8.8`. Only its web UI (`:3000`) is
   LAN-reachable, for the query log, per-client stats, and blocklist
   management the old hosts-file approach didn't have.
+- **adguard-exporter** (`apps/adguard-exporter`) polls AdGuard's
+  `/control/status` + `/control/stats` and re-exposes exactly the
+  metrics `kubernetes/monitoring/grafana.yaml`'s dashboard queries as
+  Prometheus metrics on `:9618` - AdGuard has no native `/metrics`
+  endpoint. Own code, not a third-party image - built natively on the
+  Pi (`docker compose build`), since this only ever runs there (arm64)
+  and doesn't need the multi-arch buildx setup `apps/api`/`apps/dashboard`
+  use for the two-node cluster. `uv run pytest` from that directory
+  covers the field-mapping logic against real response shapes captured
+  from the live API, not guessed from AdGuard's docs.
 
 This replaced a single-layer CoreDNS setup that did its own ad-blocking
 via a `hosts`-plugin blocklist (StevenBlack's list, refreshed by a
@@ -31,6 +41,7 @@ getting AdGuard's per-client visibility for actual day-to-day use.
 
 ```bash
 cd ~/apps/homelab/docker/dns
+docker compose build adguard-exporter   # only needed after changing apps/adguard-exporter
 docker compose up -d
 ```
 
