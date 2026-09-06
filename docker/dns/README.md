@@ -28,6 +28,28 @@ Two layers, not one tool doing both jobs:
   covers the field-mapping logic against real response shapes captured
   from the live API, not guessed from AdGuard's docs.
 
+## Known gap: `:9618` is node-scoped, not Prometheus-scoped
+
+The exporter's `:9618` isn't reachable from the LAN or from other cluster
+nodes - confirmed with a real LAN client (connection timed out, ufw's
+default-deny) and a throwaway pod forced onto `desktop-j1grrmu` (also
+timed out). But a pod scheduled on `joe` itself *can* reach it regardless
+of which pod it is - confirmed with a pod forced onto `joe` via
+`nodeSelector` - because that traffic never crosses ufw's INPUT chain the
+way genuinely external traffic does. Several other pods already run on
+`joe` (grafana, postgres, redis, dashboard, argocd components), so the
+real boundary today is "same node as the Pi," not "Prometheus
+specifically."
+
+Closing that gap needs a NetworkPolicy restricting those other same-node
+pods' egress to this one destination - deliberately not done yet.
+Kubernetes NetworkPolicy egress rules are default-deny-the-rest once any
+rule is added for a pod, so doing this without breaking something means
+correctly enumerating everything grafana/postgres/argocd/etc. actually
+need first. Judged not worth that risk for a read-only stats endpoint
+whose only sensitive content is DNS query history - left as a known,
+accepted gap rather than rushed.
+
 This replaced a single-layer CoreDNS setup that did its own ad-blocking
 via a `hosts`-plugin blocklist (StevenBlack's list, refreshed by a
 systemd timer) - see `docs/milestone-1.md` for why CoreDNS was originally
