@@ -17,7 +17,7 @@ GAMING_NODE_NAME = os.environ.get("GAMING_NODE_NAME", "desktop-j1grrmu")
 # Reaching the desktop over SSH to run gaming-mode/{pregame,postgame}.ps1
 # - see docs/dashboard.md for the key setup (dedicated key, LAN-only,
 # key-only auth) and docs/gaming-mode.md for what the scripts do.
-GAMING_SSH_HOST = os.environ.get("GAMING_SSH_HOST", "192.168.1.131")
+GAMING_SSH_HOST = os.environ.get("GAMING_SSH_HOST", "192.168.1.133")
 GAMING_SSH_USER = os.environ.get("GAMING_SSH_USER", "josep")
 GAMING_SSH_KEY_PATH = os.environ.get("GAMING_SSH_KEY_PATH", "/secrets/ssh/id_ed25519")
 GAMING_SSH_KNOWN_HOSTS_PATH = os.environ.get(

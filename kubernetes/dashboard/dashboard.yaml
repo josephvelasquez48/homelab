@@ -60,7 +60,7 @@ subjects:
 # either trusting-on-first-use blindly or disabling verification -
 # non-sensitive (it's a public key), so a plain ConfigMap, not a SOPS
 # secret. Get this line with:
-#   ssh-keyscan -t ed25519 192.168.1.131
+#   ssh-keyscan -t ed25519 192.168.1.133
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -68,7 +68,7 @@ metadata:
   namespace: dashboard
 data:
   known_hosts: |
-    192.168.1.131 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEmEz6U1ZsYJbD7ZDUnsnG6Jy1V875lCVW7GWh3oSgu6
+    192.168.1.133 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEmEz6U1ZsYJbD7ZDUnsnG6Jy1V875lCVW7GWh3oSgu6
 ---
 # The private key half (kubernetes/secrets/dashboard-ssh-key.enc.yaml,
 # SOPS-encrypted) is deliberately NOT referenced by name here beyond the

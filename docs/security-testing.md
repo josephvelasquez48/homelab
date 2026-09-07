@@ -13,7 +13,7 @@ the Pi or the desktop tests a loopback path that no real client uses.
 | What | Address | Notes |
 |---|---|---|
 | Pi (control plane, node `joe`) | `192.168.1.253` | K3s server, CoreDNS, AdGuard |
-| Desktop (worker, `desktop-j1grrmu`) | `192.168.1.131` | Ollama :11434, sshd, node-exporter :9100 |
+| Desktop (worker, `desktop-j1grrmu`) | `192.168.1.133` | Ollama :11434, sshd, node-exporter :9100 |
 | LAN | `192.168.1.0/24` | The CIDR `traefik-lan-only` allows |
 | `api.home` / `ai.home` | → `192.168.1.253` | FastAPI behind Traefik |
 | `grafana.home` | → `192.168.1.253` | Grafana 13.2.1 |
@@ -88,7 +88,7 @@ application logic, not a manifest problem.
   and `rate_limit` chains `require_api_key`. The dashboard had no equivalent.
 - The pod mounts an SSH private key (`dashboard-ssh-key`, mode `0400`) and
   shells out to `powershell.exe -ExecutionPolicy Bypass -File ...` on
-  `192.168.1.131` as user `josep`.
+  `192.168.1.133` as user `josep`.
 - `traefik-lan-only` limits *who can reach it* to `192.168.1.0/24`. It does
   not limit *who can cause a request*. A plain `fetch()` from any page on the
   public internet is a CORS-simple request — no preflight, opaque response,
@@ -253,7 +253,7 @@ From the scanner VM, not from either node.
 Full service sweep of both hosts:
 
 ```bash
-sudo nmap -sS -sV -p- --reason 192.168.1.253 192.168.1.131
+sudo nmap -sS -sV -p- --reason 192.168.1.253 192.168.1.133
 ```
 
 Confirm the Traefik NetworkPolicy behaves the way `traefik-security.yaml`
