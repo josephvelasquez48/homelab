@@ -15,6 +15,7 @@ from app.config import (
     API_HEALTH_URL,
     DASHBOARD_PASSWORD,
     GAMING_NODE_NAME,
+    GAMING_SSH_HOST,
     SESSION_MAX_AGE,
     SESSION_SECRET,
     WATCHED_NAMESPACES,
@@ -164,6 +165,20 @@ async def logout(request: Request):
 # require_session is declared first so an unauthenticated caller gets 401
 # regardless of content type - authorization is the boundary, and
 # require_json is defence in depth behind it, not a gate of its own.
+async def _gaming_host() -> str:
+    """Where to SSH for gaming mode.
+
+    Read from the node's InternalIP rather than pinned in config: neither
+    host has a DHCP reservation, and a hardcoded address here goes stale
+    the next time a lease moves - silently, since the failure surfaces as
+    an SSH timeout rather than as "the IP changed". GAMING_SSH_HOST still
+    overrides when set, for local runs or if the API is unavailable.
+    """
+    if GAMING_SSH_HOST:
+        return GAMING_SSH_HOST
+    return await k8s.get_node_internal_ip(app.state.k8s, GAMING_NODE_NAME)
+
+
 @app.post(
     "/api/gaming/on",
     dependencies=[Depends(require_session), Depends(require_json)],
@@ -171,7 +186,7 @@ async def logout(request: Request):
 async def gaming_on():
     # 120s drain timeout (kubectl drain --timeout=120s in pregame.ps1)
     # plus real headroom for cordon/SSH/agent-stop overhead.
-    return await run_gaming_script("pregame.ps1", timeout=150)
+    return await run_gaming_script("pregame.ps1", timeout=150, host=await _gaming_host())
 
 
 @app.post(
@@ -180,4 +195,4 @@ async def gaming_on():
 )
 async def gaming_off():
     # 180s Ready-wait (a cold WSL2 start) plus headroom.
-    return await run_gaming_script("postgame.ps1", timeout=210)
+    return await run_gaming_script("postgame.ps1", timeout=210, host=await _gaming_host())

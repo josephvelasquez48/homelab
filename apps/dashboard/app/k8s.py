@@ -48,6 +48,25 @@ async def get_nodes(client: httpx.AsyncClient) -> list[dict]:
     return nodes
 
 
+async def get_node_internal_ip(client: httpx.AsyncClient, name: str) -> str:
+    """The node's current InternalIP, straight from the API server.
+
+    Neither host has a DHCP reservation, so the desktop's address moves.
+    k3s updates this field on its own within seconds of a lease change -
+    it went .131 -> .133 with no help - which makes it the one place in
+    the cluster that is reliably right. Reading it at call time is why
+    gaming mode does not need a hardcoded address that quietly goes
+    stale (see kubernetes/ai/inference-endpoint-sync.yaml, which solves
+    the same problem for the inference Endpoints).
+    """
+    r = await client.get(f"/api/v1/nodes/{name}")
+    r.raise_for_status()
+    for address in r.json()["status"].get("addresses", []):
+        if address.get("type") == "InternalIP":
+            return address["address"]
+    raise RuntimeError(f"node {name} has no InternalIP")
+
+
 async def get_pods(client: httpx.AsyncClient, namespace: str) -> list[dict]:
     r = await client.get(f"/api/v1/namespaces/{namespace}/pods")
     r.raise_for_status()

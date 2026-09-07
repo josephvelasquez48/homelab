@@ -135,6 +135,37 @@ immediately after); `POST /api/gaming/off` correctly reversed it. All 7
 Argo CD Applications (including `dashboard` itself) confirmed
 `Synced`/`Healthy` afterward.
 
+## The desktop's address is not pinned anywhere
+
+Neither host has a DHCP reservation - the router does not support them,
+the same limitation already recorded for DNS override in
+docs/milestone-1.md. The desktop's lease has already moved once
+(`.131 -> .133`), which broke in-cluster inference and would have broken
+gaming mode too.
+
+So nothing here stores that address:
+
+- **The SSH target** is read from the node's `InternalIP` at call time
+  (`k8s.get_node_internal_ip`). k3s updates that field within seconds of a
+  lease change on its own, which makes it the one place in the cluster
+  that is reliably right. `GAMING_SSH_HOST` still overrides it when set, for
+  local runs or if the API is unavailable.
+- **The host key** is verified under the alias `homelab-desktop` rather than
+  under an address, via `ssh -o HostKeyAlias` and a matching `known_hosts`
+  entry. Without this a lease change fails as *host key verification*,
+  which points at the wrong problem entirely - the key is fine, the
+  address it is filed under is not.
+
+Verified against the live host: connecting to the current address with
+the alias reaches authentication (`Permission denied (publickey)`, i.e. the
+host key checked out), while the same connection without the alias fails
+with `No ED25519 host key is known for 192.168.1.133` - the exact failure a
+lease change would otherwise produce.
+
+The equivalent fix for the `inference` Endpoints is a CronJob
+(`kubernetes/ai/inference-endpoint-sync.yaml`), because an Endpoints object
+has no code of its own to do the lookup.
+
 ## Auth on the gaming-mode endpoints
 
 `/api/gaming/on` and `/api/gaming/off` require a session. Everything else

@@ -10,7 +10,9 @@ def test_gaming_on_success(authed_client, monkeypatch):
     res = authed_client.post("/api/gaming/on", json={})
     assert res.status_code == 200
     assert res.json() == fake_result
-    main.run_gaming_script.assert_called_once_with("pregame.ps1", timeout=150)
+    main.run_gaming_script.assert_called_once_with(
+        "pregame.ps1", timeout=150, host="10.0.0.99"
+    )
 
 
 def test_gaming_off_success(authed_client, monkeypatch):
@@ -21,7 +23,9 @@ def test_gaming_off_success(authed_client, monkeypatch):
 
     res = authed_client.post("/api/gaming/off", json={})
     assert res.status_code == 200
-    main.run_gaming_script.assert_called_once_with("postgame.ps1", timeout=210)
+    main.run_gaming_script.assert_called_once_with(
+        "postgame.ps1", timeout=210, host="10.0.0.99"
+    )
 
 
 def test_gaming_on_reports_failure(authed_client, monkeypatch):
@@ -172,3 +176,32 @@ def test_session_cookie_attributes(client, password):
     assert "httponly" in cookie
     assert "samesite=strict" in cookie
     assert "dashboard_session=" in cookie
+
+
+def test_gaming_host_comes_from_the_node_not_config(authed_client, monkeypatch):
+    """The address must be read live, not pinned.
+
+    Neither host has a DHCP reservation, so a hardcoded address goes stale
+    the next time a lease moves - and it fails as an SSH timeout, which
+    points nowhere near the real cause.
+    """
+    from app import k8s, main
+
+    monkeypatch.setattr(main, "GAMING_SSH_HOST", "")
+    monkeypatch.setattr(k8s, "get_node_internal_ip", AsyncMock(return_value="192.168.1.77"))
+    monkeypatch.setattr(main, "run_gaming_script", AsyncMock(return_value={"success": True}))
+
+    assert authed_client.post("/api/gaming/on", json={}).status_code == 200
+    assert main.run_gaming_script.await_args.kwargs["host"] == "192.168.1.77"
+
+
+def test_gaming_host_override_wins(authed_client, monkeypatch):
+    """GAMING_SSH_HOST still pins the address when explicitly set."""
+    from app import k8s, main
+
+    monkeypatch.setattr(main, "GAMING_SSH_HOST", "10.1.2.3")
+    monkeypatch.setattr(k8s, "get_node_internal_ip", AsyncMock(side_effect=AssertionError("should not be called")))
+    monkeypatch.setattr(main, "run_gaming_script", AsyncMock(return_value={"success": True}))
+
+    assert authed_client.post("/api/gaming/on", json={}).status_code == 200
+    assert main.run_gaming_script.await_args.kwargs["host"] == "10.1.2.3"

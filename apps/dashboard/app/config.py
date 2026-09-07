@@ -17,7 +17,18 @@ GAMING_NODE_NAME = os.environ.get("GAMING_NODE_NAME", "desktop-j1grrmu")
 # Reaching the desktop over SSH to run gaming-mode/{pregame,postgame}.ps1
 # - see docs/dashboard.md for the key setup (dedicated key, LAN-only,
 # key-only auth) and docs/gaming-mode.md for what the scripts do.
-GAMING_SSH_HOST = os.environ.get("GAMING_SSH_HOST", "192.168.1.133")
+# Optional override. Normally empty, and the address is read from the
+# node's InternalIP at call time instead - neither host has a DHCP
+# reservation, so a hardcoded address here goes stale the next time a
+# lease moves. Set it to pin a specific address (local runs, or if the
+# K8s API is unavailable and gaming mode still needs to work).
+GAMING_SSH_HOST = os.environ.get("GAMING_SSH_HOST", "")
+
+# Host key verification is keyed to this alias rather than to an address,
+# so a lease change does not turn into a host key mismatch. ssh is passed
+# -o HostKeyAlias, and the known_hosts entry uses the alias in place of
+# the IP (kubernetes/dashboard/dashboard.yaml).
+GAMING_SSH_HOST_KEY_ALIAS = os.environ.get("GAMING_SSH_HOST_KEY_ALIAS", "homelab-desktop")
 GAMING_SSH_USER = os.environ.get("GAMING_SSH_USER", "josep")
 GAMING_SSH_KEY_PATH = os.environ.get("GAMING_SSH_KEY_PATH", "/secrets/ssh/id_ed25519")
 GAMING_SSH_KNOWN_HOSTS_PATH = os.environ.get(

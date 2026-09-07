@@ -52,6 +52,8 @@ def client(monkeypatch):
 
     monkeypatch.setattr(k8s, "make_client", lambda: MagicMock(aclose=AsyncMock()))
     monkeypatch.setattr(k8s, "get_nodes", AsyncMock(return_value=FAKE_NODES))
+    monkeypatch.setattr(k8s, "get_node_internal_ip", AsyncMock(return_value="10.0.0.99"))
+    monkeypatch.setattr(main, "GAMING_SSH_HOST", "")
     monkeypatch.setattr(k8s, "get_pods", AsyncMock(return_value=FAKE_PODS))
     monkeypatch.setattr(k8s, "get_argo_applications", AsyncMock(return_value=FAKE_ARGO_APPS))
     monkeypatch.setattr(prometheus, "get_pi_metrics", AsyncMock(return_value=FAKE_PI_METRICS))
