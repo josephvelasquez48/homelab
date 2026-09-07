@@ -29,6 +29,7 @@ redis:7-alpine
 pgvector/pgvector:pg17
 grafana/grafana:13.2.1
 prom/node-exporter:v1.9.1
+ghcr.io/josephvelasquez48/homelab-adguard-exporter:cc809aa77468
 ```
 
 ---
@@ -128,14 +129,19 @@ The fix, in order of what actually does the work:
 leaves the endpoints unreachable rather than open, and keeps the status page
 itself running. See docs/dashboard.md.
 
-### 2. No `securityContext` on any workload
+### 2. `securityContext` is set on exactly one workload
 
-Not one pod in `kubernetes/` sets `runAsNonRoot`, `allowPrivilegeEscalation:
-false`, `readOnlyRootFilesystem`, a dropped capability set, or a seccomp
-profile. Every container runs as root inside its namespace. Trivy config
-should emit KSV001/003/012/014/020/021/030-class findings across `api`,
-`worker`, `dashboard`, `redis`, `postgres`, `grafana`, and
-`node-exporter-desktop`.
+`adguard-exporter` is the exception and the template: it sets
+`runAsNonRoot`, `runAsUser`/`runAsGroup`, `allowPrivilegeEscalation: false`,
+`readOnlyRootFilesystem: true`, and `capabilities.drop: ["ALL"]`.
+
+Every other workload sets none of them, so `api`, `worker`, `dashboard`,
+`redis`, `postgres`, `grafana`, and `node-exporter-desktop` all run as root
+inside their namespace. Trivy config should emit findings in the
+KSV001/003/012/014/020/021/030 family for those seven, and stay quiet about
+`adguard-exporter`. That makes it a useful control: if the scan flags all
+eight equally, the scan is misconfigured. The fix for the other seven is
+already written, in `kubernetes/monitoring/adguard-exporter.yaml`.
 
 ### 3. `node-exporter-desktop` is the widest blast radius in the cluster
 
@@ -149,8 +155,10 @@ accepted-risk note, so the scanner finding does not look unexamined.
 
 ### 4. East-west traffic is default-allow
 
-Two NetworkPolicies exist: `traefik-lan-only` (kube-system) and the AdGuard
-exporter's. Nothing guards `backend`, `data`, `ai`, or `monitoring`. So:
+Two NetworkPolicies exist: `traefik-lan-only` (kube-system) and
+`adguard-exporter-prometheus-only` (monitoring). Both are ingress rules
+scoped to a single pod; nothing guards `backend`, `data`, or `ai` at all,
+and the rest of `monitoring` is unguarded. So:
 
 - `redis.backend.svc:6379` has **no `requirepass`** and is reachable from any
   pod in the cluster. It holds the rate-limit counters and the job queue —
@@ -334,8 +342,9 @@ running here with no TLS, and Argo CD with cluster-admin.
 2. **NetworkPolicies for `backend` and `data`.** The pattern already exists in
    `traefik-security.yaml`; apply it so only the API and worker can reach
    Redis and Postgres. Set a Redis `requirepass` while you are there.
-3. **Add `securityContext` blocks.** Mechanical, and it clears most of what
-   Trivy config reports.
+3. **Add `securityContext` blocks to the other seven workloads.** Mechanical,
+   and it clears most of what Trivy config reports — copy the block
+   already in `kubernetes/monitoring/adguard-exporter.yaml`.
 4. **TLS on the Ingresses.** A local CA or cert-manager with a self-signed
    issuer; drop Argo CD's `--insecure` once it is in place.
 5. **Digest-pin the third-party images.**
