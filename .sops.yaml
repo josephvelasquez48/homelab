@@ -1,5 +1,18 @@
+# Every path_regex below is separator-agnostic, because sops matches it
+# against the ABSOLUTE path. On Windows that means these rules are tested
+# against D:\homelab\kubernetes\secrets\..., so a rule written with forward
+# slashes never matches there. sops then reports "no matching creation
+# rules found", which reads like a missing or misconfigured age key and
+# sends you looking in entirely the wrong place.
+#
+# The separator has to be a character class: a bare \s is regex
+# whitespace, so kubernetes\secrets silently matches nothing at all.
+#
+# Decryption is unaffected either way - it reads recipients from each
+# file's own sops metadata, not from creation_rules, which apply only
+# when encrypting a file for the first time.
 creation_rules:
-  - path_regex: kubernetes/secrets/.*\.enc\.yaml$
+  - path_regex: kubernetes[/\\]secrets[/\\].*\.enc\.yaml$
     key_groups:
       - age:
           - age1tsns9fmhenrdl5ufs2vs28gut2m464xlcp23440uxp4x3aqvdgzsytyjwx
@@ -8,7 +21,7 @@ creation_rules:
   # apply.sh blindly kubectl-applies everything there; a plain key/value
   # file like this one isn't a valid Secret manifest and would break that
   # loop for everyone else's real secrets.
-  - path_regex: docker/.*/secrets/.*\.enc\.yaml$
+  - path_regex: docker[/\\].*[/\\]secrets[/\\].*\.enc\.yaml$
     key_groups:
       - age:
           - age1tsns9fmhenrdl5ufs2vs28gut2m464xlcp23440uxp4x3aqvdgzsytyjwx
