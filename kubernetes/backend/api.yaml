@@ -31,6 +31,22 @@ spec:
   template:
     spec:
       restartPolicy: Never
+      # Pinned to the Pi because this Job's placement is load-bearing and
+      # was previously unconstrained. It has to reach Postgres, and
+      # Postgres is itself pinned here (kubernetes/data/postgres.yaml)
+      # because its local-path PV lives on this node's disk - so the
+      # migration always has a reason to run alongside it, not merely a
+      # preference.
+      #
+      # Left unpinned, the scheduler was free to place it on the desktop,
+      # where a cross-node networking failure made every attempt fail DNS
+      # resolution for postgres.data.svc - three times, exhausting
+      # backoffLimit and blocking the whole PreSync hook, which left
+      # backend OutOfSync while the running pods stayed healthy. Pinning
+      # does not fix that networking fault; it stops a database migration
+      # depending on the scheduler's choice of node to reach the database.
+      nodeSelector:
+        kubernetes.io/hostname: joe
       containers:
         - name: migrate
           image: ghcr.io/josephvelasquez48/homelab-api:9b7a5b0777c4
