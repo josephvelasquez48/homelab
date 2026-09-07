@@ -59,8 +59,17 @@ subjects:
 # The desktop's SSH host key, so the dashboard can verify it instead of
 # either trusting-on-first-use blindly or disabling verification -
 # non-sensitive (it's a public key), so a plain ConfigMap, not a SOPS
-# secret. Get this line with:
-#   ssh-keyscan -t ed25519 192.168.1.133
+# secret.
+#
+# Keyed to the alias "homelab-desktop" rather than to an address, and ssh
+# is passed -o HostKeyAlias to match (apps/dashboard/app/ssh_runner.py).
+# Neither host has a DHCP reservation, so an address here would break
+# gaming mode the next time a lease moves - and it would surface as host
+# key verification failing, which points at the wrong problem entirely.
+# The address itself now comes from the node's InternalIP at call time.
+#
+# Regenerate with (the alias replaces whatever address you scanned):
+#   ssh-keyscan -t ed25519 <desktop-ip> | sed "s/^[^ ]*/homelab-desktop/"
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -68,7 +77,7 @@ metadata:
   namespace: dashboard
 data:
   known_hosts: |
-    192.168.1.133 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEmEz6U1ZsYJbD7ZDUnsnG6Jy1V875lCVW7GWh3oSgu6
+    homelab-desktop ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEmEz6U1ZsYJbD7ZDUnsnG6Jy1V875lCVW7GWh3oSgu6
 ---
 # The private key half (kubernetes/secrets/dashboard-ssh-key.enc.yaml,
 # SOPS-encrypted) is deliberately NOT referenced by name here beyond the

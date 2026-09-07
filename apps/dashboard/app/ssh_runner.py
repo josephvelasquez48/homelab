@@ -9,14 +9,14 @@ import asyncio
 
 from app.config import (
     GAMING_SCRIPT_DIR,
-    GAMING_SSH_HOST,
+    GAMING_SSH_HOST_KEY_ALIAS,
     GAMING_SSH_KEY_PATH,
     GAMING_SSH_KNOWN_HOSTS_PATH,
     GAMING_SSH_USER,
 )
 
 
-async def run_gaming_script(script_name: str, timeout: float) -> dict:
+async def run_gaming_script(script_name: str, timeout: float, host: str) -> dict:
     script_path = f"{GAMING_SCRIPT_DIR}\\{script_name}"
     remote_command = (
         f'powershell.exe -NoProfile -ExecutionPolicy Bypass -File "{script_path}" -NonInteractive'
@@ -25,9 +25,15 @@ async def run_gaming_script(script_name: str, timeout: float) -> dict:
         "ssh",
         "-i", GAMING_SSH_KEY_PATH,
         "-o", f"UserKnownHostsFile={GAMING_SSH_KNOWN_HOSTS_PATH}",
+        # Verify the host key under a stable alias rather than under
+        # whatever address the desktop currently holds. Without this a
+        # DHCP lease change makes ssh compare the key against an unknown
+        # host and refuse - host key verification failing for a reason
+        # that has nothing to do with the host key.
+        "-o", f"HostKeyAlias={GAMING_SSH_HOST_KEY_ALIAS}",
         "-o", "BatchMode=yes",
         "-o", "ConnectTimeout=10",
-        f"{GAMING_SSH_USER}@{GAMING_SSH_HOST}",
+        f"{GAMING_SSH_USER}@{host}",
         remote_command,
     ]
 
