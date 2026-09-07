@@ -12,7 +12,7 @@ without bridge-network plumbing, and node_exporter can read the host's own
 
 - **Prometheus** (`:9090`) scrapes itself, `node-exporter` on `localhost:9100`
   (Pi hardware: CPU/memory/disk/network), and the FastAPI `/metrics` on the
-  desktop (`192.168.1.131:8000`).
+  desktop (`192.168.1.133:8000`).
 - **node_exporter** (`:9100`) - Pi-only for now; nothing polls Windows host
   metrics yet (that needs `windows_exporter` running natively on the
   desktop, not containerized - not done yet).

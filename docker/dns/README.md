@@ -86,7 +86,7 @@ what the login *was*, not a source of truth AdGuard reads from.
 ## Verify
 
 ```bash
-dig @192.168.1.253 api.home +short                         # -> 192.168.1.131
+dig @192.168.1.253 api.home +short                         # -> 192.168.1.253
 dig @192.168.1.253 example.com +short                      # -> real answer, forwarded via AdGuard
 dig @192.168.1.253 mediavisor.doubleclick.net +short        # -> 0.0.0.0 (or NXDOMAIN), blocked by AdGuard
 ```

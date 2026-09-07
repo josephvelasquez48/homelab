@@ -194,7 +194,7 @@ limits.
 | `backend` | `redis` | Pi | `local-path` PVC |
 | `backend` | `api` (2 replicas) | either | Ingress: `api.home`, `ai.home` |
 | `backend` | `worker` | either | processes the Redis job queue |
-| `ai` | `inference` | - | Endpoints -> native Ollama, `192.168.1.131:11434` |
+| `ai` | `inference` | - | Endpoints -> native Ollama, `192.168.1.133:11434` |
 | `monitoring` | `prometheus` | Pi | K8s SD + RBAC for pod discovery |
 | `monitoring` | `grafana` | Pi | Ingress: `grafana.home` |
 
@@ -705,3 +705,66 @@ build-and-push done by hand in this phase.
   identical `Connection refused`. Four pods, three outcomes (allowed /
   refused / timed out), all consistent with one policy and two different
   network paths - not three different bugs.
+
+## Log (continued) - the WireGuard socket quirk recurs on every reboot, and a wrong turn through ufw
+
+- 2026-09-06: **Cross-node networking was down again after a desktop
+  reboot.** Every pod scheduled on the desktop failed DNS resolution
+  (`Temporary failure in name resolution`), which surfaced as an Argo CD
+  `api-migrate` PreSync hook failing three times and blocking the whole
+  `backend` sync. `wg show` on the desktop: `0 B received, 591 KiB sent`,
+  `latest handshake: 0`.
+
+  **Wrong turn worth recording, because the evidence looked convincing.**
+  The Pi's ufw allows `8472/udp` (VXLAN) but has no rule for `51820/udp`,
+  under a default-deny incoming policy - the flannel backend changed to
+  `wireguard-native` and the firewall role was never updated. That reads
+  like an obvious root cause, and an ansible change to "fix" it was
+  already written before it was checked. It was wrong. Two things
+  disproved it: ufw logging is on and had 59 `[UFW BLOCK]` entries in 20
+  minutes with **none** for `DPT=51820`, and a `tcpdump` on the Pi showed it
+  both receiving the desktop's 148-byte handshake initiations and sending
+  92-byte responses back. The Pi was answering the whole time. Per
+  docs/ansible.md, a ufw rule there would likely have been a no-op
+  anyway - K3s's iptables chains process before ufw's INPUT - so the
+  change would have added exactly the kind of rule this repo refuses to
+  write: one that looks like security and isn't. Reverted unshipped.
+
+  **Actual cause: the WSL2 kernel-socket registration quirk documented in
+  "Fix, part 2" above, recurring after reboot.** Same signature as the
+  original: correct firewall rules on both ends, Pi sending responses,
+  desktop receiving nothing, kernel WireGuard socket bound on 51820. The
+  documented remedy worked immediately - `timeout 5 nc -u -l 51820` failing
+  with `Address already in use` took `wg show` from `0 B received` to a
+  completed handshake and 12 KiB received within seconds. Cross-node pod
+  ping went from 100% loss to 0%, and DNS resolved from a desktop pod.
+
+  The lesson from last time was written down and still cost an hour,
+  because the ufw gap was real, visible, and adjacent - it just wasn't
+  what was breaking anything. Read the log entry for the symptom you
+  actually have (`0 B received` with correct rules) before acting on the
+  first plausible misconfiguration you find.
+
+  **Made it survive reboots**: `scripts/wsl-wireguard-register.ps1`, run at
+  logon by the `WSL2-K3s-WireGuard-Register` Scheduled Task (same pattern
+  as `WSL2-K3s-Keepalive`). It waits for `flannel-wg`, exits immediately if
+  the tunnel is already handshaking, and **refuses to bind when 51820 is
+  free** - a free port means flannel hasn't claimed it yet, and binding
+  it would turn a boot-time fix into a boot-time outage.
+
+- 2026-09-06: **The reboot also moved the desktop's DHCP lease,
+  `192.168.1.131 -> 192.168.1.133`.** K3s and flannel re-registered on their
+  own (node `InternalIP` and `flannel.alpha.coreos.com/public-ip` both
+  updated), but six places hardcoded the old address: the `inference`
+  Endpoints, the dashboard's `GAMING_SSH_HOST` default and its
+  `dashboard-known-hosts` ConfigMap, the Compose Prometheus scrape target,
+  and two docs. The SSH host key is unchanged (same machine), so only the
+  address prefix moved.
+
+  **This should be a static DHCP reservation on the router.** Nothing
+  above is hard to fix once, but it is entirely avoidable, and the
+  failure mode is quiet: the dashboard's gaming-mode SSH would fail host
+  key verification, and `/v1/chat` would reach an Endpoints address with
+  nothing behind it, neither of which announces itself as "the IP
+  changed". Historical log entries above deliberately keep `.131` - they
+  record what was true at the time.
