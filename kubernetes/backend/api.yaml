@@ -33,7 +33,7 @@ spec:
       restartPolicy: Never
       containers:
         - name: migrate
-          image: ghcr.io/josephvelasquez48/homelab-api:14a458b77fcf
+          image: ghcr.io/josephvelasquez48/homelab-api:9b7a5b0777c4
           command: ["alembic", "upgrade", "head"]
           envFrom:
             - configMapRef: { name: api-config }
@@ -61,7 +61,7 @@ spec:
     spec:
       containers:
         - name: api
-          image: ghcr.io/josephvelasquez48/homelab-api:14a458b77fcf
+          image: ghcr.io/josephvelasquez48/homelab-api:9b7a5b0777c4
           envFrom:
             - configMapRef: { name: api-config }
             - secretRef: { name: api-secrets }
