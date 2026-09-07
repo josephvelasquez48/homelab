@@ -21,3 +21,47 @@ spec:
           resources:
             requests: { cpu: 50m, memory: 128Mi }
             limits: { cpu: 500m, memory: 256Mi }
+          # This Deployment previously had no probes at all, which meant
+          # Kubernetes treated the container as Ready the moment the
+          # process started. When a worker was scheduled onto a node whose
+          # pod networking was broken, it was declared Ready immediately,
+          # the Deployment terminated the healthy worker to make room for
+          # it, and only then did it start crash-looping - `kubectl get
+          # deploy worker` read 1/1 the whole time while nothing was
+          # draining the queue. Readiness is the fix: with replicas: 1 the
+          # rolling update computes maxUnavailable: 0 / maxSurge: 1, so a
+          # replacement that never becomes Ready leaves the working pod
+          # alone instead of replacing it.
+          #
+          # exec, not httpGet: this process is a blocking BLPOP consumer
+          # with no HTTP surface. The check is what Ready actually means
+          # here - the queue it blocks on and the database it writes
+          # results to are both reachable.
+          readinessProbe:
+            exec:
+              command: ["python", "-m", "app.worker_health"]
+            initialDelaySeconds: 10
+            periodSeconds: 30
+            timeoutSeconds: 10
+            failureThreshold: 2
+          # Deliberately far more forgiving than readiness, and last
+          # resort only: restarting cannot fix an unreachable dependency,
+          # so a brief Redis or Postgres blip should drop this pod out of
+          # Ready without also killing it. Roughly four minutes of
+          # continuous failure before a restart, which is long enough to
+          # ride out a rollout of either dependency.
+          #
+          # Note what this does NOT detect: a wedged event loop. The check
+          # runs in its own process, so it would pass while the worker
+          # itself was hung. Catching that needs a heartbeat written from
+          # inside the loop - deliberately not added here, because the
+          # loop blocks for the full duration of a job (up to the 120s
+          # Ollama read timeout), so a heartbeat would have to tolerate
+          # gaps that long or be written from a separate task.
+          livenessProbe:
+            exec:
+              command: ["python", "-m", "app.worker_health"]
+            initialDelaySeconds: 60
+            periodSeconds: 30
+            timeoutSeconds: 10
+            failureThreshold: 8
