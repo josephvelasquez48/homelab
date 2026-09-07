@@ -1,4 +1,5 @@
-# Ollama runs natively on the desktop (GPU access), not as a pod - this
+# Ollama runs on the desktop for GPU access, as a systemd service inside
+# WSL (not a pod, and no longer a Windows-side process) - this
 # Service/Endpoints pair (no selector, no ExternalName) points in-cluster
 # traffic at it by IP directly, rather than relying on a pod's own upstream
 # DNS resolution to work for an external hostname. Standard Kubernetes

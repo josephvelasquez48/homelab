@@ -21,14 +21,19 @@ async def ready(request: Request) -> dict[str, str]:
     it would just crash-loop every replica for the duration. Readiness can
     safely say "not me, route elsewhere" and recover on its own.
 
-    Ollama is checked here for a specific reason: it runs natively on the
-    desktop, and pods scheduled on the desktop node cannot reach the
-    Windows host's own LAN IP through WSL2 mirrored networking (see
-    docs/kubernetes.md). Without this check such a pod passes /health on
-    Postgres and Redis alone, joins the Service as Ready, and then fails
-    every /v1/chat and RAG request routed to it - a healthy-looking
-    replica serving broken inference. Failing readiness stalls the
-    rollout loudly instead, and leaves the working replicas serving.
+    Ollama is checked here because it is a real dependency of /v1/chat and
+    the RAG routes: a replica that cannot reach it should stop receiving
+    traffic for them rather than failing every request.
+
+    It was added for a sharper reason that no longer applies. Ollama used
+    to run as a Windows-side process, unreachable from pods on the desktop
+    node itself - inside WSL the host's LAN IP is WSL's own address, and
+    only WSL-side listeners answer on it. Such a replica passed /health on
+    Postgres and Redis alone, joined the Service, and then failed every
+    inference request routed to it. Ollama now runs as a systemd service
+    inside WSL and is reachable from both nodes, so that trap is gone -
+    the check stays because "Ollama is down" is still a reason not to
+    serve.
     """
     checks: dict[str, str] = {}
     failed: list[str] = []
