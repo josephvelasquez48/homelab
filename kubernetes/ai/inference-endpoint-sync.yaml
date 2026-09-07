@@ -1,0 +1,197 @@
+# Keeps the `inference` Endpoints pointing at the desktop's current address.
+#
+# The desktop is on DHCP with no reservation (the router does not support
+# them - see docs/milestone-1.md for the same limitation on DNS override).
+# When its lease moved 192.168.1.131 -> 192.168.1.133, k3s and flannel
+# re-registered themselves within seconds, but the hand-written Endpoints in
+# inference.yaml kept the old address and in-cluster inference broke.
+#
+# Worse, it broke silently: Argo CD's stock resource.exclusions in argocd-cm
+# excludes Endpoints, so the commit fixing the address synced "successfully"
+# and changed nothing, while the `ai` Application stayed Synced/Healthy. The
+# only trace was an ExcludedResourceWarning condition nobody looks at.
+#
+# k3s already tracks the right value - node.status.addresses[InternalIP]
+# updated on its own. Nothing read it. This copies it across.
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: inference-endpoint-sync
+  namespace: ai
+---
+# Cluster-scoped but read-only, and only nodes: this needs to know one
+# address, not to change anything outside the ai namespace.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: inference-endpoint-sync-read-nodes
+rules:
+  - apiGroups: [""]
+    resources: ["nodes"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: inference-endpoint-sync-read-nodes
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: inference-endpoint-sync-read-nodes
+subjects:
+  - kind: ServiceAccount
+    name: inference-endpoint-sync
+    namespace: ai
+---
+# Write access is namespaced to ai, and resourceNames pins it to the single
+# Endpoints object this exists to maintain. A bug here cannot touch anything
+# else in the cluster.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: inference-endpoint-sync
+  namespace: ai
+rules:
+  - apiGroups: [""]
+    resources: ["endpoints"]
+    resourceNames: ["inference"]
+    verbs: ["get", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: inference-endpoint-sync
+  namespace: ai
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: inference-endpoint-sync
+subjects:
+  - kind: ServiceAccount
+    name: inference-endpoint-sync
+    namespace: ai
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: inference-endpoint-sync
+  namespace: ai
+data:
+  # Standard library only, so this runs on the stock python image with no
+  # build step, no dependency to keep current, and no third-party registry
+  # to depend on. Same in-cluster API approach as apps/dashboard/app/k8s.py.
+  sync.py: |
+    """Copy the desktop node's InternalIP into the inference Endpoints."""
+    import json
+    import os
+    import ssl
+    import sys
+    import urllib.request
+
+    API = "https://kubernetes.default.svc"
+    SA = "/var/run/secrets/kubernetes.io/serviceaccount"
+    NODE = os.environ["GAMING_NODE_NAME"]
+    NAMESPACE = os.environ["TARGET_NAMESPACE"]
+    ENDPOINTS = os.environ["TARGET_ENDPOINTS"]
+    PORT = int(os.environ["TARGET_PORT"])
+
+    with open(f"{SA}/token") as f:
+        token = f.read().strip()
+    ctx = ssl.create_default_context(cafile=f"{SA}/ca.crt")
+
+    def call(method, path, body=None):
+        data = None
+        headers = {"Authorization": f"Bearer {token}"}
+        if body is not None:
+            data = json.dumps(body).encode()
+            headers["Content-Type"] = "application/merge-patch+json"
+        req = urllib.request.Request(API + path, data=data, headers=headers, method=method)
+        with urllib.request.urlopen(req, context=ctx, timeout=15) as resp:
+            return json.load(resp)
+
+    node = call("GET", f"/api/v1/nodes/{NODE}")
+    desired = next(
+        (a["address"] for a in node["status"]["addresses"] if a["type"] == "InternalIP"),
+        None,
+    )
+    if not desired:
+        print(f"no InternalIP on node {NODE}; refusing to guess", file=sys.stderr)
+        sys.exit(1)
+
+    ep = call("GET", f"/api/v1/namespaces/{NAMESPACE}/endpoints/{ENDPOINTS}")
+    current = None
+    for subset in ep.get("subsets") or []:
+        for addr in subset.get("addresses") or []:
+            current = addr.get("ip")
+            break
+
+    if current == desired:
+        print(f"ok: {ENDPOINTS} already points at {desired}")
+        sys.exit(0)
+
+    # A merge patch replaces the whole subsets list, which is what we want:
+    # this Endpoints has exactly one address by design and should never
+    # accumulate stale ones.
+    call(
+        "PATCH",
+        f"/api/v1/namespaces/{NAMESPACE}/endpoints/{ENDPOINTS}",
+        {"subsets": [{"addresses": [{"ip": desired}], "ports": [{"port": PORT}]}]},
+    )
+    print(f"updated: {ENDPOINTS} {current} -> {desired}")
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: inference-endpoint-sync
+  namespace: ai
+spec:
+  # Every 5 minutes. The address changes at most once per DHCP lease, so
+  # this is about bounding how long inference stays broken after it does,
+  # not about reacting quickly.
+  schedule: "*/5 * * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      template:
+        spec:
+          serviceAccountName: inference-endpoint-sync
+          restartPolicy: Never
+          # Pinned to the Pi so the thing that repairs the desktop's address
+          # does not itself depend on the desktop being reachable.
+          nodeSelector:
+            kubernetes.io/hostname: joe
+          containers:
+            - name: sync
+              image: python:3.12-slim
+              command: ["python", "/scripts/sync.py"]
+              env:
+                - name: GAMING_NODE_NAME
+                  value: desktop-j1grrmu
+                - name: TARGET_NAMESPACE
+                  value: ai
+                - name: TARGET_ENDPOINTS
+                  value: inference
+                - name: TARGET_PORT
+                  value: "11434"
+              volumeMounts:
+                - name: scripts
+                  mountPath: /scripts
+                  readOnly: true
+              securityContext:
+                runAsNonRoot: true
+                runAsUser: 65534
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: ["ALL"]
+              resources:
+                requests: { cpu: 10m, memory: 32Mi }
+                limits: { cpu: 200m, memory: 64Mi }
+          volumes:
+            - name: scripts
+              configMap:
+                name: inference-endpoint-sync
