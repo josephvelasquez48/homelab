@@ -194,7 +194,7 @@ limits.
 | `backend` | `redis` | Pi | `local-path` PVC |
 | `backend` | `api` (2 replicas) | either | Ingress: `api.home`, `ai.home` |
 | `backend` | `worker` | either | processes the Redis job queue |
-| `ai` | `inference` | - | Endpoints -> native Ollama, `192.168.1.133:11434` |
+| `ai` | `inference` | - | Endpoints -> Ollama in WSL, `192.168.1.133:11434` |
 | `monitoring` | `prometheus` | Pi | K8s SD + RBAC for pod discovery |
 | `monitoring` | `grafana` | Pi | Ingress: `grafana.home` |
 
@@ -791,3 +791,60 @@ build-and-push done by hand in this phase.
   "every resource Argo is willing to look at matches", not "the cluster
   matches this file". Any hand-written Endpoints in this repo is
   documentation with a `kubectl apply` step attached, not GitOps.
+
+## Log (continued) - moving Ollama into WSL, because a Windows-side listener is invisible to its own node's pods
+
+- 2026-09-06: **Pods on the desktop could not reach Ollama on the desktop.**
+  From a pod on the Pi, `inference.ai.svc` answered 200 with the full model
+  list; from a pod on the desktop, connection refused. Until cross-node
+  networking was repaired this was self-limiting - such a replica could not
+  reach Postgres either, so it never started. Once the tunnel worked, the
+  replica started, passed `/health` on Postgres and Redis alone, joined the
+  Service as Ready, and failed every `/v1/chat` routed to it. A
+  healthy-looking pod serving broken inference is worse than the outage
+  that preceded it.
+
+  **It was not the firewall**, which is where the time went. Both relevant
+  rules are scoped identically (`192.168.1.0/24`, profile Any, Allow). The
+  split is by *what listens*:
+
+  ```
+  from a desktop pod:  192.168.1.133:11434  FAIL   (Ollama - Windows process)
+                       192.168.1.133:22     FAIL   (sshd  - Windows process)
+                       192.168.1.133:10250  OK     (kubelet - WSL process)
+  ```
+
+  Inside WSL, `192.168.1.133` is **WSL's own** address. WSL-side listeners
+  answer on it; Windows-side ones never see the packet. WSL cannot bind it
+  either (`Address already in use` - Windows holds it), so a forwarder there
+  is not an option. The Service path fails the same way: kube-proxy DNATs
+  the ClusterIP to `192.168.1.133:11434`, which WSL then delivers locally to
+  nothing.
+
+  **Rejected: an iptables DNAT** from the pod CIDR to `127.0.0.1:11434` (WSL's
+  loopback does bridge to Windows). It would have worked, but it means
+  hand-written NAT rules inserted ahead of kube-proxy's chains, keyed to a
+  ClusterIP that changes if the Service is recreated, reapplied after every
+  reboot and every k3s restart - fragile machinery in the exact area that
+  has already produced three separate incidents in this log.
+
+  **Fix: Ollama now runs inside WSL as a systemd service.** It becomes a
+  WSL-side listener like kubelet, so the same `192.168.1.133:11434` works
+  from both nodes and `inference.yaml` no longer depends on a Windows-side
+  address at all. GPU passthrough confirmed first (`/dev/dxg` present,
+  `nvidia-smi` reporting the RTX 3070 Ti), then v0.32.5 installed to match
+  the Windows build exactly so the existing model store stays compatible -
+  the 4.7G store was copied from `C:`Users`josep`.ollama` rather than
+  re-downloading. Ollama logs `library=CUDA compute=8.6` and the model sits
+  in VRAM (`size_vram: 4.7GB`), so the GPU is genuinely in use.
+
+  Verified: both nodes reach the Service, a real `/api/generate` through the
+  cluster returned 200 from the desktop pod, the previously-stuck replica
+  went Ready on its own, and the rollout completed with one replica per
+  node - the two-node spread restored rather than worked around.
+
+  **The Windows autostart shortcut was disabled** (renamed in the Startup
+  folder, reversible). Left in place it would re-grab `:11434` at next logon
+  and the WSL service would crash-loop against it - the two cannot
+  coexist, since whichever binds first wins and the other sees
+  `Address already in use`.
