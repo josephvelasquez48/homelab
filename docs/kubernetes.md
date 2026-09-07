@@ -768,3 +768,26 @@ build-and-push done by hand in this phase.
   nothing behind it, neither of which announces itself as "the IP
   changed". Historical log entries above deliberately keep `.131` - they
   record what was true at the time.
+
+- 2026-09-06: **An Argo CD Application can report `Synced` while ignoring part
+  of its own manifest.** Updating the desktop's address in
+  `kubernetes/ai/inference.yaml` synced "successfully" and changed nothing:
+  the `inference` Endpoints kept `.131` while git said `.133`, and the `ai`
+  Application stayed `Synced`/`Healthy` throughout. Argo's **stock**
+  `resource.exclusions` in `argocd-cm` excludes `Endpoints` and `EndpointSlice`
+  (control-plane-managed, high-churn, excluded to cut watch events) - so
+  the resource is skipped silently. Not a local misconfiguration; it ships
+  that way.
+
+  The only trace is an `ExcludedResourceWarning` condition on the
+  Application, which nothing surfaces by default:
+
+  ```bash
+  kubectl -n argocd get application ai -o jsonpath='{.status.conditions}'
+  ```
+
+  Applied by hand to fix it, and put a warning at the top of the Endpoints
+  block in the manifest. Worth remembering generally: "Synced" means
+  "every resource Argo is willing to look at matches", not "the cluster
+  matches this file". Any hand-written Endpoints in this repo is
+  documentation with a `kubectl apply` step attached, not GitOps.

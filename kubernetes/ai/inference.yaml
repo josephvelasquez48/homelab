@@ -13,6 +13,19 @@ spec:
     - port: 11434
       targetPort: 11434
 ---
+# WARNING: this Endpoints object is NOT managed by Argo CD, even though
+# it lives in an Argo-CD-synced path. Argo's stock resource.exclusions in
+# argocd-cm excludes Endpoints and EndpointSlice (control-plane-managed,
+# high-churn, excluded to cut watch events) - so it is skipped silently
+# and the `ai` Application still reports Synced/Healthy while the cluster
+# disagrees with this file. Found the hard way: a DHCP change moved the
+# desktop from .131 to .133, the commit updating this line synced
+# "successfully", and the Endpoints kept the old address until it was
+# applied by hand. The only visible trace is an ExcludedResourceWarning
+# condition on the Application.
+#
+# After changing the address below, apply it directly - a sync will not:
+#   kubectl apply -f kubernetes/ai/inference.yaml
 apiVersion: v1
 kind: Endpoints
 metadata:
