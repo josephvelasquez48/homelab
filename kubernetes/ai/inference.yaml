@@ -27,6 +27,12 @@ spec:
 #
 # After changing the address below, apply it directly - a sync will not:
 #   kubectl apply -f kubernetes/ai/inference.yaml
+#
+# In normal operation you should not need to: the CronJob in
+# inference-endpoint-sync.yaml copies the desktop node's InternalIP here
+# every 5 minutes, which is what actually keeps this correct across a DHCP
+# lease change. The address below is the starting value, not the source of
+# truth.
 apiVersion: v1
 kind: Endpoints
 metadata:
