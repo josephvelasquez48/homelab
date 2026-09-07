@@ -86,10 +86,21 @@ spec:
           resources:
             requests: { cpu: 100m, memory: 128Mi }
             limits: { cpu: 500m, memory: 256Mi }
+          # /ready, not /health: readiness additionally checks Ollama,
+          # which runs natively on the desktop and is unreachable from
+          # pods on that same node through WSL2 mirrored networking. A
+          # replica landing there passes /health on Postgres and Redis
+          # alone and would otherwise join the Service as Ready, then
+          # fail every /v1/chat routed to it. Failing readiness stalls
+          # the rollout loudly and leaves the working replicas serving.
           readinessProbe:
-            httpGet: { path: /health, port: 8000 }
+            httpGet: { path: /ready, port: 8000 }
             initialDelaySeconds: 5
             periodSeconds: 5
+          # Liveness stays on /health, which deliberately does NOT check
+          # Ollama. Restarting a pod cannot make an unreachable Ollama
+          # reachable, so pointing liveness at /ready would crash-loop
+          # every replica for the duration of an Ollama outage.
           livenessProbe:
             httpGet: { path: /health, port: 8000 }
             initialDelaySeconds: 15

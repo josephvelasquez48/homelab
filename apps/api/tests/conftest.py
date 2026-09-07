@@ -13,8 +13,11 @@ from fastapi.testclient import TestClient
 class FakeRedis:
     def __init__(self):
         self.store = {}
+        self.fail_ping = False
 
     async def ping(self):
+        if self.fail_ping:
+            raise ConnectionError("redis unreachable")
         return True
 
     async def get(self, key):
@@ -116,6 +119,17 @@ class FakeOllamaResponse:
 class FakeOllamaClient:
     def __init__(self):
         self.requests = []
+        # Set to an exception to simulate an unreachable Ollama - the
+        # case /ready exists to catch on the desktop node.
+        self.fail_with = None
+
+    async def get(self, url, **kwargs):
+        self.requests.append((url, None))
+        if self.fail_with is not None:
+            raise self.fail_with
+        if url == "/api/tags":
+            return FakeOllamaResponse({"models": [{"name": "qwen2.5-coder:7b"}]})
+        raise ValueError(f"unexpected Ollama URL in test: {url}")
 
     async def post(self, url, json=None, **kwargs):
         self.requests.append((url, json))
