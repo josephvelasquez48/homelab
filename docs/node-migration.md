@@ -387,3 +387,36 @@ decision lands.
 `kubectl delete node` runs from anywhere, but stopping `k3s-agent`
 inside WSL does not. That half has to happen at the desktop, so step 5
 is the first point where this migration cannot be driven from the Mac.
+
+### `node-exporter-desktop` deleted
+
+Removed `kubernetes/monitoring/node-exporter-desktop.yaml`. The
+`monitoring` Application syncs `kubernetes/monitoring` from `main` with
+`prune: true` and `selfHeal: true`, so a `kubectl delete` would have
+been reverted within minutes - **the repo is the only place this can be
+deleted from**, and it takes effect when this merges, not when it is
+committed.
+
+Deleting rather than replacing with a `windows_exporter` target, for
+now. Desktop metrics were already listed as a known gap in
+[monitoring.md](monitoring.md), and a scrape target for a machine that
+is no longer a cluster member is a separate decision from retiring the
+node.
+
+Worth noting what this also removes: [security-testing.md](security-testing.md)
+names this Deployment as the widest blast radius in the cluster -
+`hostNetwork: true`, running as root. That finding is now moot rather
+than fixed, which is a different thing and should be re-read as history
+next time that doc is revised.
+
+**Left dangling deliberately**, because they are the plan's separate
+line items rather than this one:
+
+- 8 panel queries in `grafana.yaml` selecting
+  `pod=~"node-exporter-desktop.*"`, which will render empty
+- `apps/dashboard`'s `DESKTOP_SELECTOR` and `get_desktop_metrics`, which
+  degrade to the "no desktop pods to check right now" state the UI
+  already knows how to show
+
+Prometheus needs no change - it discovered the pod through the existing
+`kubernetes-pods` job, not a dedicated scrape config.
