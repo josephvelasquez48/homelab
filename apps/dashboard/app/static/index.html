@@ -50,7 +50,7 @@
     <div class="top-left">
       <div class="header">
         <h1>Homelab Dashboard</h1>
-        <div class="sub">Pi 5 + desktop K3s cluster — refreshes every 10s</div>
+        <div class="sub">Pi 5 + M1 K3s cluster — refreshes every 10s</div>
       </div>
       <div class="header-actions">
         <button id="btn-release" onclick="releaseGpu()">Free the GPU</button>
@@ -72,9 +72,8 @@
   </div>
 
   <div class="card" style="margin-bottom: 24px;">
-    <h2>Desktop metrics</h2>
+    <h2>Worker connectivity</h2>
     <div id="cross-node-status" style="margin-bottom: 12px;"></div>
-    <div id="desktop-metrics" class="compact"></div>
   </div>
 
   <div class="grid">
@@ -200,14 +199,13 @@ async function refresh() {
     `).join('') || '<div class="muted">no data</div>';
 
     renderMetricsCard('pi-metrics', data.pi_metrics, { cores: 4, showTemp: true });
-    renderMetricsCard('desktop-metrics', data.desktop_metrics, { cores: 28, showTemp: false });
 
     const crossNode = data.cross_node_status;
     const crossNodeDot = crossNode === 'up' ? 'ok' : (crossNode === 'down' ? 'bad' : 'warn');
-    const crossNodeLabel = crossNode === 'up' ? 'Up' : (crossNode === 'down' ? 'Down — pods here can\'t reach the Pi' : 'Unknown — no desktop pods to check right now');
+    const crossNodeLabel = crossNode === 'up' ? 'Worker pod scrapes succeeding' : (crossNode === 'down' ? 'A worker pod scrape is failing' : 'Unknown � no worker scrape data or monitoring unavailable');
     document.getElementById('cross-node-status').innerHTML = `
       <div class="row">
-        <span>${dot(crossNodeDot)}Cross-node networking</span>
+        <span>${dot(crossNodeDot)}Cross-node scrape health</span>
         <span class="muted">${crossNodeLabel}</span>
       </div>
     `;

@@ -1,5 +1,24 @@
 # Dashboard
 
+## Current behavior (2026-09-10)
+
+The cluster is Pi + M1; Windows runs Ollama outside Kubernetes. The page
+shows Pi hardware metrics, nodes, pods, Argo status, and resident GPU models.
+The obsolete desktop hardware card and its exporter queries are removed.
+Windows host metrics require a future native exporter.
+
+Cross-node scrape health selects Prometheus targets inside the current worker
+pod CIDRs read from Kubernetes, including IPv6. It excludes host-network and
+control-plane targets. A failed scrape is reported as a failed scrape, not as
+proof of a broken tunnel; this does not test traffic in both directions.
+No matching targets, unavailable node data, or a Prometheus error displays
+Unknown. Prometheus is currently pinned to the Pi; revisit this interpretation
+if its placement changes.
+
+GPU release remains authenticated at `POST /api/gpu/release`. The dashboard
+image no longer installs an SSH client. The sections below preserve the old
+SSH-based implementation as history.
+
 Not part of the original roadmap - a follow-on to
 [docs/gaming-mode.md](gaming-mode.md). A small FastAPI app + single HTML
 page, running in the cluster (pinned to the Pi), showing live cluster

@@ -83,13 +83,11 @@ async def health():
 async def status():
     k8s_client = app.state.k8s
 
-    nodes, pods_by_ns, argo_apps, pi_metrics, desktop_metrics, cross_node_status = await asyncio.gather(
+    nodes, pods_by_ns, argo_apps, pi_metrics = await asyncio.gather(
         k8s.get_nodes(k8s_client),
         asyncio.gather(*(k8s.get_pods(k8s_client, ns) for ns in WATCHED_NAMESPACES)),
         k8s.get_argo_applications(k8s_client),
         prometheus.get_pi_metrics(app.state.http),
-        prometheus.get_desktop_metrics(app.state.http),
-        prometheus.get_cross_node_status(app.state.http),
         return_exceptions=True,
     )
 
@@ -103,9 +101,9 @@ async def status():
         argo_apps = []
     if isinstance(pi_metrics, Exception):
         pi_metrics = dict.fromkeys(prometheus.QUERIES)
-    if isinstance(desktop_metrics, Exception):
-        desktop_metrics = dict.fromkeys(prometheus.DESKTOP_QUERIES)
-    if isinstance(cross_node_status, Exception):
+    try:
+        cross_node_status = await prometheus.get_cross_node_status(app.state.http, nodes)
+    except Exception:
         cross_node_status = None
 
     # What is resident on the GPU, which is the only contention left now
@@ -128,7 +126,6 @@ async def status():
         "gpu_models": gpu_models,
         "api_health": api_health,
         "pi_metrics": pi_metrics,
-        "desktop_metrics": desktop_metrics,
         "cross_node_status": cross_node_status,
     }
 
