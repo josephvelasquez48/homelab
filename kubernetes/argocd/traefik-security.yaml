@@ -18,6 +18,9 @@ metadata:
   namespace: kube-system
 spec:
   valuesContent: |-
+    # DNS points at the Pi; externalTrafficPolicy Local requires Traefik here.
+    nodeSelector:
+      kubernetes.io/hostname: joe
     additionalArguments:
       - "--entrypoints.web.http.redirections.entrypoint.to=:443"
       - "--entrypoints.web.http.redirections.entrypoint.scheme=https"
