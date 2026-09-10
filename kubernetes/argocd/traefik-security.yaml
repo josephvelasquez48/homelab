@@ -43,7 +43,13 @@ spec:
   ingress:
     - from:
         - ipBlock: { cidr: 192.168.1.0/24 }
-        - ipBlock: { cidr: fd00:f405:95c7:c412::/64 }
+        # The IPv6 half was removed deliberately. It allowed
+        # fd00:f405:95c7:c412::/64 - the previous router's self-generated
+        # ULA prefix. That router was replaced (docs/router-migration.md)
+        # and its successor hands out no IPv6 at all, so the rule matched
+        # nothing. Re-add an ipBlock with the new prefix if IPv6 returns
+        # to this LAN. A dead prefix left in an allow-list is how a rule
+        # ends up looking like protection it is not providing.
     # Narrow, separate exception for in-cluster Prometheus scraping of
     # Traefik's own metrics endpoint (see docs/kubernetes.md - discovered
     # via Grafana's "Targets Up" panel showing this scrape as down).

@@ -25,7 +25,7 @@ flowchart TB
         end
 
         subgraph Desktop["Desktop — node 'desktop-j1grrmu' (K3s worker via WSL2, mirrored networking)"]
-            Ollama["Ollama (native process)<br/>RTX 3070 Ti, qwen2.5-coder + nomic-embed"]
+            Ollama["Ollama (systemd service in WSL)<br/>RTX 3070 Ti, qwen2.5-coder + nomic-embed"]
             subgraph DesktopWorkloads["K3s workloads (either node, unpinned)"]
                 API["FastAPI api<br/>2 replicas, HPA-free"]
                 Worker["Job worker<br/>(Redis queue consumer)"]
@@ -49,7 +49,6 @@ flowchart TB
     Worker --> Redis
     Worker -->|HTTP, LAN| Ollama
     Prom -.->|scrape /metrics| API
-    Prom -.->|scrape /metrics| Worker
     Prom -.->|scrape /metrics, only pod NetworkPolicy allows in| AdGuardExporter
     AdGuardExporter -->|/control/status, /control/stats| AdGuard
     Graf -->|query| Prom
@@ -64,10 +63,12 @@ flowchart TB
 - **Secrets** (`docs/secrets.md`) - SOPS-encrypted, applied out-of-band,
   deliberately outside Argo CD's sync path. Not drawn as a GitOps-managed
   resource because it isn't one.
-- **The flannel VXLAN -> host-gw networking layer** underneath the two
-  K3s nodes (`docs/kubernetes.md`) - this diagram shows the workload
-  topology, not the pod-network internals that made cross-node traffic
-  actually work.
+- **The flannel pod-network layer** underneath the two K3s nodes
+  (`docs/kubernetes.md`) - currently the `wireguard-native` backend,
+  after `vxlan` and then `host-gw` each turned out to be incompatible
+  with WSL2 mirrored networking in a different way. This diagram shows
+  the workload topology, not the pod-network internals that made
+  cross-node traffic actually work.
 - **ufw** on the Pi, scoping every inbound port to the LAN - see
   `docs/kubernetes.md` and `docs/argocd.md` for the real gap found and
   fixed there (kube-router's own iptables chains processed before ufw's).

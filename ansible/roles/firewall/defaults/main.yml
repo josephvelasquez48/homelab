@@ -1,6 +1,14 @@
 ---
-# The router's self-generated ULA prefix (stable across ISP prefix churn -
-# see docs/kubernetes.md / docker/dns for why this was chosen over the
-# public GUA prefix). Specific to this network; override per-environment
-# if this playbook is ever pointed at a different one.
-lan_ipv6_ula_prefix: "fd00:f405:95c7:c412::/64"
+# The LAN's IPv6 ULA prefix, used to scope the IPv6 ufw rules in this
+# role. Empty by default, which skips those rules entirely.
+#
+# The previous router (a Spectrum SAX1V1S) self-generated
+# fd00:f405:95c7:c412::/64, and the Pi held a static address inside it.
+# Its replacement hands out no IPv6 at all - no GUA, no ULA - so rules
+# scoped to that prefix matched nothing. See docs/router-migration.md.
+#
+# Set this to the current prefix if IPv6 returns. A ufw rule for a
+# prefix nothing is on is worse than no rule at all: it reads as
+# protection that is not there, which is the same mistake this role
+# already refuses to make for Traefik's ports.
+lan_ipv6_ula_prefix: ""
