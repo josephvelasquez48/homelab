@@ -84,7 +84,7 @@ spec:
         kubernetes.io/hostname: joe
       containers:
         - name: dashboard
-          image: ghcr.io/josephvelasquez48/homelab-dashboard:21fddad27b47
+          image: ghcr.io/josephvelasquez48/homelab-dashboard:e8e0377e67dd
           # DASHBOARD_PASSWORD + SESSION_SECRET for the session auth on
           # /api/gpu/release (see apps/dashboard/app/auth.py).
           #
