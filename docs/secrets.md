@@ -143,6 +143,56 @@ Verified after each rotation: old credential explicitly rejected (not just
 endpoint - `grafana.home` login, `api.home/health` reporting
 `"postgres":"ok"`.
 
+## Reference copies (encrypted, never applied)
+
+Two credentials here cannot be `kubectl apply`ed from an encrypted
+manifest, because the live source of truth is a bcrypt hash the service
+manages itself. For those the encrypted file is a **reference copy**: it
+records what the credential is, so a rebuild does not mean losing access,
+but nothing reads it automatically.
+
+| File | Credential | Live source of truth |
+|---|---|---|
+| `docker/dns/secrets/adguard-admin.enc.yaml` | AdGuard Home admin | bcrypt hash in `adguard/conf/AdGuardHome.yaml` |
+| `kubernetes/secrets/reference/argocd-admin.enc.yaml` | Argo CD admin | `admin.password` in the `argocd-secret` Secret |
+
+**Argo CD's is the one with a real trap in it.** `argocd-secret` does not
+only hold the admin password - it also holds `server.secretkey`, which
+signs every session token, plus `tls.crt` and `tls.key`. A `kubectl apply`
+of a partial Secret carrying just `admin.password` would strip the other
+three, invalidating every session and Argo CD's own TLS material. So this
+file is deliberately not a Secret manifest, and deliberately not in
+`kubernetes/secrets/` proper: `apply.sh` globs that directory
+non-recursively, which puts the `reference/` subdirectory out of its reach
+by construction rather than by convention.
+
+Read it with:
+
+```bash
+sops --decrypt kubernetes/secrets/reference/argocd-admin.enc.yaml
+```
+
+Four fields: `username`, `password` (plaintext, for logging in),
+`bcrypt_hash`, and `password_mtime`. The hash is stored so the credential
+can be restored into a rebuilt cluster without regenerating it:
+
+```bash
+HASH=$(sops --decrypt kubernetes/secrets/reference/argocd-admin.enc.yaml | awk '/^bcrypt_hash:/{print $2}')
+NOW=$(date -u +%FT%TZ)
+kubectl -n argocd patch secret argocd-secret --type merge -p "{\"stringData\":{\"admin.password\":\"$HASH\",\"admin.passwordMtime\":\"$NOW\"}}"
+kubectl -n argocd rollout restart deploy argocd-server
+```
+
+`patch` merges and `apply` replaces, which is the entire reason this one
+is not wired into `apply.sh`.
+
+This password was still Argo CD's install-time generated value, living
+only in `argocd-initial-admin-secret` in the cluster and nowhere else -
+on a service that runs `--insecure` over plain HTTP with
+cluster-admin-equivalent write access. Upstream recommends deleting that
+Secret once you have logged in; safe to do now that this copy exists and
+has been confirmed to decrypt.
+
 ## Known gaps
 
 - No KSOPS - secrets are outside Argo CD's normal reconciliation entirely,
