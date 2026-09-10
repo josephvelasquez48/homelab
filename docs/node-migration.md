@@ -1,8 +1,10 @@
 # Second node migration: WSL2 to an M1 MacBook
 
-Planned, not yet executed. This records the decision and the sequence
-before any of it is done, because the failure modes are known in advance
-and the ordering is what keeps them from biting.
+This records the decision and the sequence before any of it is done,
+because the failure modes are known in advance and the ordering is what
+keeps them from biting. Execution began on 2026-09-10 and is logged at
+the end; step 1 is not yet complete, so everything below still reads as
+a plan.
 
 ## The decision
 
@@ -168,3 +170,87 @@ Whether to keep building `linux/amd64`. Dropping it is consistent with
 means images already exist if an x86 node is ever added, at the cost of
 QEMU emulation time for a target nothing runs. This should be a recorded
 decision either way, not a default.
+
+## 2026-09-10: first attempt, blocked inside step 1
+
+Ran on the M1 Pro MacBook Pro (16GB, macOS 14.3.1). No VM exists, the
+cluster was never touched, and nothing is left to roll back except one
+symlink noted below.
+
+### Prerequisites, as found
+
+- `SleepDisabled` was already `1`.
+- Multipass 1.16.4 installed, the Pi reachable on 22 and 6443, and
+  `joe` + `desktop-j1grrmu` both `Ready` on v1.36.4+k3s1.
+- **No USB-C Ethernet adapter attached.** All three ethernet ports read
+  `status: inactive`; the only address is Wi-Fi. Bridging onto `en0` was
+  chosen deliberately, accepting that the DHCP reservation has to be
+  redone when the VM moves to wired, since rebridging changes its MAC.
+- The Pi accepted only password SSH from this Mac. Generated an ed25519
+  key here and copied it, so the rest of the sequence can run
+  non-interactively.
+
+### Blocker: Multipass's bundled QEMU cannot run on macOS 14.3.1
+
+Three consecutive launch failures turned out to be one bug. First
+`Failed to amend image to QCOW2 v3: qemu-img ... Process crashed`, then,
+once that was worked around, `failed getting vmstate` from
+`qemu-system-aarch64`.
+
+The crash report shows a call into address `0x0` from `has_help_option`.
+Both binaries **weak-import `strchrnul` from libSystem**, and
+`dlsym(libSystem, "strchrnul")` returns `0x0` on this OS - the 14.4 SDK
+on this machine does not declare it either. A weak import that resolves
+to null is a call to address zero, which is why only option-parsing
+paths die:
+
+```
+qemu-img create -f qcow2 y.qcow2 10M              # ok
+qemu-img create -f qcow2 -o compat=1.1 y.qcow2 10M # SIGSEGV
+```
+
+Multipass always runs `qemu-img amend -o compat=1.1` to prepare an
+image, so no instance could ever be created. The binaries pass
+`codesign -v --strict`, so this is not a corrupt install:
+`LC_BUILD_VERSION` reads `minos 13.3` / `sdk 26.5`. Canonical builds
+against an SDK far newer than the floor the cask advertises, and the
+weak import is the seam where that shows.
+
+Worth keeping as a shape, not just an incident: **a crash with an empty
+error message and a frame at address zero is a missing weak-linked
+symbol until proven otherwise**, not a corrupt file or a bad input. The
+first two hypotheses here - a truncated image download, then a damaged
+install - both had supporting evidence and both were wrong.
+
+### Homebrew QEMU is a half-fix only
+
+`brew install qemu` (11.1.1, built `minos 14.0` / `sdk 14.5`) handles
+`-o` correctly, and symlinking its `qemu-img` over Multipass's got image
+preparation to pass - which is how the failure moved from `qemu-img` to
+`qemu-system-aarch64`. It **cannot** replace the system emulator: it
+links `vmnet` but not `Hypervisor.framework`, so `-accel help` lists
+`tcg` alone. A K3s node under software emulation is not worth having.
+
+### Chosen fix: update macOS
+
+`softwareupdate --list` offers Sonoma 14.8.9 and Tahoe 26.6.2. **Sonoma
+is the wrong choice here** - `strchrnul` is absent from Sonoma
+entirely, so a 13GB point update would leave Multipass exactly as
+broken. Tahoe 26.6.2 is the family Canonical built against.
+
+Two things this pulls in that are not really about K3s: VMware Fusion
+and Docker Desktop may need their own updates for Tahoe, and this Mac
+was 2.5 years behind on security updates regardless.
+
+### Left in place, to undo after the update
+
+`/Library/Application Support/com.canonical.multipass/bin/qemu-img` is a
+symlink to `/opt/homebrew/bin/qemu-img`; the original is beside it as
+`qemu-img.broken`. Once Multipass's own binary works, restore it.
+
+### Not a blocker, but measured
+
+The image pull ran at roughly 1.5MB/s. The Wi-Fi link is not at fault -
+`-43dBm`, 46dB SNR, 433Mbps negotiated - the WAN is, at around 40Mbps
+shared. Two nodes on Wi-Fi remains the fragility this plan already
+names; the Ethernet adapter is still the right next purchase.
