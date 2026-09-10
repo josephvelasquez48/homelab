@@ -131,6 +131,25 @@ AdGuard's log shows as `127.0.0.1`, because that is genuinely who sent it -
 which undercuts the per-client stats this layer was added for once the
 whole LAN is behind CoreDNS. See the doc above for the trade-off.
 
+## Startup order after a reboot
+
+For about a minute after the Pi boots, `*.home` resolves while external
+names do not. This is expected, not a fault: CoreDNS serves `.home` from
+`home.hosts` directly, but forwards everything else to AdGuard on
+`127.0.0.1:5335`, and AdGuard takes longer to start than CoreDNS does.
+Queries that need forwarding fail until it binds.
+
+It clears on its own. Confirm rather than debug:
+
+```bash
+docker ps --format '{{.Names}}	{{.Status}}'
+sudo ss -lunp | grep :5335
+```
+
+The split signature - internal names working, external ones failing - is
+the tell. It looks like a forwarding misconfiguration and is only one
+container still coming up.
+
 ## Client setup
 
 There is nothing to configure per device any more - DHCP hands every
