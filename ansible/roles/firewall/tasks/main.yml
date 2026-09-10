@@ -44,6 +44,10 @@
   loop:
     - { port: "53", proto: any, comment: "DNS - LAN IPv6 only" }
     - { port: "3000", proto: tcp, comment: "AdGuard Home UI - LAN IPv6 only" }
+  # Skipped when the LAN has no IPv6 ULA prefix, which is the current
+  # state after the router swap - see this variable's own comment in
+  # defaults/main.yml and docs/router-migration.md.
+  when: lan_ipv6_ula_prefix | length > 0
 
 - name: Enable ufw
   community.general.ufw:
