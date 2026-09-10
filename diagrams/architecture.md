@@ -24,12 +24,15 @@ flowchart TB
             end
         end
 
-        subgraph Desktop["Desktop — node 'desktop-j1grrmu' (K3s worker via WSL2, mirrored networking)"]
-            Ollama["Ollama (systemd service in WSL)<br/>RTX 3070 Ti, qwen2.5-coder + nomic-embed"]
-            subgraph DesktopWorkloads["K3s workloads (either node, unpinned)"]
+        subgraph M1["M1 MacBook — node 'm1-node' (K3s worker, Linux VM, bridged)"]
+            subgraph M1Workloads["K3s workloads (either node, unpinned)"]
                 API["FastAPI api<br/>2 replicas, HPA-free"]
                 Worker["Job worker<br/>(Redis queue consumer)"]
             end
+        end
+
+        subgraph Desktop["Windows desktop — GPU host, not a cluster member"]
+            Ollama["Ollama (native Windows process)<br/>RTX 3070 Ti, qwen2.5-coder + nomic-embed"]
         end
     end
 

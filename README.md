@@ -80,12 +80,15 @@ flowchart TB
             end
         end
 
-        subgraph Desktop["Desktop — node 'desktop-j1grrmu' (K3s worker via WSL2, mirrored networking)"]
-            Ollama["Ollama (systemd service in WSL)<br/>RTX 3070 Ti, qwen2.5-coder + nomic-embed"]
-            subgraph DesktopWorkloads["K3s workloads (either node, unpinned)"]
+        subgraph M1["M1 MacBook — node 'm1-node' (K3s worker, Linux VM, bridged)"]
+            subgraph M1Workloads["K3s workloads (either node, unpinned)"]
                 API["FastAPI api<br/>2 replicas"]
                 Worker["Job worker<br/>(Redis queue consumer)"]
             end
+        end
+
+        subgraph Desktop["Windows desktop — GPU host, not a cluster member"]
+            Ollama["Ollama (native Windows process)<br/>RTX 3070 Ti, qwen2.5-coder + nomic-embed"]
         end
     end
 
@@ -162,6 +165,11 @@ reservations and DHCP DNS override), which stranded a headless Pi behind
 its own correctly-configured firewall and surfaced a stock AdGuard
 default that only fails once the whole LAN is behind it - see
 [docs/router-migration.md](docs/router-migration.md).
+Second node moved off WSL2 to a Linux VM on an M1 MacBook, and the
+Windows desktop left the cluster to be a GPU host only - which retired
+the whole class of WSL2 mirrored-networking failures, both Scheduled
+Task workarounds, and the `linux/amd64` half of every image build - see
+[docs/node-migration.md](docs/node-migration.md).
 
 ## Repo structure
 

@@ -1,10 +1,26 @@
 # Gaming mode
 
+> **Broken as of 2026-09-10, pending a rewrite.** Both scripts cordon,
+> drain and uncordon `desktop-j1grrmu`, and the dashboard reads that
+> node's InternalIP to find its SSH target. That node no longer exists -
+> the worker moved to an M1 MacBook and the desktop left the cluster
+> entirely (docs/node-migration.md), so every one of those calls now
+> fails against a node the API server has never heard of.
+>
+> The feature is not obsolete, but its premise changed. CPU contention
+> was never the real problem: with no pods on the desktop, the only thing
+> a game competes with is Ollama holding ~4.7GB of VRAM. So the rewrite
+> is "stop and start Ollama", not "cordon and drain a node" - simpler
+> than what it replaces, and it drops the SSH-to-a-node-address lookup
+> that just broke.
+>
+> The rest of this doc describes how it worked before the migration.
+
 Not part of the original 18-step roadmap - added afterward. The desktop
-is both the K3s worker node and the gaming rig, so launching a game
-competes with `api`/`worker` pods for CPU, and with Ollama for GPU.
-`gaming-mode/pregame.ps1` and `gaming-mode/postgame.ps1` cleanly remove
-the desktop from the cluster before gaming and bring it back after.
+was both the K3s worker node and the gaming rig, so launching a game
+competed with `api`/`worker` pods for CPU, and with Ollama for GPU.
+`gaming-mode/pregame.ps1` and `gaming-mode/postgame.ps1` cleanly removed
+the desktop from the cluster before gaming and brought it back after.
 
 ## Why a manual trigger, not automatic game detection
 
