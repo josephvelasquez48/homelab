@@ -4,12 +4,12 @@
 // findings, and this catches the first case cheaply).
 //
 // Usage:
-//   k6 run -e BASE_URL=http://api.home -e API_KEY=<key> smoke.js
+//   k6 run -e BASE_URL=https://api.home -e API_KEY=<key> smoke.js
 
 import http from "k6/http";
 import { check, sleep } from "k6";
 
-const BASE_URL = __ENV.BASE_URL || "http://api.home";
+const BASE_URL = __ENV.BASE_URL || "https://api.home";
 const API_KEY = __ENV.API_KEY;
 
 if (!API_KEY) {

@@ -8,12 +8,12 @@
 // VUs against them would measure the rate limiter, not the system.
 //
 // Usage:
-//   k6 run -e BASE_URL=http://api.home health-load.js
+//   k6 run -e BASE_URL=https://api.home health-load.js
 
 import http from "k6/http";
 import { check } from "k6";
 
-const BASE_URL = __ENV.BASE_URL || "http://api.home";
+const BASE_URL = __ENV.BASE_URL || "https://api.home";
 
 export const options = {
   stages: [

@@ -61,3 +61,21 @@ AdGuard's separate port-3000 UI is outside these Ingresses and remains HTTP.
 This rollout does not add encryption to that UI or Ollama's LAN API.
 
 Reference: https://doc.traefik.io/traefik/reference/routing-configuration/kubernetes/ingress/
+
+## Live verification
+
+All five names passed certificate/hostname validation. HTTP returns 308 with
+an HTTPS Location. A real dashboard login confirmed Secure, HttpOnly and
+SameSite=Strict cookies, and the test session was logged out afterward.
+Traefik is pinned to `joe`: DNS points to the Pi, and `externalTrafficPolicy:
+Local` requires a local Traefik pod. A rollout initially scheduled Traefik on
+the M1 and interrupted ingress until this placement was corrected.
+
+Windows curl with Schannel requires `--ssl-revoke-best-effort` for this CA
+because no CRL/OCSP service is configured. This preserves chain/hostname
+verification; it is not `--insecure`. Windows PowerShell HTTPS validation and
+Python validation with the explicit CA both passed without disabling trust.
+
+The encrypted CA reference and public root are included in the Mac's recovery
+backup, verified by a full Restic data check. Mac/browser trust installation
+has not been performed; the recovery directory contains the public certificate.

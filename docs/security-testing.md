@@ -1,5 +1,10 @@
 # Security Testing
 
+> Update 2026-09-10: all five Ingress hostnames now use HTTPS with a local
+> CA and HTTP redirects. Dashboard cookies are Secure. See [https.md](https.md).
+> The historical no-TLS finding below is superseded for these Ingresses;
+> AdGuard port 3000 and the Ollama LAN endpoint remain outside this change.
+
 Layered security validation for the homelab. Scoped to the actual assets in
 this repo — the manifests under `kubernetes/`, the images those manifests
 pin, and the five hostnames CoreDNS serves.
