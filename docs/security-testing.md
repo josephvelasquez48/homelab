@@ -13,7 +13,7 @@ the Pi or the desktop tests a loopback path that no real client uses.
 | What | Address | Notes |
 |---|---|---|
 | Pi (control plane, node `joe`) | `192.168.1.253` | K3s server, CoreDNS, AdGuard |
-| Desktop (worker, `desktop-j1grrmu`) | `192.168.1.133` | Ollama :11434, sshd, node-exporter :9100 |
+| Desktop (worker, `desktop-j1grrmu`) | `192.168.1.131` | Ollama :11434, sshd, node-exporter :9100 |
 | LAN | `192.168.1.0/24` | The CIDR `traefik-lan-only` allows |
 | `api.home` / `ai.home` | → `192.168.1.253` | FastAPI behind Traefik |
 | `grafana.home` | → `192.168.1.253` | Grafana 13.2.1 |
@@ -23,8 +23,8 @@ the Pi or the desktop tests a loopback path that no real client uses.
 Images currently pinned by the manifests:
 
 ```
-ghcr.io/josephvelasquez48/homelab-api:14a458b77fcf
-ghcr.io/josephvelasquez48/homelab-dashboard:7a3416406394
+ghcr.io/josephvelasquez48/homelab-api:5d06bdd8d884
+ghcr.io/josephvelasquez48/homelab-dashboard:69f979a559a7
 redis:7-alpine
 pgvector/pgvector:pg17
 grafana/grafana:13.2.1
@@ -88,7 +88,7 @@ application logic, not a manifest problem.
   and `rate_limit` chains `require_api_key`. The dashboard had no equivalent.
 - The pod mounts an SSH private key (`dashboard-ssh-key`, mode `0400`) and
   shells out to `powershell.exe -ExecutionPolicy Bypass -File ...` on
-  `192.168.1.133` as user `josep`.
+  `192.168.1.131` as user `josep`.
 - `traefik-lan-only` limits *who can reach it* to `192.168.1.0/24`. It does
   not limit *who can cause a request*. A plain `fetch()` from any page on the
   public internet is a CORS-simple request — no preflight, opaque response,
@@ -129,18 +129,20 @@ The fix, in order of what actually does the work:
 leaves the endpoints unreachable rather than open, and keeps the status page
 itself running. See docs/dashboard.md.
 
-### 2. `securityContext` is set on exactly one workload
+### 2. `securityContext` is set on only two workloads
 
 `adguard-exporter` is the exception and the template: it sets
 `runAsNonRoot`, `runAsUser`/`runAsGroup`, `allowPrivilegeEscalation: false`,
-`readOnlyRootFilesystem: true`, and `capabilities.drop: ["ALL"]`.
+`readOnlyRootFilesystem: true`, and `capabilities.drop: ["ALL"]`. The
+`inference-endpoint-sync` CronJob
+(`kubernetes/ai/inference-endpoint-sync.yaml`) carries the same block.
 
 Every other workload sets none of them, so `api`, `worker`, `dashboard`,
 `redis`, `postgres`, `grafana`, and `node-exporter-desktop` all run as root
 inside their namespace. Trivy config should emit findings in the
 KSV001/003/012/014/020/021/030 family for those seven, and stay quiet about
-`adguard-exporter`. That makes it a useful control: if the scan flags all
-eight equally, the scan is misconfigured. The fix for the other seven is
+the two that are hardened. That makes it a useful control: if the scan
+flags all nine equally, the scan is misconfigured. The fix for the other seven is
 already written, in `kubernetes/monitoring/adguard-exporter.yaml`.
 
 ### 3. `node-exporter-desktop` is the widest blast radius in the cluster
@@ -196,11 +198,11 @@ Trivy, against the images the manifests actually pin. Runs anywhere with
 Docker; needs no LAN access.
 
 ```bash
-trivy image --severity HIGH,CRITICAL --ignore-unfixed ghcr.io/josephvelasquez48/homelab-api:14a458b77fcf
+trivy image --severity HIGH,CRITICAL --ignore-unfixed ghcr.io/josephvelasquez48/homelab-api:5d06bdd8d884
 ```
 
 ```bash
-trivy image --severity HIGH,CRITICAL --ignore-unfixed ghcr.io/josephvelasquez48/homelab-dashboard:7a3416406394
+trivy image --severity HIGH,CRITICAL --ignore-unfixed ghcr.io/josephvelasquez48/homelab-dashboard:69f979a559a7
 ```
 
 ```bash
@@ -253,7 +255,7 @@ From the scanner VM, not from either node.
 Full service sweep of both hosts:
 
 ```bash
-sudo nmap -sS -sV -p- --reason 192.168.1.253 192.168.1.133
+sudo nmap -sS -sV -p- --reason 192.168.1.253 192.168.1.131
 ```
 
 Confirm the Traefik NetworkPolicy behaves the way `traefik-security.yaml`

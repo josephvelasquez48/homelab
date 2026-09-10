@@ -46,6 +46,15 @@ The parts most worth a closer look, pulled up from their individual docs:
   checking the pod came back healthy.
   [docs/load-testing.md](docs/load-testing.md) -
   [docs/failure-testing.md](docs/failure-testing.md)
+- **A stock default that is only wrong at scale**: AdGuard Home's
+  `ratelimit` is per client IP, and CoreDNS forwards every query to it
+  from `127.0.0.1` - so the whole LAN shares one 20 qps bucket. Harmless
+  with two devices pointed at the Pi; a total DNS outage the moment DHCP
+  pointed every phone and TV there too, with dropped queries surfacing as
+  timeouts rather than errors. Found by reading the forwarder's own
+  config after the symptom made no sense, and verified fixed with a
+  120-query concurrent burst rather than by re-reading the setting.
+  [docs/router-migration.md](docs/router-migration.md)
 
 ## Architecture
 
@@ -72,7 +81,7 @@ flowchart TB
         end
 
         subgraph Desktop["Desktop — node 'desktop-j1grrmu' (K3s worker via WSL2, mirrored networking)"]
-            Ollama["Ollama (native process)<br/>RTX 3070 Ti, qwen2.5-coder + nomic-embed"]
+            Ollama["Ollama (systemd service in WSL)<br/>RTX 3070 Ti, qwen2.5-coder + nomic-embed"]
             subgraph DesktopWorkloads["K3s workloads (either node, unpinned)"]
                 API["FastAPI api<br/>2 replicas"]
                 Worker["Job worker<br/>(Redis queue consumer)"]
@@ -96,7 +105,6 @@ flowchart TB
     Worker --> Redis
     Worker -->|HTTP, LAN| Ollama
     Prom -.->|scrape /metrics| API
-    Prom -.->|scrape /metrics| Worker
     Prom -.->|scrape /metrics, only pod NetworkPolicy allows in| AdGuardExporter
     AdGuardExporter -->|/control/status, /control/stats| AdGuard
     Graf -->|query| Prom
@@ -149,6 +157,11 @@ faster than its ~3min git-polling interval), and a real gap found (and
 fixed) in the Ollama retry/timeout logic — a dead backend used to hang
 a request past 180s unresolved, now fails in ~18s with the correct
 502 — see [docs/failure-testing.md](docs/failure-testing.md).
+Router replaced (Spectrum SAX1V1S -> a model that supports DHCP
+reservations and DHCP DNS override), which stranded a headless Pi behind
+its own correctly-configured firewall and surfaced a stock AdGuard
+default that only fails once the whole LAN is behind it - see
+[docs/router-migration.md](docs/router-migration.md).
 
 ## Repo structure
 
@@ -156,7 +169,7 @@ a request past 180s unresolved, now fails in ~18s with the correct
 homelab/
 ├── apps/
 │   ├── api/              # FastAPI backend service (deployed to K8s)
-│   └── ai/                # RAG / inference gateway
+│   └── ai/                # placeholder - RAG lives in apps/api, see docs/kubernetes.md
 ├── kubernetes/            # K3s manifests (ai/backend/data/monitoring namespaces, Argo CD)
 ├── kubernetes/secrets/    # SOPS-encrypted Secrets, applied out-of-band - see docs/secrets.md
 ├── docker/                # dns/ still live; docker-compose.yml + monitoring/ retired - see docker/README.md
