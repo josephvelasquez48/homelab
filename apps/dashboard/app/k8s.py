@@ -48,28 +48,6 @@ async def get_nodes(client: httpx.AsyncClient) -> list[dict]:
     return nodes
 
 
-async def get_node_internal_ip(client: httpx.AsyncClient, name: str) -> str:
-    """The node's current InternalIP, straight from the API server.
-
-    Written when neither host had a DHCP reservation and the desktop's
-    address moved (.131 -> .133 with no help). k3s updated this field on
-    its own within seconds, which made it the one place in the cluster
-    that was reliably right, so reading it at call time avoided a
-    hardcoded address that quietly went stale.
-
-    Both premises are now gone: the replacement router reserves the
-    desktop at .131, and the desktop is no longer a cluster member, so
-    this lookup 404s for it. Callers fall back to GAMING_SSH_HOST until
-    gaming mode is rewritten (see docs/node-migration.md).
-    """
-    r = await client.get(f"/api/v1/nodes/{name}")
-    r.raise_for_status()
-    for address in r.json()["status"].get("addresses", []):
-        if address.get("type") == "InternalIP":
-            return address["address"]
-    raise RuntimeError(f"node {name} has no InternalIP")
-
-
 async def get_pods(client: httpx.AsyncClient, namespace: str) -> list[dict]:
     r = await client.get(f"/api/v1/namespaces/{namespace}/pods")
     r.raise_for_status()

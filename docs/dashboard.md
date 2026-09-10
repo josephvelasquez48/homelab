@@ -6,6 +6,19 @@ page, running in the cluster (pinned to the Pi), showing live cluster
 status and letting `gaming-mode/pregame.ps1`/`postgame.ps1` be triggered
 from a browser instead of a desktop shortcut.
 
+> **Superseded 2026-09-10.** Everything in this section about SSH is now
+> history. The dashboard no longer reaches the desktop at all: the K3s
+> node there was retired ([node-migration.md](node-migration.md)), and
+> freeing the GPU became a single HTTP call to the inference Service
+> (`POST /api/gpu/release`, see `apps/dashboard/app/gpu.py`). The
+> dedicated keypair, the `administrators_authorized_keys` handling, the
+> `known_hosts` ConfigMap, the `HostKeyAlias`, and `ssh_runner.py` are all
+> deleted. The session auth described further down stays, unchanged and
+> still load-bearing.
+>
+> Kept as written because the findings are still true of Windows OpenSSH
+> and still cost real time to discover.
+
 ## Why SSH, not a custom agent
 
 Triggering the scripts from a pod on the Pi means reaching across to the
