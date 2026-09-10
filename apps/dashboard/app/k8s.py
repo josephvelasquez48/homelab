@@ -51,13 +51,16 @@ async def get_nodes(client: httpx.AsyncClient) -> list[dict]:
 async def get_node_internal_ip(client: httpx.AsyncClient, name: str) -> str:
     """The node's current InternalIP, straight from the API server.
 
-    Neither host has a DHCP reservation, so the desktop's address moves.
-    k3s updates this field on its own within seconds of a lease change -
-    it went .131 -> .133 with no help - which makes it the one place in
-    the cluster that is reliably right. Reading it at call time is why
-    gaming mode does not need a hardcoded address that quietly goes
-    stale (see kubernetes/ai/inference-endpoint-sync.yaml, which solves
-    the same problem for the inference Endpoints).
+    Written when neither host had a DHCP reservation and the desktop's
+    address moved (.131 -> .133 with no help). k3s updated this field on
+    its own within seconds, which made it the one place in the cluster
+    that was reliably right, so reading it at call time avoided a
+    hardcoded address that quietly went stale.
+
+    Both premises are now gone: the replacement router reserves the
+    desktop at .131, and the desktop is no longer a cluster member, so
+    this lookup 404s for it. Callers fall back to GAMING_SSH_HOST until
+    gaming mode is rewritten (see docs/node-migration.md).
     """
     r = await client.get(f"/api/v1/nodes/{name}")
     r.raise_for_status()
