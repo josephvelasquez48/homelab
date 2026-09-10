@@ -32,7 +32,7 @@ jobs:
       - name: Check dashboard JavaScript syntax
         shell: bash
         run: |
-          python -c "import pathlib, re; print('\n'.join(re.findall(r'<script>(.*?)</script>', pathlib.Path('app/static/index.html').read_text(), re.S)))" | node --check
+          python -c "import pathlib, re; print('\n'.join(re.findall(r'<script>(.*?)</script>', pathlib.Path('app/static/index.html').read_text(encoding='utf-8'), re.S)))" | node --check
 
   build-and-push:
     needs: test
