@@ -5,7 +5,7 @@
 # captured directly, not estimated from before/after snapshots.
 #
 # Usage:
-#   ./watch.sh http://api.home/health > run.log &
+#   ./watch.sh https://api.home/health > run.log &
 #   WATCH_PID=$!
 #   ... inject failure, wait, confirm recovery ...
 #   kill $WATCH_PID

@@ -11,12 +11,12 @@
 // generation) so the burst completes well inside one 60s window.
 //
 // Usage:
-//   k6 run -e BASE_URL=http://api.home -e API_KEY=<key> rate-limit.js
+//   k6 run -e BASE_URL=https://api.home -e API_KEY=<key> rate-limit.js
 
 import http from "k6/http";
 import { check, sleep } from "k6";
 
-const BASE_URL = __ENV.BASE_URL || "http://api.home";
+const BASE_URL = __ENV.BASE_URL || "https://api.home";
 const API_KEY = __ENV.API_KEY;
 const RATE_LIMIT = 60; // matches RATE_LIMIT_PER_MINUTE in kubernetes/backend/api.yaml
 const BURST_COUNT = 75; // deliberately over the limit
