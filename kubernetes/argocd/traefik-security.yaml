@@ -18,6 +18,9 @@ metadata:
   namespace: kube-system
 spec:
   valuesContent: |-
+    additionalArguments:
+      - "--entrypoints.web.http.redirections.entrypoint.to=:443"
+      - "--entrypoints.web.http.redirections.entrypoint.scheme=https"
     service:
       spec:
         externalTrafficPolicy: Local

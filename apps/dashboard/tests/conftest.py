@@ -56,7 +56,7 @@ def client(monkeypatch):
     fake_http.aclose = AsyncMock()
     monkeypatch.setattr(main.httpx, "AsyncClient", lambda **kwargs: fake_http)
 
-    with TestClient(main.app) as c:
+    with TestClient(main.app, base_url="https://testserver") as c:
         yield c
 
 

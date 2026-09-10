@@ -122,7 +122,14 @@ kind: Ingress
 metadata:
   name: api
   namespace: backend
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: websecure
 spec:
+  tls:
+    - secretName: homelab-tls
+      hosts:
+        - api.home
+        - ai.home
   rules:
     - host: api.home
       http:

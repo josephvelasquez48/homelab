@@ -3,15 +3,20 @@
 # tool that manages everything else declaratively, so it doesn't make
 # sense to have it manage its own installation on day one. This Ingress
 # is the one piece of local config for it: exposing the UI at argocd.home
-# through the same Traefik setup as everything else. Server runs with
-# --insecure (plain HTTP) to match that pattern - confirmed with the user
-# first given Argo CD's broad cluster write access.
+# through Traefik. TLS terminates at Traefik; argocd-server remains
+# --insecure for the internal HTTP hop. Client connections use HTTPS.
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   name: argocd-server
   namespace: argocd
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: websecure
 spec:
+  tls:
+    - secretName: homelab-tls
+      hosts:
+        - argocd.home
   rules:
     - host: argocd.home
       http:

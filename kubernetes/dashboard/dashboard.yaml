@@ -128,7 +128,13 @@ kind: Ingress
 metadata:
   name: dashboard
   namespace: dashboard
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: websecure
 spec:
+  tls:
+    - secretName: homelab-tls
+      hosts:
+        - dashboard.home
   rules:
     - host: dashboard.home
       http:
