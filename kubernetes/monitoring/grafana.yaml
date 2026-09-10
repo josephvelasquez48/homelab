@@ -188,59 +188,11 @@ data:
           "fieldConfig": { "defaults": { "unit": "short", "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "red", "value": 1 }] } }, "overrides": [] }
         },
         {
-          "id": 12,
-          "title": "Desktop Load Average",
-          "type": "timeseries",
-          "datasource": "Prometheus",
-          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 52 },
-          "targets": [
-            { "expr": "node_load1{pod=~\"node-exporter-desktop.*\"}", "legendFormat": "1m", "refId": "A" },
-            { "expr": "node_load5{pod=~\"node-exporter-desktop.*\"}", "legendFormat": "5m", "refId": "B" },
-            { "expr": "node_load15{pod=~\"node-exporter-desktop.*\"}", "legendFormat": "15m", "refId": "C" }
-          ],
-          "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] }
-        },
-        {
-          "id": 13,
-          "title": "Desktop Network Throughput",
-          "type": "timeseries",
-          "datasource": "Prometheus",
-          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 52 },
-          "targets": [
-            { "expr": "rate(node_network_receive_bytes_total{pod=~\"node-exporter-desktop.*\",device=~\"eth[0-9]+\"}[5m])", "legendFormat": "RX {{device}}", "refId": "A" },
-            { "expr": "rate(node_network_transmit_bytes_total{pod=~\"node-exporter-desktop.*\",device=~\"eth[0-9]+\"}[5m])", "legendFormat": "TX {{device}}", "refId": "B" }
-          ],
-          "fieldConfig": { "defaults": { "unit": "Bps" }, "overrides": [] }
-        },
-        {
-          "id": 14,
-          "title": "Desktop Disk I/O Throughput",
-          "type": "timeseries",
-          "datasource": "Prometheus",
-          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 60 },
-          "targets": [
-            { "expr": "rate(node_disk_read_bytes_total{pod=~\"node-exporter-desktop.*\"}[5m])", "legendFormat": "Read {{device}}", "refId": "A" },
-            { "expr": "rate(node_disk_written_bytes_total{pod=~\"node-exporter-desktop.*\"}[5m])", "legendFormat": "Write {{device}}", "refId": "B" }
-          ],
-          "fieldConfig": { "defaults": { "unit": "Bps" }, "overrides": [] }
-        },
-        {
-          "id": 15,
-          "title": "Desktop OOM Kills (since boot)",
-          "type": "stat",
-          "datasource": "Prometheus",
-          "gridPos": { "h": 6, "w": 24, "x": 0, "y": 68 },
-          "targets": [
-            { "expr": "node_vmstat_oom_kill{pod=~\"node-exporter-desktop.*\"}", "legendFormat": "OOM Kills", "refId": "A" }
-          ],
-          "fieldConfig": { "defaults": { "unit": "short", "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "red", "value": 1 }] } }, "overrides": [] }
-        },
-        {
           "id": 16,
           "title": "AdGuard Running",
           "type": "stat",
           "datasource": "Prometheus",
-          "gridPos": { "h": 6, "w": 6, "x": 0, "y": 74 },
+          "gridPos": { "h": 6, "w": 6, "x": 0, "y": 52 },
           "targets": [
             { "expr": "adguard_running", "legendFormat": "AdGuard", "refId": "A", "instant": true, "range": false }
           ],
@@ -260,7 +212,7 @@ data:
           "title": "AdGuard Protection",
           "type": "stat",
           "datasource": "Prometheus",
-          "gridPos": { "h": 6, "w": 6, "x": 6, "y": 74 },
+          "gridPos": { "h": 6, "w": 6, "x": 6, "y": 52 },
           "targets": [
             { "expr": "adguard_protection_enabled", "legendFormat": "Protection", "refId": "A", "instant": true, "range": false }
           ],
@@ -280,7 +232,7 @@ data:
           "title": "AdGuard Queries (24h)",
           "type": "stat",
           "datasource": "Prometheus",
-          "gridPos": { "h": 6, "w": 6, "x": 12, "y": 74 },
+          "gridPos": { "h": 6, "w": 6, "x": 12, "y": 52 },
           "targets": [
             { "expr": "adguard_queries", "legendFormat": "Queries", "refId": "A", "instant": true, "range": false }
           ],
@@ -291,7 +243,7 @@ data:
           "title": "AdGuard Blocked (24h)",
           "type": "stat",
           "datasource": "Prometheus",
-          "gridPos": { "h": 6, "w": 6, "x": 18, "y": 74 },
+          "gridPos": { "h": 6, "w": 6, "x": 18, "y": 52 },
           "targets": [
             { "expr": "adguard_queries_blocked", "legendFormat": "Blocked", "refId": "A", "instant": true, "range": false }
           ],
@@ -302,7 +254,7 @@ data:
           "title": "AdGuard Block Rate %",
           "type": "gauge",
           "datasource": "Prometheus",
-          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 80 },
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 58 },
           "targets": [
             { "expr": "100 * adguard_queries_blocked / adguard_queries", "legendFormat": "Block Rate", "refId": "A", "instant": true, "range": false }
           ],
@@ -313,7 +265,7 @@ data:
           "title": "AdGuard Avg Processing Time",
           "type": "timeseries",
           "datasource": "Prometheus",
-          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 80 },
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 58 },
           "targets": [
             { "expr": "adguard_avg_processing_time_seconds", "legendFormat": "Avg processing time", "refId": "A" }
           ],
@@ -324,7 +276,7 @@ data:
           "title": "AdGuard Top Blocked Domains",
           "type": "table",
           "datasource": "Prometheus",
-          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 88 },
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 66 },
           "targets": [
             { "expr": "topk(10, adguard_top_blocked_domains)", "format": "table", "instant": true, "refId": "A" }
           ],
@@ -338,7 +290,7 @@ data:
           "title": "AdGuard Top Queried Domains",
           "type": "table",
           "datasource": "Prometheus",
-          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 88 },
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 66 },
           "targets": [
             { "expr": "topk(10, adguard_top_queried_domains)", "format": "table", "instant": true, "refId": "A" }
           ],
@@ -352,7 +304,7 @@ data:
           "title": "AdGuard Upstream Response Time",
           "type": "timeseries",
           "datasource": "Prometheus",
-          "gridPos": { "h": 8, "w": 24, "x": 0, "y": 96 },
+          "gridPos": { "h": 8, "w": 24, "x": 0, "y": 74 },
           "targets": [
             { "expr": "adguard_top_upstreams_avg_response_time_seconds", "legendFormat": "{{upstream}}", "refId": "A" }
           ],
