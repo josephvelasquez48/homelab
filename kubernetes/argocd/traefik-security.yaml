@@ -43,13 +43,24 @@ spec:
   ingress:
     - from:
         - ipBlock: { cidr: 192.168.1.0/24 }
-        # The IPv6 half was removed deliberately. It allowed
-        # fd00:f405:95c7:c412::/64 - the previous router's self-generated
-        # ULA prefix. That router was replaced (docs/router-migration.md)
-        # and its successor hands out no IPv6 at all, so the rule matched
-        # nothing. Re-add an ipBlock with the new prefix if IPv6 returns
-        # to this LAN. A dead prefix left in an allow-list is how a rule
-        # ends up looking like protection it is not providing.
+        # The IPv6 half is an ISP-delegated GUA prefix, not the ULA this
+        # line once carried. The previous router self-generated
+        # fd00:f405:95c7:c412::/64, stable by construction; its
+        # replacement offers no ULA, so the LAN runs on whatever Spectrum
+        # delegates (docs/router-migration.md).
+        #
+        # So this line can go stale. If the delegated prefix rotates, LAN
+        # IPv6 clients stop matching and lose every ingress hostname while
+        # IPv4 keeps working - the symptom is "it loads on my phone but
+        # not my laptop", not a clean outage. This file is applied by
+        # hand, so repairing it needs a kubectl apply, not just a commit.
+        #
+        # Inert as it stands: docker/dns/coredns/home.hosts serves only A
+        # records, so no .home name resolves to an IPv6 address and nothing
+        # reaches Traefik over IPv6 to be matched. It is here so that adding
+        # AAAA records later is a one-line DNS change rather than a silent
+        # "works on IPv4, times out on IPv6" hunt through this policy.
+        - ipBlock: { cidr: 2600:6c51:4500:20e2::/64 }
     # Narrow, separate exception for in-cluster Prometheus scraping of
     # Traefik's own metrics endpoint (see docs/kubernetes.md - discovered
     # via Grafana's "Targets Up" panel showing this scrape as down).
