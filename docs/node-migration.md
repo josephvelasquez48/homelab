@@ -351,3 +351,39 @@ busybox's default entrypoint, which is `sh` - so it runs `sh wget ...`
 and fails on a missing script rather than testing anything. A test that
 fails for its own reasons is worse than no test, since the obvious
 reading is that the pod network is broken.
+
+### Step 4, done - and it verified less than it looks like
+
+`cordon` + `drain --ignore-daemonsets --delete-emptydir-data` completed
+cleanly. What was actually on the node:
+
+| Pod | What happened |
+| --- | --- |
+| `ollama-probe` | Completed leftover, evicted |
+| `svclb-traefik-...` | DaemonSet, skipped |
+| `node-exporter-desktop` | Evicted, now `Pending` forever |
+
+**Nothing rescheduled onto `m1-node`, because nothing could.** Every
+other workload is already pinned to `joe` by `nodeSelector` - postgres,
+redis, grafana, prometheus, the dashboard, `argocd-repo-server`,
+`adguard-exporter`. The one pod that was pinned to the desktop is pinned
+by hostname, so eviction leaves it unschedulable rather than moving it.
+
+So step 4's stated check - "confirm workloads reschedule onto the new
+one" - had nothing to confirm. That is consistent with this plan's own
+description of the desktop as "carrying almost nothing today", but it is
+worth being explicit that the drain proved the *cluster* stayed healthy,
+not that the new node can carry work. Post-drain, the cross-node test
+still returns `postgres ok / redis ok`, `api.home` answers 200 through
+Traefik and `grafana.home` 302s to its login.
+
+`node-exporter-desktop` being `Pending` is the expected end state, not a
+failure - the plan already calls for deleting it or replacing it with a
+`windows_exporter` scrape target. It will sit `Pending` until that
+decision lands.
+
+### Step 5 needs the Windows machine
+
+`kubectl delete node` runs from anywhere, but stopping `k3s-agent`
+inside WSL does not. That half has to happen at the desktop, so step 5
+is the first point where this migration cannot be driven from the Mac.
