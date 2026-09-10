@@ -25,16 +25,6 @@ FAKE_PI_METRICS = {
     "disk_write_bytes_per_sec": 2048.0,
     "oom_kills": 0.0,
 }
-FAKE_DESKTOP_METRICS = {
-    "load1": 0.05,
-    "load5": 0.04,
-    "load15": 0.03,
-    "net_rx_bytes_per_sec": 2048.0,
-    "net_tx_bytes_per_sec": 1024.0,
-    "disk_read_bytes_per_sec": 0.0,
-    "disk_write_bytes_per_sec": 512.0,
-    "oom_kills": 0.0,
-}
 FAKE_CROSS_NODE_STATUS = "up"
 FAKE_GPU_MODELS = [{"name": "qwen2.5-coder:7b", "size_vram": 4748056984}]
 
@@ -57,7 +47,6 @@ def client(monkeypatch):
     monkeypatch.setattr(k8s, "get_pods", AsyncMock(return_value=FAKE_PODS))
     monkeypatch.setattr(k8s, "get_argo_applications", AsyncMock(return_value=FAKE_ARGO_APPS))
     monkeypatch.setattr(prometheus, "get_pi_metrics", AsyncMock(return_value=FAKE_PI_METRICS))
-    monkeypatch.setattr(prometheus, "get_desktop_metrics", AsyncMock(return_value=FAKE_DESKTOP_METRICS))
     monkeypatch.setattr(prometheus, "get_cross_node_status", AsyncMock(return_value=FAKE_CROSS_NODE_STATUS))
 
     fake_http = MagicMock()

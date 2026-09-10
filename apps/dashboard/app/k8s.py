@@ -35,6 +35,7 @@ async def get_nodes(client: httpx.AsyncClient) -> list[dict]:
         nodes.append(
             {
                 "name": item["metadata"]["name"],
+                "pod_cidrs": item["spec"].get("podCIDRs") or ([item["spec"]["podCIDR"]] if item["spec"].get("podCIDR") else []),
                 "ready": conditions.get("Ready") == "True",
                 "schedulable": not item["spec"].get("unschedulable", False),
                 "roles": [

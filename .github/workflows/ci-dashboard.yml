@@ -29,6 +29,10 @@ jobs:
       - uses: astral-sh/setup-uv@v9.0.0
       - run: uv sync
       - run: uv run pytest -v
+      - name: Check dashboard JavaScript syntax
+        shell: bash
+        run: |
+          python -c "import pathlib, re; print('\n'.join(re.findall(r'<script>(.*?)</script>', pathlib.Path('app/static/index.html').read_text(), re.S)))" | node --check
 
   build-and-push:
     needs: test

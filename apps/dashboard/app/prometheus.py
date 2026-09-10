@@ -4,15 +4,12 @@ Queries the same in-cluster Prometheus the Grafana "Homelab Overview"
 dashboard uses (kubernetes/monitoring/grafana.yaml), read as instant
 values here instead of graphed over time.
 
-The Pi's node_exporter runs directly on its host OS (job "node-pi"), so
-its metrics are selected by that job label. The desktop's node_exporter
-runs as a regular pod instead (kubernetes/monitoring/node-exporter-
-desktop.yaml), auto-discovered by the existing kubernetes-pods scrape
-job, so its metrics are selected by pod name. No hwmon/temp query for
-the desktop - WSL2 exposes no hardware temperature sensors (checked via
-/sys/class/hwmon, empty), so there's nothing for node_exporter to read.
+Pi hardware metrics come from the host exporter. Cross-node scrape health
+uses worker pod CIDRs reported by Kubernetes, excluding host-network targets.
 """
 import asyncio
+from ipaddress import ip_address, ip_network
+from urllib.parse import urlsplit
 
 import httpx
 
@@ -29,19 +26,6 @@ QUERIES = {
     "disk_write_bytes_per_sec": 'sum(rate(node_disk_written_bytes_total{job="node-pi"}[5m]))',
     "oom_kills": 'node_vmstat_oom_kill{job="node-pi"}',
 }
-
-DESKTOP_SELECTOR = 'pod=~"node-exporter-desktop.*"'
-DESKTOP_QUERIES = {
-    "load1": f'node_load1{{{DESKTOP_SELECTOR}}}',
-    "load5": f'node_load5{{{DESKTOP_SELECTOR}}}',
-    "load15": f'node_load15{{{DESKTOP_SELECTOR}}}',
-    "net_rx_bytes_per_sec": f'sum(rate(node_network_receive_bytes_total{{{DESKTOP_SELECTOR},device=~"eth[0-9]+"}}[5m]))',
-    "net_tx_bytes_per_sec": f'sum(rate(node_network_transmit_bytes_total{{{DESKTOP_SELECTOR},device=~"eth[0-9]+"}}[5m]))',
-    "disk_read_bytes_per_sec": f'sum(rate(node_disk_read_bytes_total{{{DESKTOP_SELECTOR}}}[5m]))',
-    "disk_write_bytes_per_sec": f'sum(rate(node_disk_written_bytes_total{{{DESKTOP_SELECTOR}}}[5m]))',
-    "oom_kills": f'node_vmstat_oom_kill{{{DESKTOP_SELECTOR}}}',
-}
-
 
 async def _query_one(client: httpx.AsyncClient, expr: str) -> float | None:
     try:
@@ -62,28 +46,33 @@ async def get_pi_metrics(client: httpx.AsyncClient) -> dict[str, float | None]:
     return await _gather_metrics(client, QUERIES)
 
 
-async def get_desktop_metrics(client: httpx.AsyncClient) -> dict[str, float | None]:
-    return await _gather_metrics(client, DESKTOP_QUERIES)
-
-
-# Targets whose instance IP falls in the desktop's pod subnet (10.42.1.0/24)
-# only exist via regular (non-hostNetwork) pod-to-pod traffic crossing the
-# flannel-wg tunnel to reach Prometheus on joe - node-exporter-desktop uses
-# hostNetwork and is reachable via the desktop's real LAN IP instead, so it
-# stays "up" even when the tunnel itself is down and can't be used as this
-# signal. See docs/kubernetes.md for the incident this is meant to surface.
-CROSS_NODE_QUERY = 'up{job="kubernetes-pods", instance=~"10\\.42\\.1\\..*"}'
-
-
-async def get_cross_node_status(client: httpx.AsyncClient) -> str | None:
-    """"up"/"down" from live scrape targets on the desktop's pod subnet, or
-    None if nothing is currently scheduled there to check."""
+async def get_cross_node_status(client: httpx.AsyncClient, nodes: list[dict]) -> str | None:
+    """Scrape health for worker pod networks; not a bidirectional network test."""
     try:
-        r = await client.get(f"{PROMETHEUS_URL}/api/v1/query", params={"query": CROSS_NODE_QUERY})
-        r.raise_for_status()
-        result = r.json()["data"]["result"]
-        if not result:
+        networks = [
+            ip_network(cidr)
+            for node in nodes
+            if "control-plane" not in node["roles"]
+            for cidr in node.get("pod_cidrs", [])
+        ]
+        if not networks:
             return None
-        return "down" if any(float(item["value"][1]) == 0 for item in result) else "up"
+        r = await client.get(
+            f"{PROMETHEUS_URL}/api/v1/query",
+            params={"query": 'up{job="kubernetes-pods"}'},
+        )
+        r.raise_for_status()
+        values = []
+        for item in r.json()["data"]["result"]:
+            host = urlsplit("//" + item["metric"].get("instance", "")).hostname
+            try:
+                address = ip_address(host)
+            except ValueError:
+                continue
+            if any(address in network for network in networks):
+                values.append(float(item["value"][1]))
+        if not values:
+            return None
+        return "down" if any(value == 0 for value in values) else "up"
     except Exception:
         return None
