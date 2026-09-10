@@ -245,12 +245,88 @@ back on.
   with the current prefix. This file is applied by hand, not by Argo CD,
   so a change here is not live until `kubectl apply`.
 
+## Closing the address gap: the Pi's IPv4 is static now
+
+`192.168.1.253` was a DHCP lease for this project's entire life. It never
+moved, so eight places across this repo came to treat it as fixed - but
+what actually held it was a reservation living inside the router, the one
+component that had just been replaced.
+
+It is now configured on the host: `ipv4.method manual`, address
+`192.168.1.253/24`, gateway `192.168.1.1`, on the `Velas_Home_5G`
+profile. IPv6 was deliberately left on `auto` so SLAAC keeps supplying the
+delegated prefix and the default route, with the two static addresses
+layered on top.
+
+**Staged, not activated.** `nmcli connection up` reactivates the
+interface, and a wrong address or gateway on a headless Wi-Fi host strands
+it with no way back in. Writing to the profile and letting it take effect
+at the next reboot puts the risk in the one moment physical access is
+available anyway. Rollback, if it had been needed:
+
+```bash
+sudo nmcli connection modify Velas_Home_5G ipv4.method auto ipv4.addresses '' ipv4.gateway ''
+```
+
+**Confirmed by the route, not the address.** After the reboot:
+
+```
+default via 192.168.1.1 dev wlan0 proto static metric 600
+```
+
+`proto static` rather than `proto dhcp` is the whole proof. The address
+alone shows nothing - the reservation would have handed back the identical
+value and looked the same.
+
+The router reservation stays in place. A reservation and a matching static
+address agree rather than conflict, so it costs nothing and covers the
+case where the host config is ever cleared. Narrowing the DHCP pool is
+also safe now: this firmware deletes any reservation that falls outside
+the pool, and that no longer determines the Pi's address.
+
+**Cross-node networking survived this reboot without intervention**, which
+is worth recording because previous reboots have not. The WSL2
+kernel-socket quirk in [kubernetes.md](kubernetes.md) is asymmetric: it
+affects the *desktop's* WireGuard socket registration, so it bites when
+the desktop reboots, not when the Pi does. A Pi reboot only asks the
+desktop's already-registered socket to re-handshake with a peer that came
+back, which it does on its own.
+
+Checking it needs care, though, because the obvious signal lies. All seven
+Prometheus targets read `up` while nothing on the desktop was using pod
+networking at all - only `svclb-traefik` and `node-exporter-desktop` were
+scheduled there, and both are `hostNetwork`, reachable over the desktop's
+real LAN address whether the tunnel works or not. That is the exact
+blind spot `apps/dashboard/app/prometheus.py` documents.
+
+The test that actually proves it is a throwaway pod on the desktop
+reaching a Service backed by pods on the Pi:
+
+```bash
+kubectl run xnode --rm -i --restart=Never --image=busybox:1.36 --overrides='{"spec":{"nodeSelector":{"kubernetes.io/hostname":"desktop-j1grrmu"}}}' -- wget -qO- http://api.backend.svc.cluster.local:8000/health
+```
+
+It returned `{"status":"ok","postgres":"ok","redis":"ok"}` from pod IP
+`10.42.1.151`, in the desktop's own pod subnet. `wg show` on the desktop
+agreed - bytes received as well as sent, which is the distinction that
+matters, since the documented failure mode is a tunnel that happily sends
+and receives nothing.
+
+## A startup order worth recognising
+
+For roughly a minute after the Pi boots, `.home` names resolve while
+external ones do not. Not a fault. CoreDNS serves `.home` from its own
+hosts file and forwards everything else to `127.0.0.1:5335`, and AdGuard
+takes longer to start than CoreDNS does. It clears on its own once
+AdGuard binds. Worth recognising rather than debugging - the split
+signature, internal working and external failing, looks alarming and
+means only that one container is still coming up.
+
 ## Known gaps
 
-- **The Pi's IPv4 is still DHCP**, now held in place by a reservation
-  rather than by static host configuration. The reservation lives in the
-  router - the component that just got replaced. Making it genuinely
-  static on the host would survive the next swap.
 - **The Pi is on Wi-Fi**, so an SSID change alone is enough to strand the
   control plane. Finding 1 is the mild version of that.
 - **AdGuard per-client stats are a single bucket**, as above.
+- **The IPv6 prefix is still ISP-delegated and rotatable** - see the
+  tripwire section. The IPv4 address is now static, but its IPv6
+  counterparts are not, and cannot be until the LAN has a stable prefix.
