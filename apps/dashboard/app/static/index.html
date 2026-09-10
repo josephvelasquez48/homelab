@@ -246,7 +246,7 @@ function applyAuthState() {
   const note = document.getElementById('auth-note');
   if (!authConfigured) {
     note.style.display = 'block';
-    note.textContent = 'Gaming mode is unavailable: the dashboard-auth Secret has not been applied. See docs/dashboard.md.';
+    note.textContent = 'The GPU control is unavailable: the dashboard-auth Secret has not been applied. See docs/dashboard.md.';
   } else {
     note.style.display = 'none';
   }
@@ -320,11 +320,9 @@ async function releaseGpu() {
     } else if (data.success) {
       output.textContent = '✔ Freed ' + gb.toFixed(1) + ' GB — evicted ' + data.evicted.join(', ') + '.';
     } else {
+      const nl = String.fromCharCode(10);
       output.textContent = '✘ Still resident: ' + data.still_loaded.join(', ')
-        + '
-
-' + (data.errors || []).join('
-');
+        + nl + nl + (data.errors || []).join(nl);
     }
   } catch (e) {
     output.textContent = 'Request failed: ' + e;
