@@ -254,3 +254,64 @@ The image pull ran at roughly 1.5MB/s. The Wi-Fi link is not at fault -
 `-43dBm`, 46dB SNR, 433Mbps negotiated - the WAN is, at around 40Mbps
 shared. Two nodes on Wi-Fi remains the fragility this plan already
 names; the Ethernet adapter is still the right next purchase.
+
+### Resolved by the update, and step 1 completed
+
+macOS 26.6.2 (build 25G83). The diagnosis held exactly:
+
+```
+strchrnul = 0x18d530060           # was 0x0
+qemu-img create -o compat=1.1     # rc=0, was SIGSEGV
+qemu-system-aarch64 -accel help   # hvf, tcg
+```
+
+`hvf` means the VM is hardware-accelerated, which was the whole reason
+for rejecting Homebrew's QEMU as a substitute.
+
+The instance: `m1-node`, Ubuntu 24.04.4 arm64, 4 CPU / 6GB / 40GB,
+bridged onto `en0` with MAC `52:54:00:d1:c5:8e` and LAN address
+`192.168.1.63`. It also picked up a SLAAC address on the LAN's
+`2600:6c51:4500:20e2::/64` prefix, so IPv6 reaches it too. Step 1's
+actual test - **from the Pi**, before K3s exists - passes at 0% loss.
+
+### The one thing to get right in step 2
+
+A `--bridged` Multipass VM has *two* interfaces, and the NAT one wins:
+
+```
+default via 192.168.252.1 dev enp0s1 metric 100   # multipass NAT
+default via 192.168.1.1   dev enp0s2 metric 200   # bridged LAN
+```
+
+K3s derives its node IP from the default route, so a plain agent install
+registers `192.168.252.2` - an address the Pi cannot reach. The join
+must be explicit:
+
+```
+--node-ip 192.168.1.63 --flannel-iface enp0s2
+```
+
+Worth noticing that this is the same sentence as the WSL2 problem - "the
+worker is not really a host on the network" - arriving by a different
+road. Bridging makes it *possible* for the node to be an ordinary L2
+host; it does not make it *automatic*.
+
+### Corrections to the entry above
+
+The WAN is not the ~40Mbps that entry claims. Idle, it does 88Mbps to
+Cloudflare; the 40 was measured while Multipass was saturating it. The
+slow host was `cloud-images.ubuntu.com` specifically, which served
+593 B/s at one point and 44Mbps an hour later. Blaming the local link
+was wrong.
+
+Also: the Mac's own DHCP lease moved from `.198` to `.180` across the
+update reboot. Nothing depends on it, but it is a live argument for
+reserving the VM's address rather than trusting a lease.
+
+### Still open after step 1
+
+- **DHCP reservation for `52:54:00:d1:c5:8e`** at the router, before the
+  join, so the node never has to re-register on a new address.
+- **The `qemu-img` symlink is still in place.** Multipass's own binary
+  now works and can be restored.
+- Ethernet adapter still unattached; the VM is bridged onto Wi-Fi.
