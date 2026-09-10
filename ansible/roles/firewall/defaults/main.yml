@@ -1,14 +1,17 @@
 ---
-# The LAN's IPv6 ULA prefix, used to scope the IPv6 ufw rules in this
-# role. Empty by default, which skips those rules entirely.
+# The LAN's IPv6 prefix, used to scope the IPv6 ufw rules in this role.
+# Empty skips those rules entirely.
 #
-# The previous router (a Spectrum SAX1V1S) self-generated
-# fd00:f405:95c7:c412::/64, and the Pi held a static address inside it.
-# Its replacement hands out no IPv6 at all - no GUA, no ULA - so rules
-# scoped to that prefix matched nothing. See docs/router-migration.md.
+# Note this is an ISP-delegated GUA, not a ULA - the variable was renamed
+# from lan_ipv6_ula_prefix because that name is now actively wrong. The
+# previous router (a Spectrum SAX1V1S) self-generated
+# fd00:f405:95c7:c412::/64, stable by construction. Its replacement offers
+# no ULA option at all, so the LAN runs on whatever Spectrum delegates.
 #
-# Set this to the current prefix if IPv6 returns. A ufw rule for a
-# prefix nothing is on is worse than no rule at all: it reads as
-# protection that is not there, which is the same mistake this role
-# already refuses to make for Traefik's ports.
-lan_ipv6_ula_prefix: ""
+# That makes this value rotatable, which the fd00 one was not. If the
+# delegated prefix moves, this rule, the Pi's two static addresses, and
+# the router's advertised DNS all go stale together, and DNS fails
+# LAN-wide with nothing naming the cause. Nothing in the cluster can
+# repair the router half, so it is a documented tripwire rather than
+# something automated - see docs/router-migration.md.
+lan_ipv6_prefix: "2600:6c51:4500:20e2::/64"

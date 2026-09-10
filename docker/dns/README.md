@@ -133,26 +133,43 @@ whole LAN is behind CoreDNS. See the doc above for the trade-off.
 
 ## Client setup
 
-**The router (Spectrum SAX1V1S) doesn't support DHCP DNS override** - its
-app's "Manage DNS" setting only affects the router's own upstream queries,
-not what it hands out to LAN clients via DHCP. So this has to be configured
-per-device rather than network-wide. On Windows, in an elevated PowerShell:
+There is nothing to configure per device any more - DHCP hands every
+client CoreDNS on both families:
 
-```powershell
-Set-DnsClientServerAddress -InterfaceAlias "Ethernet" -ServerAddresses ("192.168.1.253","fd00:f405:95c7:c412::253")
-```
+| | Advertised |
+|---|---|
+| IPv4 (DHCP option 6) | `192.168.1.253`, `192.168.1.253` |
+| IPv6 (RDNSS) | `2600:6c51:4500:20e2::253`, `2600:6c51:4500:20e2::254` |
 
-Both an IPv4 and IPv6 address are needed - Windows prefers IPv6 for DNS
-when an IPv6 server is configured, and the router advertises one via IPv6
-Router Advertisements regardless of what's set here, so an IPv4-only
-override gets silently bypassed for anything using the OS's default
-resolver (`nslookup`/`Resolve-DnsName` with an explicit `-Server` flag
-isn't affected either way, which is what makes this confusing to debug -
-explicit-server tests pass while everyday resolution doesn't). The IPv6
-address used is the Pi's own static address inside the router's
-self-generated ULA prefix (`fd00:.../64`) rather than its public
-ISP-delegated one, since ULA doesn't change if Spectrum ever rotates the
-delegated prefix.
+Both slots hold the Pi on purpose, and neither pair is redundancy - it is
+one host running one CoreDNS. The duplicates exist because neither
+secondary can be left usefully empty: the router's IPv6 form rejects a
+blank, and its IPv4 firmware silently appends the gateway when you leave
+one. Either default puts an unfiltered resolver on the network - not a
+constant bypass, but one that wins whenever the primary is slow or IPv6
+drops. Filling the slot with the Pi denies it to something worse.
+
+The Pi holds `::253` and `::254` as static addresses inside the delegated
+prefix. That prefix is an ISP-delegated GUA rather than a ULA, because the
+current router offers no ULA option - see
+[docs/router-migration.md](../../docs/router-migration.md) for the
+rotation tripwire that creates.
+
+This replaces the per-device setup this project needed for its first
+months. The previous router (a Spectrum SAX1V1S) had no DHCP DNS override
+at all, so every client was pointed at the Pi by hand and phones and TVs
+never got filtered at all. Retiring that was the reason for replacing it.
+
+Two lessons from that era still apply to any client you configure
+manually, and both cost real time to find:
+
+- **Windows prefers IPv6 DNS.** If an IPv6 resolver is advertised, an
+  IPv4-only override is silently bypassed for everyday resolution while
+  `nslookup`/`Resolve-DnsName` with an explicit `-Server` keeps working -
+  which is exactly what makes it confusing to debug.
+- **RA-learned DNS is cached for its advertised lifetime.** `ipconfig
+  /release6 /renew6` does not clear it; that refreshes DHCPv6 only. Only a
+  full adapter restart forces a fresh Router Solicitation.
 
 **The Pi itself needs this too, and it's easy to forget** - running
 CoreDNS doesn't make the Pi's own OS use it for its own resolution.

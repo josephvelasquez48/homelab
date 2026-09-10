@@ -34,20 +34,21 @@
     - { port: "8472", proto: udp, comment: "K3s Flannel VXLAN - LAN only" }
     - { port: "10250", proto: tcp, comment: "K3s kubelet - LAN only" }
 
-- name: Allow LAN-scoped services (IPv6 ULA)
+- name: Allow LAN-scoped services (IPv6)
   community.general.ufw:
     rule: allow
-    from_ip: "{{ lan_ipv6_ula_prefix }}"
+    from_ip: "{{ lan_ipv6_prefix }}"
     port: "{{ item.port }}"
     proto: "{{ item.proto }}"
     comment: "{{ item.comment }}"
   loop:
     - { port: "53", proto: any, comment: "DNS - LAN IPv6 only" }
     - { port: "3000", proto: tcp, comment: "AdGuard Home UI - LAN IPv6 only" }
-  # Skipped when the LAN has no IPv6 ULA prefix, which is the current
-  # state after the router swap - see this variable's own comment in
-  # defaults/main.yml and docs/router-migration.md.
-  when: lan_ipv6_ula_prefix | length > 0
+  # Skipped when no IPv6 prefix is configured. See the variable's own
+  # comment in defaults/main.yml for why the value is a rotatable
+  # ISP-delegated GUA rather than a ULA, and docs/router-migration.md for
+  # the tripwire that creates.
+  when: lan_ipv6_prefix | length > 0
 
 - name: Enable ufw
   community.general.ufw:

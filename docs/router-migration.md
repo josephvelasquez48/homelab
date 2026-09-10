@@ -162,17 +162,88 @@ and flannel's `wireguard-native` backend uses the kernel module, which
 does not need it. Worth installing so the `0 B received` check in
 [kubernetes.md](kubernetes.md) actually runs next time.
 
-## Now-dead configuration
+## Finding 3: enabling IPv6 hands the LAN a resolver that bypasses AdGuard
 
-The LAN has no IPv6 at all - no GUA, no ULA. Anything scoped to
-`fd00:f405:95c7:c412::/64` matched nothing, so it was removed rather than
-left in place looking like protection:
+IPv6 was off entirely after the swap, and turning it on fixed a real
+problem while creating a worse one in the same move.
 
-- `ansible/roles/firewall` - the prefix is now an empty variable, and the
-  IPv6 rules are skipped when it is unset.
-- `kubernetes/argocd/traefik-security.yaml` - the IPv6 `ipBlock` is gone,
-  with a comment on how to re-add one. Note this file is applied by hand,
-  not by Argo CD, so the git change is not live until `kubectl apply`.
+What it fixed: AAAA records resolved but nothing could route to them, so
+dual-stack clients tried IPv6 first and failed without falling back.
+`curl -4 https://example.com` returned 200 while plain `curl` returned
+nothing, and `gh` failed intermittently against api.github.com.
+
+What it created: the router advertised Spectrum's own resolvers
+(`2001:1998:f00:2::1`) via Router Advertisement, and Windows prefers IPv6
+DNS. Every client silently stopped using CoreDNS. Measured, not assumed:
+
+| Query | Via default resolver | Via the Pi |
+|---|---|---|
+| `mediavisor.doubleclick.net` | `142.251.210.110` | `0.0.0.0` |
+| `dashboard.home` | NXDOMAIN | `192.168.1.253` |
+
+This is Milestone 1's problem 2 arriving by a different road. Note the
+failure shape: `.home` broke because Spectrum answered NXDOMAIN
+*authoritatively*, so Windows accepted it and never consulted the IPv4
+server that would have answered correctly.
+
+**No ULA on this router.** Its IPv6 LAN page offers four assigned types,
+all GUA-based. The old router self-generated `fd00:f405:95c7:c412::/64`,
+which is exactly what made pointing IPv6 DNS at the Pi safe before. So the
+Pi now holds static addresses inside the ISP-delegated prefix instead.
+
+**Two addresses, and no public secondary.** The router's IPv6 DNS form
+requires a secondary and rejects a blank; its IPv4 form accepts a blank
+and then appends the gateway itself. Either default puts an unfiltered
+resolver on the network - not a constant bypass, but one that wins
+whenever the primary is slow. So the Pi carries `::253` and `::254`, and
+all four DNS slots across both families point at it. That is not
+redundancy - one host, one CoreDNS - it just denies the slot to something
+worse.
+
+**Ordering mattered, again.** `ufw` allowed port 53 only from the LAN IPv4
+range and the dead ULA prefix, so DNS to the Pi over IPv6 timed out.
+Advertising it before opening that would have taken DNS down network-wide,
+the same shape as the rate-limit outage above. Done in this order instead:
+pin the addresses, open `ufw`, confirm resolution over IPv6 from a client,
+and only then change what the router advertises.
+
+**Most of the debugging time went to a stale client, not the router.**
+Windows caches RA-learned DNS for its advertised lifetime, and `ipconfig
+/release6 /renew6` does not clear it - that refreshes DHCPv6 only. Several
+rounds of "the router setting has not taken" were a client holding old
+data. An elevated `Restart-NetAdapter` forces a fresh Router Solicitation
+and is what finally showed the new values. Worth checking the client can
+actually see a change before concluding the change was not made.
+
+## The prefix rotation tripwire
+
+The Pi's IPv6 addresses live in `2600:6c51:4500:20e2::/64`, delegated by
+Spectrum. If that rotates, four things go stale at once:
+
+- the Pi's `::253` and `::254` static addresses
+- the `ufw` rule scoped to the prefix
+- the `ipBlock` in `kubernetes/argocd/traefik-security.yaml`
+- the router's advertised RDNSS pair
+
+DNS then fails LAN-wide with nothing naming the cause. Three of the four
+live in this repo and could be reconciled the way the `inference`
+Endpoints are; the fourth is inside the router, which nothing in the
+cluster can reach. So it is recorded as a tripwire rather than solved -
+the one place in this project where a stale address cannot be repaired
+from the cluster side.
+
+The old router's self-generated ULA had none of this exposure. Losing it
+is the real cost of the swap, and it was invisible until IPv6 was turned
+back on.
+
+## Configuration that tracks the LAN's IPv6
+
+- `ansible/roles/firewall` - `lan_ipv6_prefix` carries the delegated
+  prefix, and the IPv6 rules are skipped when it is empty. Renamed from
+  `lan_ipv6_ula_prefix`, which would now describe the value incorrectly.
+- `kubernetes/argocd/traefik-security.yaml` - the IPv6 `ipBlock` is back
+  with the current prefix. This file is applied by hand, not by Argo CD,
+  so a change here is not live until `kubectl apply`.
 
 ## Known gaps
 
