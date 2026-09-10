@@ -1,10 +1,51 @@
 # Gaming mode
 
+**Rewritten 2026-09-10.** What this used to be, and what it is now:
+
+| | Before | Now |
+|---|---|---|
+| Trigger | `POST /api/gaming/on` and `/off` | `POST /api/gpu/release` |
+| Mechanism | SSH to the desktop, run PowerShell, `kubectl cordon` + `drain` + stop `k3s-agent` | One HTTP call to Ollama's own API |
+| Reverse action | `postgame.ps1` to uncordon and rejoin | None needed |
+| Requires | A mounted SSH private key, a `known_hosts` ConfigMap, remote PowerShell | Nothing new - the dashboard already reaches the inference Service |
+
+The premise changed rather than the goal. The desktop was both the K3s
+worker and the gaming rig, so a game competed with `api`/`worker` pods for
+CPU and with Ollama for VRAM. The worker moved to an M1 MacBook and the
+desktop left the cluster entirely ([node-migration.md](node-migration.md)),
+so the CPU half of that contention no longer exists and there is no node
+to cordon.
+
+What is left is only VRAM: Ollama holds ~4.7GB of the 3070 Ti's 8GB while
+a model is resident. `POST /api/generate` with `keep_alive: 0` and no
+prompt evicts it - Ollama returns `done_reason: unload` and generates
+nothing, confirmed against v0.32.5 rather than taken from the docs.
+
+**There is no "off" any more, and that is not an omission.** The next
+inference request reloads the model on demand, so a second button would
+have been a no-op with a reassuring label. Ollama also evicts on its own
+after an idle period, which means this only makes the release immediate
+rather than eventual - a convenience, and worth being honest that it is
+one.
+
+**The security surface that went with it** was the largest in the project:
+a pod holding an SSH private key that executed PowerShell on a Windows
+host as an admin user, which [security-testing.md](security-testing.md)
+ranked as its highest-impact finding. The session auth stays - this is
+still a state change that should not be triggerable cross-site - but the
+key, the host key handling, the `ssh_runner`, and both `.ps1` scripts are
+deleted.
+
+The rest of this document describes how it worked before the migration,
+kept because the bug it records is still worth reading.
+
+---
+
 Not part of the original 18-step roadmap - added afterward. The desktop
-is both the K3s worker node and the gaming rig, so launching a game
-competes with `api`/`worker` pods for CPU, and with Ollama for GPU.
-`gaming-mode/pregame.ps1` and `gaming-mode/postgame.ps1` cleanly remove
-the desktop from the cluster before gaming and bring it back after.
+was both the K3s worker node and the gaming rig, so launching a game
+competed with `api`/`worker` pods for CPU, and with Ollama for GPU.
+`gaming-mode/pregame.ps1` and `gaming-mode/postgame.ps1` cleanly removed
+the desktop from the cluster before gaming and brought it back after.
 
 ## Why a manual trigger, not automatic game detection
 

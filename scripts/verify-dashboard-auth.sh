@@ -4,14 +4,14 @@
 # see Traefik, the Ingress, the real Secret, or the cookie attributes a
 # browser will enforce.
 #
-# Passing this is the gate for removing the /api/gaming/* exclusions from
+# Passing this is the gate for removing the /api/gpu/release exclusions from
 # the ZAP and nuclei runs in docs/security-testing.md. Until it passes
 # against the live host, keep the exclusions: an active scan that reaches
 # these endpoints drains a node.
 #
 # Safe to run against production. Every request it sends is unauthenticated
-# and is expected to be rejected, so a passing run never triggers a drain.
-# A FAILING run is the dangerous case - which is the point.
+# and is expected to be rejected, so a passing run changes nothing. A
+# FAILING run is the case worth catching - which is the point.
 #
 # Usage:
 #   ./scripts/verify-dashboard-auth.sh [host]
@@ -47,23 +47,21 @@ check "GET /health" 200 "$(status "$HOST/health")"
 
 echo
 echo "Authorization (the boundary)"
-for action in on off; do
-    check "POST /api/gaming/$action unauthenticated" 401 \
-        "$(status -X POST -H 'Content-Type: application/json' -d '{}' "$HOST/api/gaming/$action")"
-done
+check "POST /api/gpu/release unauthenticated" 401 \
+    "$(status -X POST -H 'Content-Type: application/json' -d '{}' "$HOST/api/gpu/release")"
 
 # The drive-by request: no Content-Type, no body, no cookie. This is what a
 # hostile page can make a LAN user's browser send, so it is the single most
 # important line in this script.
-check "POST /api/gaming/on as a CORS-simple request" 401 \
-    "$(status -X POST "$HOST/api/gaming/on")"
+check "POST /api/gpu/release as a CORS-simple request" 401 \
+    "$(status -X POST "$HOST/api/gpu/release")"
 
-check "POST /api/gaming/on form-encoded" 401 \
-    "$(status -X POST -H 'Content-Type: application/x-www-form-urlencoded' -d 'x=1' "$HOST/api/gaming/on")"
+check "POST /api/gpu/release form-encoded" 401 \
+    "$(status -X POST -H 'Content-Type: application/x-www-form-urlencoded' -d 'x=1' "$HOST/api/gpu/release")"
 
-check "POST /api/gaming/on with a forged session cookie" 401 \
+check "POST /api/gpu/release with a forged session cookie" 401 \
     "$(status -X POST -H 'Content-Type: application/json' -d '{}' \
-        -H 'Cookie: dashboard_session=eyJhdXRoZW50aWNhdGVkIjogdHJ1ZX0=' "$HOST/api/gaming/on")"
+        -H 'Cookie: dashboard_session=eyJhdXRoZW50aWNhdGVkIjogdHJ1ZX0=' "$HOST/api/gpu/release")"
 
 echo
 echo "Cross-origin"
@@ -74,10 +72,10 @@ preflight_acao="$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 \
     -X OPTIONS -H 'Origin: http://evil.example' \
     -H 'Access-Control-Request-Method: POST' \
     -H 'Access-Control-Request-Headers: content-type' \
-    "$HOST/api/gaming/on")"
+    "$HOST/api/gpu/release")"
 if [[ "$preflight_acao" == "200" ]]; then
     acao="$(curl -s -i --max-time 10 -X OPTIONS -H 'Origin: http://evil.example' \
-        -H 'Access-Control-Request-Method: POST' "$HOST/api/gaming/on" \
+        -H 'Access-Control-Request-Method: POST' "$HOST/api/gpu/release" \
         | grep -ci 'access-control-allow-origin' || true)"
     check "preflight grants no Access-Control-Allow-Origin" 0 "$acao"
 else
@@ -115,8 +113,8 @@ if [[ -n "${DASHBOARD_PASSWORD:-}" ]]; then
         "$(status -c "$JAR" -X POST -H 'Content-Type: application/json' \
             -d "{\"password\":\"$DASHBOARD_PASSWORD\"}" "$HOST/api/login")"
     # Deliberately stops at proving the session is live. Actually calling
-    # /api/gaming/* here would drain the desktop, which is not something a
-    # verification script should do on its own.
+    # /api/gpu/release here would evict a model mid-request for whoever is
+    # using inference, which is not a verification script's business.
     if grep -q '"authenticated": *true' <<<"$(curl -s -b "$JAR" --max-time 10 "$HOST/api/session")"; then
         printf '  ok    %-52s\n' "session is established after login"
         pass=$((pass + 1))

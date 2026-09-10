@@ -43,21 +43,27 @@ def test_status_degrades_gracefully_when_prometheus_unreachable(client, monkeypa
     assert res.json()["cross_node_status"] is None
 
 
-def test_gaming_mode_inactive_when_desktop_schedulable(client):
+def test_status_reports_what_is_resident_on_the_gpu(client):
+    """Replaces the old gaming_mode_active flag, which was derived from
+    whether a node was cordoned. That node no longer exists, and GPU
+    residency is the only contention left worth showing."""
     res = client.get("/api/status")
-    data = res.json()
-    assert data["gaming_mode_active"] is False
+    assert res.status_code == 200
+    assert res.json()["gpu_models"] == [
+        {"name": "qwen2.5-coder:7b", "size_vram": 4748056984}
+    ]
 
 
-def test_gaming_mode_active_when_desktop_cordoned(client, monkeypatch):
-    from app import k8s
+def test_status_survives_ollama_being_unreachable(client, monkeypatch):
+    """The status page must still render when inference is down - that is
+    precisely when someone is looking at it. null distinguishes "could not
+    ask" from the empty list, which means "asked, GPU is idle"."""
     from unittest.mock import AsyncMock
 
-    cordoned_nodes = [
-        {"name": "joe", "ready": True, "schedulable": True, "roles": ["control-plane"]},
-        {"name": "desktop-j1grrmu", "ready": False, "schedulable": False, "roles": ["worker"]},
-    ]
-    monkeypatch.setattr(k8s, "get_nodes", AsyncMock(return_value=cordoned_nodes))
+    from app import gpu
+
+    monkeypatch.setattr(gpu, "loaded_models", AsyncMock(side_effect=OSError("refused")))
 
     res = client.get("/api/status")
-    assert res.json()["gaming_mode_active"] is True
+    assert res.status_code == 200
+    assert res.json()["gpu_models"] is None

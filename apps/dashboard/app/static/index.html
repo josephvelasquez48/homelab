@@ -33,7 +33,7 @@
   #login-row input { background: #0d1117; color: #c9d1d9; border: 1px solid #30363d; border-radius: 6px; padding: 12px; font-size: 1.05rem; }
   #login-error { color: #f85149; font-size: 0.95rem; }
   #auth-note { color: #8b949e; font-size: 0.95rem; display: none; }
-  #gaming-output { white-space: pre-wrap; background: #010409; border: 1px solid #30363d; border-radius: 6px; padding: 12px; margin-top: 12px; font-family: ui-monospace, monospace; font-size: 0.9rem; max-height: 300px; overflow-y: auto; display: none; }
+  #gpu-output { white-space: pre-wrap; background: #010409; border: 1px solid #30363d; border-radius: 6px; padding: 12px; margin-top: 12px; font-family: ui-monospace, monospace; font-size: 0.9rem; max-height: 300px; overflow-y: auto; display: none; }
   .stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 16px; }
   .stat-tile { display: flex; flex-direction: column; justify-content: center; gap: 10px; background: #0d1117; border: 1px solid #21262d; border-left: 3px solid #30363d; border-radius: 6px; padding: 20px; min-height: 140px; }
   .stat-label { font-size: 0.85rem; color: #8b949e; text-transform: uppercase; letter-spacing: 0.04em; }
@@ -53,8 +53,7 @@
         <div class="sub">Pi 5 + desktop K3s cluster — refreshes every 10s</div>
       </div>
       <div class="header-actions">
-        <button id="btn-on" onclick="runGaming('on')">Start gaming mode</button>
-        <button id="btn-off" class="off" onclick="runGaming('off')">End gaming mode</button>
+        <button id="btn-release" onclick="releaseGpu()">Free the GPU</button>
         <a class="button-link" href="http://grafana.home" target="_blank" rel="noopener">Open Grafana</a>
         <button id="btn-logout" class="button-link" onclick="logout()" style="display:none;">Log out</button>
       </div>
@@ -64,7 +63,7 @@
         <span id="login-error"></span>
       </form>
       <div id="auth-note"></div>
-      <div id="gaming-output"></div>
+      <div id="gpu-output"></div>
     </div>
     <div class="card top-right">
       <h2>Pi metrics</h2>
@@ -213,7 +212,7 @@ async function refresh() {
       </div>
     `;
 
-    gamingModeActive = data.gaming_mode_active;
+    gpuModels = data.gpu_models;
     applyAuthState();
   } catch (e) {
     console.error('status refresh failed', e);
@@ -228,11 +227,19 @@ const JSON_POST = { method: 'POST', headers: { 'Content-Type': 'application/json
 
 let authed = false;
 let authConfigured = true;
-let gamingModeActive = false;
+let gpuModels = null;
 
 function applyAuthState() {
-  document.getElementById('btn-on').disabled = !authed || gamingModeActive;
-  document.getElementById('btn-off').disabled = !authed || !gamingModeActive;
+  // Enabled whenever you are logged in, including when nothing is
+  // resident. Ollama evicts on its own after an idle period, so pressing
+  // this on an already-idle GPU is a harmless no-op rather than an error,
+  // and greying it out would only raise the question of why.
+  const btn = document.getElementById('btn-release');
+  btn.disabled = !authed;
+  const n = Array.isArray(gpuModels) ? gpuModels.length : null;
+  btn.textContent = n === null ? 'Free the GPU'
+    : n === 0 ? 'Free the GPU (idle)'
+    : 'Free the GPU (' + n + ' model' + (n > 1 ? 's' : '') + ' resident)';
   document.getElementById('btn-logout').style.display = authed ? 'inline-flex' : 'none';
   document.getElementById('login-row').style.display = (!authed && authConfigured) ? 'flex' : 'none';
 
@@ -288,24 +295,37 @@ async function logout() {
   }
 }
 
-async function runGaming(action) {
-  const btnOn = document.getElementById('btn-on');
-  const btnOff = document.getElementById('btn-off');
-  const output = document.getElementById('gaming-output');
-  btnOn.disabled = true;
-  btnOff.disabled = true;
+async function releaseGpu() {
+  const btn = document.getElementById('btn-release');
+  const output = document.getElementById('gpu-output');
+  btn.disabled = true;
   output.style.display = 'block';
-  output.textContent = `Running ${action === 'on' ? 'pregame' : 'postgame'}.ps1 over SSH — this can take up to ${action === 'on' ? '2' : '3'} minutes...`;
+  output.textContent = 'Evicting resident models from VRAM...';
 
   try {
-    const res = await fetch(`/api/gaming/${action}`, JSON_POST);
+    const res = await fetch('/api/gpu/release', JSON_POST);
     if (res.status === 401) {
       output.textContent = 'Session expired — log in again.';
       await refreshSession();
       return;
     }
     const data = await res.json();
-    output.textContent = (data.success ? '✔ succeeded\n\n' : '✘ failed\n\n') + (data.output || '');
+    if (res.status === 502) {
+      output.textContent = '✘ ' + (data.detail || 'Ollama unreachable');
+      return;
+    }
+    const gb = (data.vram_freed_bytes || 0) / 1073741824;
+    if (data.success && data.evicted.length === 0) {
+      output.textContent = '✔ GPU was already idle — nothing resident.';
+    } else if (data.success) {
+      output.textContent = '✔ Freed ' + gb.toFixed(1) + ' GB — evicted ' + data.evicted.join(', ') + '.';
+    } else {
+      output.textContent = '✘ Still resident: ' + data.still_loaded.join(', ')
+        + '
+
+' + (data.errors || []).join('
+');
+    }
   } catch (e) {
     output.textContent = 'Request failed: ' + e;
   } finally {
