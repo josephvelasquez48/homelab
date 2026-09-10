@@ -116,7 +116,7 @@ almost nothing today, so there is no urgency to remove it first.
    a Service backed by pods on the Pi:
 
    ```bash
-   kubectl run xnode --rm -i --restart=Never --image=busybox:1.36 --overrides='{"spec":{"nodeSelector":{"kubernetes.io/hostname":"<new-node>"}}}' -- wget -qO- http://api.backend.svc.cluster.local:8000/health
+   kubectl run xnode --rm -i --restart=Never --image=busybox:1.36 --overrides='{"spec":{"nodeSelector":{"kubernetes.io/hostname":"<new-node>"}}}' --command -- wget -qO- http://api.backend.svc.cluster.local:8000/health
    ```
 
 4. **Cordon and drain the WSL2 node**, and confirm workloads reschedule
@@ -315,3 +315,39 @@ reserving the VM's address rather than trusting a lease.
 - **The `qemu-img` symlink is still in place.** Multipass's own binary
   now works and can be restored.
 - Ethernet adapter still unattached; the VM is bridged onto Wi-Fi.
+
+### Steps 2 and 3, done
+
+The join, with both pins that the two-default-route problem demands:
+
+```bash
+curl -sfL https://get.k3s.io | INSTALL_K3S_VERSION=v1.36.4+k3s1 \
+  K3S_URL=https://192.168.1.253:6443 K3S_TOKEN=... sh -s - agent \
+  --node-ip 192.168.1.63 --flannel-iface enp0s2
+```
+
+The version is pinned deliberately - the other two nodes are on
+`v1.36.4+k3s1`, and letting the installer take latest would introduce a
+version skew that has nothing to do with this migration.
+
+`m1-node` went `Ready` in 19 seconds, and its `INTERNAL-IP` reads
+`192.168.1.63`, not `192.168.252.2` - which is the whole point of the
+pins. The Pi's `ufw` needed no changes: the VM is inside
+`192.168.1.0/24`, which every K3s rule there is already scoped to.
+
+Step 3's cross-node test passed on the first try, over the existing
+`wireguard-native` backend:
+
+```
+{"status":"ok","postgres":"ok","redis":"ok"}
+```
+
+That is a pod on `m1-node` reaching a Service backed by pods on the Pi,
+so it exercises the tunnel, CoreDNS and Service routing together.
+
+**The command in step 3 above was wrong and has been corrected.**
+Without `--command`, `kubectl run` passes the wget line as *args* to
+busybox's default entrypoint, which is `sh` - so it runs `sh wget ...`
+and fails on a missing script rather than testing anything. A test that
+fails for its own reasons is worse than no test, since the obvious
+reading is that the pod network is broken.
