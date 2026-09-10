@@ -38,14 +38,21 @@ ghcr.io/josephvelasquez48/homelab-adguard-exporter:cc809aa77468
 ## Before you scan: read this
 
 **Do not run an active ZAP scan or an unrestricted nuclei run against
-`dashboard.home`.**
+`dashboard.home`.** (Stakes reduced 2026-09-10 - see below.)
 
-`apps/dashboard/app/main.py` exposes two POST endpoints that reach the host:
+`apps/dashboard/app/main.py` exposes one mutating POST endpoint:
 
 ```python
-@app.post("/api/gaming/on")   # -> ssh -> powershell pregame.ps1  (cordon + drain the desktop)
-@app.post("/api/gaming/off")  # -> ssh -> powershell postgame.ps1 (uncordon, wait for Ready)
+@app.post("/api/gpu/release")  # -> HTTP -> Ollama keep_alive:0 (evict resident models)
 ```
+
+This replaced a pair that SSHed to the desktop and ran PowerShell to
+cordon and drain a K3s node. That node no longer exists
+(docs/node-migration.md), and with it went the mounted SSH private key,
+the `known_hosts` ConfigMap, and remote command execution from a pod -
+which is the single largest reduction in this project's attack surface so
+far. What remains evicts a model from VRAM, which Ollama reloads on the
+next request.
 
 FastAPI publishes both in `/openapi.json`. Any scanner that imports the spec,
 or that fuzzes discovered POST routes, **will drain a node in the middle of
