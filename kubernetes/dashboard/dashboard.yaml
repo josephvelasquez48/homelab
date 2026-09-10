@@ -56,34 +56,11 @@ subjects:
     name: dashboard
     namespace: dashboard
 ---
-# The desktop's SSH host key, so the dashboard can verify it instead of
-# either trusting-on-first-use blindly or disabling verification -
-# non-sensitive (it's a public key), so a plain ConfigMap, not a SOPS
-# secret.
-#
-# Keyed to the alias "homelab-desktop" rather than to an address, and ssh
-# is passed -o HostKeyAlias to match (apps/dashboard/app/ssh_runner.py).
-# Neither host has a DHCP reservation, so an address here would break
-# gaming mode the next time a lease moves - and it would surface as host
-# key verification failing, which points at the wrong problem entirely.
-# The address itself now comes from the node's InternalIP at call time.
-#
-# Regenerate with (the alias replaces whatever address you scanned):
-#   ssh-keyscan -t ed25519 <desktop-ip> | sed "s/^[^ ]*/homelab-desktop/"
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: dashboard-known-hosts
-  namespace: dashboard
-data:
-  known_hosts: |
-    homelab-desktop ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEmEz6U1ZsYJbD7ZDUnsnG6Jy1V875lCVW7GWh3oSgu6
----
-# The private key half (kubernetes/secrets/dashboard-ssh-key.enc.yaml,
-# SOPS-encrypted) is deliberately NOT referenced by name here beyond the
-# secretRef below - same pattern as api-secrets/postgres-credentials/
-# grafana-admin: applied out-of-band via kubernetes/secrets/apply.sh,
-# not synced by Argo CD. See docs/secrets.md.
+# No SSH key or known_hosts mount any more. The dashboard used to reach
+# the desktop over SSH to cordon and drain a K3s node; that node is gone
+# (docs/node-migration.md) and freeing the GPU is now an HTTP call to the
+# inference Service, so the private key, the host key, and remote
+# PowerShell execution all left with it. See apps/dashboard/app/gpu.py.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -109,7 +86,7 @@ spec:
         - name: dashboard
           image: ghcr.io/josephvelasquez48/homelab-dashboard:69f979a559a7
           # DASHBOARD_PASSWORD + SESSION_SECRET for the session auth on
-          # /api/gaming/* (see apps/dashboard/app/auth.py).
+          # /api/gpu/release (see apps/dashboard/app/auth.py).
           #
           # optional: true is deliberate. A required secretRef would leave
           # the pod in CreateContainerConfigError until the Secret is
@@ -117,19 +94,12 @@ spec:
           # page down, including the part that tells you the cluster is
           # unhealthy. Optional instead means the pod starts and the app
           # fails closed on its own: with no password configured nobody can
-          # log in, so the gaming endpoints are unreachable rather than
+          # log in, so /api/gpu/release is unreachable rather than
           # open. The page says so explicitly via /api/session.
           envFrom:
             - secretRef: { name: dashboard-auth, optional: true }
           ports:
             - containerPort: 8000
-          volumeMounts:
-            - name: ssh-key
-              mountPath: /secrets/ssh
-              readOnly: true
-            - name: known-hosts
-              mountPath: /config
-              readOnly: true
           resources:
             requests: { cpu: 50m, memory: 64Mi }
             limits: { cpu: 200m, memory: 128Mi }
@@ -141,14 +111,6 @@ spec:
             httpGet: { path: /health, port: 8000 }
             initialDelaySeconds: 10
             periodSeconds: 10
-      volumes:
-        - name: ssh-key
-          secret:
-            secretName: dashboard-ssh-key
-            defaultMode: 0400
-        - name: known-hosts
-          configMap:
-            name: dashboard-known-hosts
 ---
 apiVersion: v1
 kind: Service

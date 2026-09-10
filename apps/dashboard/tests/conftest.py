@@ -6,7 +6,7 @@ from fastapi.testclient import TestClient
 
 FAKE_NODES = [
     {"name": "joe", "ready": True, "schedulable": True, "roles": ["control-plane"]},
-    {"name": "desktop-j1grrmu", "ready": True, "schedulable": True, "roles": ["worker"]},
+    {"name": "m1-node", "ready": True, "schedulable": True, "roles": ["worker"]},
 ]
 FAKE_ARGO_APPS = [
     {"name": "backend", "sync_status": "Synced", "health_status": "Healthy"},
@@ -36,6 +36,7 @@ FAKE_DESKTOP_METRICS = {
     "oom_kills": 0.0,
 }
 FAKE_CROSS_NODE_STATUS = "up"
+FAKE_GPU_MODELS = [{"name": "qwen2.5-coder:7b", "size_vram": 4748056984}]
 
 
 TEST_PASSWORD = "correct-horse-battery-staple"
@@ -43,7 +44,7 @@ TEST_PASSWORD = "correct-horse-battery-staple"
 
 @pytest.fixture
 def client(monkeypatch):
-    from app import auth, k8s, main, prometheus
+    from app import auth, gpu, k8s, main, prometheus
 
     # config values are read at import time, so patch the already-bound
     # module attribute rather than the environment.
@@ -52,8 +53,7 @@ def client(monkeypatch):
 
     monkeypatch.setattr(k8s, "make_client", lambda: MagicMock(aclose=AsyncMock()))
     monkeypatch.setattr(k8s, "get_nodes", AsyncMock(return_value=FAKE_NODES))
-    monkeypatch.setattr(k8s, "get_node_internal_ip", AsyncMock(return_value="10.0.0.99"))
-    monkeypatch.setattr(main, "GAMING_SSH_HOST", "")
+    monkeypatch.setattr(gpu, "loaded_models", AsyncMock(return_value=FAKE_GPU_MODELS))
     monkeypatch.setattr(k8s, "get_pods", AsyncMock(return_value=FAKE_PODS))
     monkeypatch.setattr(k8s, "get_argo_applications", AsyncMock(return_value=FAKE_ARGO_APPS))
     monkeypatch.setattr(prometheus, "get_pi_metrics", AsyncMock(return_value=FAKE_PI_METRICS))
