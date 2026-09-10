@@ -49,7 +49,7 @@ spec:
         kubernetes.io/hostname: joe
       containers:
         - name: migrate
-          image: ghcr.io/josephvelasquez48/homelab-api:4f927bc162d6
+          image: ghcr.io/josephvelasquez48/homelab-api:2c05236d9d5a
           command: ["alembic", "upgrade", "head"]
           envFrom:
             - configMapRef: { name: api-config }
@@ -77,7 +77,7 @@ spec:
     spec:
       containers:
         - name: api
-          image: ghcr.io/josephvelasquez48/homelab-api:4f927bc162d6
+          image: ghcr.io/josephvelasquez48/homelab-api:2c05236d9d5a
           envFrom:
             - configMapRef: { name: api-config }
             - secretRef: { name: api-secrets }
