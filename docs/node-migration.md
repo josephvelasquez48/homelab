@@ -420,3 +420,46 @@ line items rather than this one:
 
 Prometheus needs no change - it discovered the pod through the existing
 `kubernetes-pods` job, not a dedicated scrape config.
+
+### Step 5, done - and what it broke
+
+The node was deleted and `k3s-agent` stopped on the desktop. Confirmed
+rather than assumed: kubelet's port 10250 no longer answers, and the node
+did not re-register, which a live agent would do within seconds.
+`svclb-traefik` moved to `m1-node` and the LoadBalancer path survived.
+
+**`inference-endpoint-sync` started failing every 5 minutes**, with
+`HTTPError: 404` - it reads the desktop node's `InternalIP`, and there is
+no such node now. Inference kept working the whole time, but only because
+the Endpoints held their last good value and Ollama still answers there.
+Coasting, not healthy.
+
+The CronJob is deleted rather than repaired. It only ever existed because
+the old router could not do DHCP reservations; the replacement can, and
+all three are in place and enabled:
+
+| Device | MAC | Reserved |
+| --- | --- | --- |
+| `m1-node` | `52:54:00:D1:C5:8E` | 192.168.1.63 |
+| `DESKTOP-J1GRRMU` | `CC:28:AA:53:AA:A4` | 192.168.1.131 |
+| `joe` | `2C:CF:67:59:A4:C6` | 192.168.1.253 |
+
+So `inference.yaml` goes back to being the source of truth for that
+address. Note the warning already in that file: the Endpoints object is
+in Argo CD's stock `resource.exclusions`, so it is skipped silently and
+the `ai` Application still reads `Synced`. Changing the address there
+requires `kubectl apply -f kubernetes/ai/inference.yaml` by hand. No
+apply was needed this time - the file and the cluster already agree.
+
+**The same 404 hits gaming mode.** `get_node_internal_ip` resolves the
+desktop node to find the SSH target, so it now fails too and the
+dashboard falls back to its `GAMING_SSH_HOST` override. That is the
+rewrite this plan already lists, not a new problem, but it is live now
+rather than pending.
+
+Left stale on purpose: [security-testing.md](security-testing.md)
+describes the CronJob's pod spec, and [kubernetes.md](kubernetes.md) says
+this address "should be a static DHCP reservation on the router". The
+first is moot rather than fixed; the second is a dated log entry whose
+recommendation has since been taken, and that doc states outright that
+its historical entries keep their original addresses.
