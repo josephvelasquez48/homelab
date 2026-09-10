@@ -202,7 +202,7 @@ async function refresh() {
 
     const crossNode = data.cross_node_status;
     const crossNodeDot = crossNode === 'up' ? 'ok' : (crossNode === 'down' ? 'bad' : 'warn');
-    const crossNodeLabel = crossNode === 'up' ? 'Worker pod scrapes succeeding' : (crossNode === 'down' ? 'A worker pod scrape is failing' : 'Unknown — no worker scrape data or monitoring unavailable');
+    const crossNodeLabel = crossNode === 'up' ? 'Worker pod scrapes succeeding' : (crossNode === 'down' ? 'A worker pod scrape is failing' : 'Unknown â€” no worker scrape data or monitoring unavailable');
     document.getElementById('cross-node-status').innerHTML = `
       <div class="row">
         <span>${dot(crossNodeDot)}Cross-node scrape health</span>
