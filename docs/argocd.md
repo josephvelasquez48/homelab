@@ -103,6 +103,13 @@ needs to write to git, so it moved back to a GitHub-hosted runner).
   from scratch means re-running that command with whatever `stable` points
   to at the time, not a pinned version. Fine for a homelab, worth pinning
   a version if this were closer to production.
+- The `admin` credential is Argo CD's install-time generated password and
+  has never been rotated. It lived only in `argocd-initial-admin-secret`
+  inside the cluster until it was backed up to
+  `kubernetes/secrets/reference/argocd-admin.enc.yaml` - SOPS-encrypted,
+  and a reference copy only, since `argocd-secret` also holds
+  `server.secretkey` and the server's TLS material that a partial
+  `kubectl apply` would strip. See [docs/secrets.md](secrets.md).
 
 ## Log
 
