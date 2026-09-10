@@ -1,0 +1,30 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: postgres-backend-only
+  namespace: data
+spec:
+  podSelector:
+    matchLabels: { app: postgres }
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: backend
+          podSelector:
+            matchExpressions:
+              - key: app
+                operator: In
+                values: [api, worker]
+        # Kubernetes supplies this label to every api-migrate Job pod.
+        # Keep PreSync migrations working after this policy is installed.
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: backend
+          podSelector:
+            matchLabels:
+              batch.kubernetes.io/job-name: api-migrate
+      ports:
+        - protocol: TCP
+          port: 5432

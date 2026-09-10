@@ -1,0 +1,24 @@
+# Only backend API/worker pods may initiate Redis connections.
+# namespaceSelector and podSelector are in the SAME peer (logical AND).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: redis-backend-only
+  namespace: backend
+spec:
+  podSelector:
+    matchLabels: { app: redis }
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: backend
+          podSelector:
+            matchExpressions:
+              - key: app
+                operator: In
+                values: [api, worker]
+      ports:
+        - protocol: TCP
+          port: 6379
