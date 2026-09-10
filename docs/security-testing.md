@@ -13,7 +13,8 @@ the Pi or the desktop tests a loopback path that no real client uses.
 | What | Address | Notes |
 |---|---|---|
 | Pi (control plane, node `joe`) | `192.168.1.253` | K3s server, CoreDNS, AdGuard |
-| Desktop (worker, `desktop-j1grrmu`) | `192.168.1.131` | Ollama :11434, sshd, node-exporter :9100 |
+| M1 MacBook (worker, `m1-node`) | `192.168.1.63` | K3s agent, Ubuntu 24.04 arm64 in a bridged VM |
+| Desktop (GPU host, **not** a cluster member) | `192.168.1.131` | Ollama :11434, sshd. `node-exporter :9100` is gone with the node |
 | LAN | `192.168.1.0/24` | The CIDR `traefik-lan-only` allows |
 | `api.home` / `ai.home` | → `192.168.1.253` | FastAPI behind Traefik |
 | `grafana.home` | → `192.168.1.253` | Grafana 13.2.1 |

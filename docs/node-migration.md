@@ -1,10 +1,10 @@
 # Second node migration: WSL2 to an M1 MacBook
 
-This records the decision and the sequence before any of it is done,
-because the failure modes are known in advance and the ordering is what
-keeps them from biting. Execution began on 2026-09-10 and is logged at
-the end; step 1 is not yet complete, so everything below still reads as
-a plan.
+**Executed 2026-09-10.** The cluster is now `joe` + `m1-node`, the WSL2
+node is deleted, and Ollama runs natively on Windows again. What follows
+is kept as written - the decision, the sequence, and the reasoning - with
+a completion log at the end, because the ordering is the part worth
+keeping rather than the fact that it worked.
 
 ## The decision
 

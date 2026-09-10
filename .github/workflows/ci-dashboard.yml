@@ -50,7 +50,11 @@ jobs:
       - uses: docker/build-push-action@v6
         with:
           context: apps/dashboard
-          platforms: linux/amd64,linux/arm64
+          # arm64 only: both nodes are arm64 now (Pi + M1), so an amd64
+          # half would be QEMU-emulated bytes nothing runs. Same call
+          # already made in ci-adguard-exporter.yml. Re-add amd64 if an
+          # x86 node ever joins. See docs/node-migration.md.
+          platforms: linux/arm64
           push: true
           tags: |
             ${{ env.IMAGE }}:latest
