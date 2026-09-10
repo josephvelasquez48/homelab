@@ -49,20 +49,14 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Homelab Dashboard", lifespan=lifespan)
 
-# same_site="strict" is the real cross-site defence: a cookie set this way
-# is simply not attached to any request a third-party page originates, so
-# the drive-by POST that used to reach the mutating endpoint now arrives
-# unauthenticated and gets a 401. https_only stays False only because the
-# Ingress is still plain HTTP - flip it the moment TLS lands (see
-# docs/security-testing.md, finding 5), or the cookie crosses the LAN in
-# the clear.
+# Strict SameSite blocks cross-site cookies; Secure restricts them to HTTPS.
 app.add_middleware(
     SessionMiddleware,
     secret_key=SESSION_SECRET,
     session_cookie="dashboard_session",
     max_age=SESSION_MAX_AGE,
     same_site="strict",
-    https_only=False,
+    https_only=True,
 )
 
 STATIC_DIR = Path(__file__).parent / "static"

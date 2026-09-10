@@ -62,3 +62,11 @@ def test_status_survives_ollama_being_unreachable(client, monkeypatch):
     res = client.get("/api/status")
     assert res.status_code == 200
     assert res.json()["gpu_models"] is None
+
+
+def test_login_cookie_requires_https(client, password):
+    response = client.post("/api/login", json={"password": password})
+    cookie = response.headers["set-cookie"].lower()
+    assert "secure" in cookie
+    assert "httponly" in cookie
+    assert "samesite=strict" in cookie

@@ -18,7 +18,7 @@
 #   DASHBOARD_PASSWORD=... ./scripts/verify-dashboard-auth.sh   # also checks the positive path
 set -uo pipefail
 
-HOST="${1:-http://dashboard.home}"
+HOST="${1:-https://dashboard.home}"
 JAR="$(mktemp)"
 trap 'rm -f "$JAR"' EXIT
 
