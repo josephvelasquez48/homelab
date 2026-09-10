@@ -99,6 +99,38 @@ Also check the AdGuard Home UI's query log (`http://192.168.1.253:3000`)
 shows real queries flowing through - that's the whole point of adding
 this layer over the old blocklist file.
 
+## AdGuard's rate limit has to be 0 behind CoreDNS
+
+`ratelimit` in `AdGuardHome.yaml` is **per client IP** and ships at 20
+queries per second. CoreDNS sits in front and forwards everything from
+`127.0.0.1`, so AdGuard sees the entire LAN as one client sharing a single
+20 qps bucket.
+
+That is invisible while a device or two points at the Pi. It becomes a
+total DNS outage the moment the router hands `192.168.1.253` to every
+client over DHCP - phones, TVs and laptops all funnel into that one bucket,
+AdGuard silently drops everything past the limit, and dropped queries look
+like timeouts rather than errors, so nothing names the cause. Found exactly
+that way; see [docs/router-migration.md](../../docs/router-migration.md).
+
+Set it to `0` under **Settings -> DNS settings -> Rate limit** in the UI,
+which applies live with no restart. The limit exists to protect a
+LAN-facing resolver from an abusive client, and this AdGuard is not
+LAN-facing at all - it is bound to `127.0.0.1:5335` and only CoreDNS can
+reach it. It was rate limiting its own forwarder.
+
+Verify with a burst rather than by reading the setting back - 120
+concurrent unique names, none of which should be dropped:
+
+```bash
+for i in $(seq 1 120); do ( dig +tries=1 +time=3 @127.0.0.1 p$i-$RANDOM.example.com >/dev/null 2>&1 || echo DROP ) & done; wait
+```
+
+**The same root cause costs per-client visibility.** Every query in
+AdGuard's log shows as `127.0.0.1`, because that is genuinely who sent it -
+which undercuts the per-client stats this layer was added for once the
+whole LAN is behind CoreDNS. See the doc above for the trade-off.
+
 ## Client setup
 
 **The router (Spectrum SAX1V1S) doesn't support DHCP DNS override** - its
