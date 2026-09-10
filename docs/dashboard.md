@@ -137,11 +137,15 @@ Argo CD Applications (including `dashboard` itself) confirmed
 
 ## The desktop's address is not pinned anywhere
 
-Neither host has a DHCP reservation - the router does not support them,
-the same limitation already recorded for DNS override in
-docs/milestone-1.md. The desktop's lease has already moved once
-(`.131 -> .133`), which broke in-cluster inference and would have broken
-gaming mode too.
+**Superseded.** The router that could not do reservations was replaced
+([router-migration.md](router-migration.md)), and DESKTOP-J1GRRMU is now
+reserved at `192.168.1.131`. The section below records why the machinery
+exists; it is no longer the reason it has to.
+
+Originally: neither host had a DHCP reservation, the same limitation
+already recorded for DNS override in docs/milestone-1.md. The desktop's
+lease had already moved once (`.131 -> .133`), which broke in-cluster
+inference and would have broken gaming mode too.
 
 So nothing here stores that address:
 
@@ -162,9 +166,15 @@ host key checked out), while the same connection without the alias fails
 with `No ED25519 host key is known for 192.168.1.133` - the exact failure a
 lease change would otherwise produce.
 
-The equivalent fix for the `inference` Endpoints is a CronJob
-(`kubernetes/ai/inference-endpoint-sync.yaml`), because an Endpoints object
-has no code of its own to do the lookup.
+The equivalent fix for the `inference` Endpoints *was* a CronJob, because
+an Endpoints object has no code of its own to do the lookup. It has been
+deleted: the reservation removes the problem, and the desktop node it read
+`InternalIP` from no longer exists.
+
+That second half applies to the SSH target above too. `get_node_internal_ip`
+resolves a node that is gone, so gaming mode now depends on the
+`GAMING_SSH_HOST` override until the rewrite in
+[node-migration.md](node-migration.md) lands.
 
 ## Auth on the gaming-mode endpoints
 
