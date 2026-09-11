@@ -122,7 +122,8 @@ flowchart TB
 | Node | Role |
 |---|---|
 | Raspberry Pi 5 (NVMe) | K3s control-plane, DNS, Postgres, Redis, Argo CD, Prometheus/Grafana |
-| Desktop (i7-14700K, RTX 3070 Ti 8GB, 32GB RAM) | K3s worker (WSL2), FastAPI/worker workloads, native Ollama/GPU inference |
+| M1 MacBook Pro (16GB) | K3s worker, Ubuntu 24.04 arm64 in a bridged VM |
+| Desktop (i7-14700K, RTX 3070 Ti 8GB, 32GB RAM) | GPU host for Ollama. Not a cluster member - see [docs/node-migration.md](docs/node-migration.md) |
 
 ## Status
 
@@ -185,9 +186,9 @@ homelab/
 ├── terraform/             # GitHub repo settings as code
 ├── load-testing/          # k6 scripts - see docs/load-testing.md
 ├── failure-testing/        # Fault-injection scripts - see docs/failure-testing.md
-├── gaming-mode/             # Cordon/drain the desktop K3s node for gaming - see docs/gaming-mode.md
-├── apps/dashboard/          # Status UI + gaming-mode trigger, runs in-cluster - see docs/dashboard.md
-├── scripts/                # Small Windows-host utilities (e.g. the WSL2 keepalive task)
+├── apps/dashboard/          # Status UI + GPU release trigger, runs in-cluster - see docs/dashboard.md
+├── backup/                 # Encrypted backup + restore-rehearsal tooling - see docs/backups.md
+├── scripts/                # Small host utilities (e.g. the deployed-auth verifier)
 ├── diagrams/               # Architecture diagram
 └── docs/                   # Per-phase logs: what was built, bugs found, verification
 ```
