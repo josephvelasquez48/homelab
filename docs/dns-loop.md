@@ -125,3 +125,80 @@ Counting SERVFAIL is not the same as counting failures. With the default
 blocking mode, a blocked name looks identical to a working one in the
 CoreDNS log - NOERROR, fast, an answer section. The only way to see it is
 to look at the address being returned.
+
+## Resolution: the blocking mode was the main cause
+
+The section above treats `blocking_mode` as a Wells Fargo detail. It was
+not. It was the thing breaking nearly every app on every iPhone in the
+house, and it had been doing so quietly for as long as the setting had
+been at its default.
+
+What proved it, after a long detour through things that turned out to be
+healthy: pointing one iPhone at `1.1.1.1` fixed everything. That single
+result cleared the uplink, the radio, MTU, QUIC, IPv6, the router and the
+phones, because nothing changed except which resolver answered. Turning
+AdGuard's filtering off entirely, with the Pi still resolving, fixed it
+too. Turning filtering back on with `blocking_mode: nxdomain` left the
+apps working.
+
+So the fault was never that names were blocked. It was how they were
+blocked.
+
+`blocking_mode: default` answers a blocked name with `0.0.0.0` and `::`.
+The client gets a valid-looking address, opens a connection to it, and
+waits for a timeout that never usefully arrives. Most apps call some
+analytics or telemetry endpoint during startup. On this network every one
+of those calls became a stall. `nxdomain` makes the lookup fail
+instantly, so the app skips the optional call and carries on.
+
+That is the difference between a blocklist that costs nothing and one
+that breaks the network it is protecting.
+
+### Why it took so long to find
+
+Every measurement said the resolver was healthy, and every measurement
+was wrong in the same way. Blocked answers were returned as NOERROR with
+an answer section and a sub-millisecond response time, so they were
+indistinguishable from success in the CoreDNS log. The entire evening was
+spent counting SERVFAILs while the actual failures were being recorded as
+successes.
+
+iPhones were hit hardest because they are the chattiest devices on the
+network and run the most apps that phone home on launch. The Mac was
+fine throughout, which repeatedly pointed the investigation away from
+DNS.
+
+### Final state
+
+| Setting | Value |
+| --- | --- |
+| `blocking_mode` | `nxdomain` |
+| `protection_enabled` | `true` |
+| `user_rules` | allowlists `wf.com`, `eum-appdynamics.com` |
+
+Measured after: 1573 queries, 2 SERVFAIL. Blocked names are all genuine
+tracker traffic, and the iPhones are the busiest clients on the network.
+
+## Also done: the Pi moved to Ethernet
+
+The Pi had no wired connection, so every DNS query from every device
+crossed the air twice. `192.168.1.253` and the two IPv6 service
+addresses now live on `eth0` at gigabit, and `wlan0` is down with
+autoconnect disabled so the dual-homed state cannot return on reboot.
+
+Both interfaces were briefly on the same subnet with two default routes,
+which is worth avoiding: replies leave by a different path than requests
+arrive on. Moving the addresses and disabling Wi-Fi removed that.
+
+IPv6 dropped up to 45% of queries for about a minute afterwards. That was
+neighbour caches around the network still mapping those addresses to the
+Wi-Fi MAC. It cleared on its own once the caches refreshed; nothing
+needed fixing, but it is worth expecting when service addresses change
+interface.
+
+## Still not fixed
+
+The router hands out `192.168.1.253` as both primary and secondary DNS,
+so there is still no fallback resolver. Every device on the network
+depends on one Raspberry Pi answering correctly. Tonight is a reasonable
+argument for giving the second slot to something else.
