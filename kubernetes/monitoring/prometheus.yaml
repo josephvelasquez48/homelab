@@ -43,6 +43,17 @@ data:
     global:
       scrape_interval: 15s
 
+    # Rules live in their own ConfigMap (kubernetes/monitoring/alertmanager.yaml)
+    # rather than inline here, so a rule change does not restart Prometheus's
+    # scrape config alongside it.
+    rule_files:
+      - /etc/prometheus/rules/*.yml
+
+    alerting:
+      alertmanagers:
+        - static_configs:
+            - targets: ["alertmanager.monitoring.svc:9093"]
+
     scrape_configs:
       - job_name: prometheus
         static_configs:
@@ -123,6 +134,9 @@ spec:
           volumeMounts:
             - name: config
               mountPath: /etc/prometheus
+            - name: rules
+              mountPath: /etc/prometheus/rules
+              readOnly: true
             - name: data
               mountPath: /prometheus
           resources:
@@ -137,6 +151,8 @@ spec:
       volumes:
         - name: config
           configMap: { name: prometheus-config }
+        - name: rules
+          configMap: { name: prometheus-rules }
         - name: data
           persistentVolumeClaim: { claimName: prometheus-data }
 ---

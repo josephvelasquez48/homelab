@@ -1,0 +1,170 @@
+---
+# Alertmanager. docs/monitoring.md listed "No alerting" as a known gap for
+# most of this project's life - the dashboard was look-at-it monitoring,
+# which is fine until something fails while nobody is looking. On
+# 2026-09-11 the Mac's backup agent exited 69 for fourteen minutes and the
+# only place that showed was `launchctl print`; backup.log still ended with
+# "succeeded". That is the class of failure this closes.
+#
+# The rules deliberately cover the *silent* versions of each failure, not
+# just the loud ones. See prometheus-rules below.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: prometheus-rules
+  namespace: monitoring
+data:
+  backup.rules.yml: |
+    groups:
+      - name: backup
+        rules:
+          # The headline check. 26 hours rather than 24: the schedule is
+          # 03:00 daily, so a 24h threshold would flap every night on
+          # ordinary jitter between one run and the next.
+          - alert: HomelabBackupStale
+            expr: (time() - homelab_backup_last_snapshot_timestamp_seconds) / 3600 > 26
+            for: 15m
+            labels: { severity: critical }
+            annotations:
+              summary: "No successful backup in {{ $value | humanize }} hours"
+              description: >-
+                The newest restic snapshot is older than the nightly 03:00 run.
+                Check `launchctl print gui/$(id -u)/local.homelab.backup` on the
+                Mac for the real exit code - backup.log is not a reliable
+                indicator, because a run that dies early never writes to it.
+
+          # Without this, every other rule here is unreliable. If the Mac
+          # stops publishing, or node_exporter dies, or the Pi drops off the
+          # network, the homelab_backup_* series simply vanish - and a rule
+          # written as "value > threshold" never fires on a series that does
+          # not exist. Absence is the failure mode that hides.
+          - alert: HomelabBackupMetricsMissing
+            expr: absent(homelab_backup_last_snapshot_timestamp_seconds)
+            for: 30m
+            labels: { severity: critical }
+            annotations:
+              summary: "Backup health metrics have disappeared"
+              description: >-
+                Nothing is reporting backup state. Either the Mac stopped
+                publishing (local.homelab.backup-metrics), node_exporter on the
+                Pi is down, or Prometheus cannot reach it. Backups may be fine;
+                the point is that nobody can currently tell.
+
+          # Distinguishes "ran and failed" from "never ran". Snapshot age
+          # alone cannot: both look like an old snapshot.
+          - alert: HomelabBackupAgentFailed
+            expr: homelab_backup_last_exit_code > 0
+            for: 10m
+            labels: { severity: warning }
+            annotations:
+              summary: "Backup agent last exited {{ $value }}"
+              description: >-
+                The LaunchAgent ran and failed. Exit 69 has meant an unaccepted
+                Xcode license breaking /usr/bin/python3, which is the binary the
+                agent executes.
+
+          - alert: HomelabBackupRepositoryUnreadable
+            expr: homelab_backup_repository_readable == 0
+            for: 15m
+            labels: { severity: critical }
+            annotations:
+              summary: "The restic repository could not be read"
+              description: >-
+                Snapshots may still exist, but restic could not list them.
+                Treat the backup as unavailable until this is understood.
+
+          # The reporter runs hourly. If its own timestamp goes stale while
+          # the series still exists, the metrics on screen are lying about
+          # how current they are.
+          - alert: HomelabBackupReporterStale
+            expr: (time() - homelab_backup_report_timestamp_seconds) / 3600 > 3
+            for: 15m
+            labels: { severity: warning }
+            annotations:
+              summary: "Backup metrics are {{ $value | humanize }} hours old"
+              description: >-
+                The hourly reporter on the Mac has stopped. The backup figures
+                still being displayed are stale and should not be trusted.
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: alertmanager
+  namespace: monitoring
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels: { app: alertmanager }
+  template:
+    metadata:
+      labels: { app: alertmanager }
+    spec:
+      # Pinned to the Pi for the same reason Prometheus is: the data
+      # directory is a hostPath-backed volume on this node.
+      nodeSelector:
+        kubernetes.io/hostname: joe
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        fsGroup: 65534
+      containers:
+        - name: alertmanager
+          image: prom/alertmanager:v0.28.1
+          args:
+            - --config.file=/etc/alertmanager/alertmanager.yml
+            - --storage.path=/alertmanager
+          ports:
+            - containerPort: 9093
+          volumeMounts:
+            # The config is a Secret rather than a ConfigMap. It carries the
+            # SMTP app password and the destination address, and this
+            # repository is public - neither belongs in a manifest. See
+            # kubernetes/secrets/alertmanager-config.enc.yaml.
+            - name: config
+              mountPath: /etc/alertmanager
+              readOnly: true
+            - name: data
+              mountPath: /alertmanager
+          resources:
+            requests: { cpu: 20m, memory: 48Mi }
+            limits: { cpu: 200m, memory: 128Mi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          readinessProbe:
+            httpGet: { path: /-/ready, port: 9093 }
+            initialDelaySeconds: 5
+          livenessProbe:
+            httpGet: { path: /-/healthy, port: 9093 }
+            initialDelaySeconds: 15
+      volumes:
+        - name: config
+          secret: { secretName: alertmanager-config }
+        - name: data
+          persistentVolumeClaim: { claimName: alertmanager-data }
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: alertmanager-data
+  namespace: monitoring
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: alertmanager
+  namespace: monitoring
+spec:
+  selector: { app: alertmanager }
+  ports:
+    - port: 9093
+      targetPort: 9093
