@@ -129,6 +129,18 @@ spec:
           args:
             - --config.file=/etc/prometheus/prometheus.yml
             - --storage.tsdb.path=/prometheus
+            # Every alert carries a generatorURL built from this, and it is
+            # the "Source" link in the notification email. Without it the
+            # link points at the pod's own hostname and resolves nowhere -
+            # the same defect Alertmanager had until it was given
+            # --web.external-url.
+            #
+            # Note what is deliberately absent: --web.enable-admin-api and
+            # --web.enable-lifecycle. Exposing this makes metrics readable
+            # on the LAN, not mutable. Adding either flag would change that
+            # materially, since neither the Ingress nor Prometheus itself
+            # has any authentication.
+            - --web.external-url=https://prometheus.home
           ports:
             - containerPort: 9090
           volumeMounts:
@@ -166,3 +178,24 @@ spec:
   ports:
     - port: 9090
       targetPort: 9090
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: prometheus
+  namespace: monitoring
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: websecure
+spec:
+  tls:
+    - secretName: homelab-tls
+      hosts:
+        - prometheus.home
+  rules:
+    - host: prometheus.home
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service: { name: prometheus, port: { number: 9090 } }
