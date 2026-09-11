@@ -21,7 +21,25 @@ That was the Ubuntu-24.04 WSL2 distro, which was retired during the node
 migration (`docs/node-migration.md`). Nobody noticed at the time, so from
 then until 2026-09-10 the playbook had nowhere to run from at all.
 
-**The Pi is now the control node, running against itself:**
+There are two control nodes. Prefer the Mac; the Pi is the fallback when
+the Mac is unavailable.
+
+**The Mac, over SSH, which is what the inventory already describes:**
+
+```bash
+cd ~/Desktop/homelab/ansible
+ansible-playbook playbooks/site.yml --check --diff
+```
+
+No connection flag: the inventory addresses the Pi at 192.168.1.253 as
+`joe`, and the Mac already holds that key because the backup collector
+uses it. `joe` has `NOPASSWD: ALL`, so become needs no password.
+
+This is the one to reach for. A control node that is also the target
+cannot fix the target when the target is broken, and the `common` role
+edits the Pi's networking.
+
+**The Pi, against itself, when the Mac is not available:**
 
 ```bash
 cd ~/apps/homelab/ansible
@@ -205,3 +223,32 @@ ansible-playbook playbooks/site.yml --tags github_runner \
   interface, DNS on both families and both cluster nodes were untouched,
   then a **second real run reporting `changed=0`**. The firewall ended at
   eight rules, all commented, no dead prefixes.
+
+- 2026-09-11: **Second control node on the MacBook**, closing the last of
+  the five operating rules set after the DNS outage. Ansible 14 via
+  Homebrew, run over SSH with no connection flag, since the inventory
+  already describes exactly that and the Mac already holds the key the
+  backup collector uses. Verified with a full check run: `28 ok`,
+  `changed=0`, `failed=0`.
+
+  **Version skew is real and deliberate.** The Pi has ansible-core 2.19.4
+  from Debian's apt, the Mac has 2.21.4 from Homebrew. Both run these
+  roles identically today, but they are not the same interpreter of the
+  same YAML, and a role that works on one is not proof it works on the
+  other. Run a check from whichever node you intend to apply from.
+
+  **The first attempt failed, on something worth recording.** The git
+  module refused with `Local modifications exist in the destination
+  (force=no)` - correct, safe behaviour, and the same failure this log
+  already records from an earlier session. The cause both times was a file
+  copied to the Pi with `scp` instead of going through git: a config
+  change applied by hand leaves the Pi's checkout dirty, and the next play
+  stops dead rather than silently discarding it.
+
+  The right sequence is commit, merge, pull. Copying straight to the box
+  is fine for testing something you are about to throw away, and it is a
+  trap for anything you intend to keep, because the breakage surfaces
+  later and somewhere else.
+
+  `timeout` does not exist on macOS, so scripted runs that wrap
+  `ansible-playbook` in it work on the Pi and fail on the Mac.
