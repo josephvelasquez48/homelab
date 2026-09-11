@@ -11,10 +11,16 @@ services:
       - /proc:/host/proc:ro
       - /sys:/host/sys:ro
       - /:/rootfs:ro
+      # Prometheus textfile collector. The Mac publishes backup health
+      # here over its existing SSH key (backup/publish-backup-metrics.py),
+      # so backup state is scrapeable without a listener on the Mac and
+      # without the Pi needing credentials for the restic repository.
+      - /var/lib/node_exporter/textfile:/textfile:ro
     command:
       - --path.procfs=/host/proc
       - --path.sysfs=/host/sys
       - --path.rootfs=/rootfs
       - --web.listen-address=:9100
+      - --collector.textfile.directory=/textfile
       - --collector.filesystem.mount-points-exclude=^/(dev|proc|sys|var/lib/docker/.+)($$|/)
     restart: unless-stopped
