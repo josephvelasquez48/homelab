@@ -17,19 +17,37 @@ just be two systems fighting over the same state, with no clear owner of
 ## Control node
 
 Ansible doesn't run natively on Windows - it needs a POSIX control node.
-Used the Ubuntu-24.04 WSL2 distro already set up as a K3s worker node
-(`docs/kubernetes.md`) rather than standing up something new, targeting
-the Pi over the same SSH access pattern used everywhere else in this
-project (a dedicated keypair, added to `authorized_keys`).
+That was the Ubuntu-24.04 WSL2 distro, which was retired during the node
+migration (`docs/node-migration.md`). Nobody noticed at the time, so from
+then until 2026-09-10 the playbook had nowhere to run from at all.
 
-**Working copy matters**: running Ansible directly against the repo's
-`/mnt/d/homelab/ansible` (the Windows-drive WSL2 mount) silently ignored
-`ansible.cfg` - `/mnt/*` mounts don't map NTFS permissions cleanly, so
-Ansible's world-writable-directory safety check flags the whole path.
-Copying the working files into WSL2's own filesystem first (`~/homelab-ansible`)
-fixed it. A real deploy pipeline would `git clone` there instead of copying
-from a Windows mount, which only exists because this session runs from
-Windows.
+**The Pi is now the control node, running against itself:**
+
+```bash
+cd ~/apps/homelab/ansible
+ansible-playbook playbooks/site.yml --check --diff -c local
+```
+
+`-c local` is required. The inventory addresses the Pi over SSH, which is
+correct from any other control node, but the Pi holds no key authorising
+it to connect to itself - and going through localhost SSH would be a
+pointless hop anyway. `become` needs no password here: `joe` has
+`NOPASSWD: ALL`.
+
+Control node and target being the same host is a real weakness, not a
+tidy solution. A change that breaks the Pi's networking also breaks the
+thing that would fix it, and the `common` role now edits exactly that.
+The alternative is installing Ansible on the MacBook, which is the better
+shape but adds a second machine that has to be present and current before
+anything can be provisioned.
+
+**Historical, kept because the failure was non-obvious**: running Ansible
+directly against the repo's `/mnt/d/homelab/ansible` (the Windows-drive
+WSL2 mount) silently ignored `ansible.cfg` - `/mnt/*` mounts don't map
+NTFS permissions cleanly, so Ansible's world-writable-directory safety
+check flagged the whole path. Copying into WSL2's own filesystem fixed
+it. Moot now: the Pi runs from a real `git clone`, which is what that
+entry recommended.
 
 ## Roles
 
@@ -92,3 +110,55 @@ ansible-playbook playbooks/site.yml --tags github_runner \
   verified idempotency, not assumed. Confirmed the whole stack (K3s nodes,
   `api.home`, `grafana.home`, Docker containers on the Pi) stayed healthy
   throughout.
+
+- 2026-09-10: **Control node moved to the Pi, and two DNS host settings
+  moved into the `common` role.** Both settings had been applied by hand
+  during the DNS incident that night (`docs/dns-loop.md`) and existed
+  nowhere else, so a rebuild from this repo would have come back without
+  them:
+
+  1. **`enable-wide-area=no`** in `/etc/avahi/avahi-daemon.conf`. Left on,
+     avahi queries `lb._dns-sd._udp.<reverse-subnet>.in-addr.arpa` over
+     unicast DNS at roughly 13 per second, all failing, all forwarded to
+     the upstream resolvers.
+  2. **The Pi's own resolver**, pointed at `127.0.0.1`/`::1` with
+     `ignore-auto-dns` on both families. Without the second half,
+     NetworkManager appends the DHCP- and RA-learned servers and the Pi
+     resolves through whichever answers first.
+
+  The role looks the NetworkManager connection up **by device**, not by
+  name - that name changed when the Pi moved from Wi-Fi to Ethernet the
+  same night - and fails loudly when nothing is active on
+  `pi_lan_interface` rather than silently configuring nothing.
+
+  **One bug, found by running the command instead of assuming its output.**
+  `nmcli --get-values` escapes colons, returning the IPv6 address as
+  `\:\:1`. The idempotency comparison against `::1` would never have
+  matched, so the task would have re-run and reactivated the connection on
+  every single play - and reactivating drops the only resolver on the LAN
+  for several seconds. `--escape no` fixes it.
+
+  Verified with `--check --diff -c local`: 27 ok, 0 failed, and the
+  resolver task **skips**, which is the assertion that matters - the guard
+  works and re-runs will not bounce the network.
+
+  Two tasks report `changed` in check mode, both understood and neither a
+  defect:
+
+  - `firewall: Allow LAN-scoped services (IPv6)` - the live ufw rule for
+    the current prefix was added by hand without a comment, and ufw treats
+    the comment as part of the rule identity.
+  - `dns_monitoring: Clone or update the homelab repo` - the Pi's checkout
+    was on a feature branch during the test, so the role wanted main back.
+
+  **Also still on the box and matching nothing**: ufw rules scoped to
+  `fd00:f405:95c7:c412::/64`, the dead ULA prefix from the old router. The
+  role no longer emits them (`lan_ipv6_prefix` is the delegated GUA now),
+  but `ufw` does not remove a rule just because Ansible stopped asking for
+  it. A stale allow-rule reads as protection that is not being provided,
+  which is the exact mistake the firewall role's own comments refuse to
+  make elsewhere. Not cleaned up yet.
+
+  The Pi being both control node and only target is a weakness worth
+  stating: a change that breaks its networking also breaks the thing that
+  would fix it, and this role now edits precisely that.
