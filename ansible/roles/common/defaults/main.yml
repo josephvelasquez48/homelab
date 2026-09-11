@@ -1,0 +1,16 @@
+---
+# The interface carrying the Pi's LAN address and its DNS service
+# addresses. This was `wlan0` until 2026-09-10, when the Pi got a wired
+# connection and 192.168.1.253 plus the two IPv6 service addresses moved
+# to Ethernet - see docs/dns-loop.md. Left as a variable because the role
+# looks up the NetworkManager connection by device, and hard-coding the
+# wrong one silently configures nothing.
+pi_lan_interface: eth0
+
+# The Pi runs CoreDNS itself, so it should resolve through loopback rather
+# than routing out to the LAN for a service running locally. Setting these
+# is not enough on its own: `ignore-auto-dns` has to be on for both
+# families, or NetworkManager appends the DHCP- and RA-learned servers and
+# the Pi ends up resolving through whichever answers first.
+pi_resolver_ipv4: 127.0.0.1
+pi_resolver_ipv6: "::1"
