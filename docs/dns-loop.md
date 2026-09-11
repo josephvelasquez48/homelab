@@ -66,13 +66,22 @@ they cost nothing. Fixing it there as well would be belt and braces; the
 structural fix is the one that matters, and fewer changes meant a
 smaller blast radius on a service the whole house depends on.
 
-## Not fixed, and worth knowing
+## Why every DNS slot points at the Pi
 
-The router hands out `192.168.1.253` as both primary and secondary DNS.
-There is no fallback resolver. If the Pi stops answering, every device on
-the network loses DNS with nothing to fail over to. That is a separate
-decision, not a bug, but it is the reason a resolver fault here is felt
-everywhere at once.
+All four slots, both address families, point at the Pi. That is
+deliberate and predates this incident - see router-migration.md. The
+router's IPv6 DNS form requires a secondary and rejects a blank, and its
+IPv4 form appends the gateway when left blank, so any slot not given to
+the Pi becomes an unfiltered resolver on the network.
+
+That is worse than it sounds, because clients do not reliably prefer the
+primary. milestone-1.md records Windows racing its configured servers and
+the fast public resolver winning almost every time, silently defeating
+the filtering. `::254` exists to satisfy a form field, not to provide
+redundancy: one host, one CoreDNS.
+
+So the single point of failure is real, but it is a chosen trade rather
+than an oversight, and the alternative reintroduces a documented bypass.
 
 ## Phone-side settings, unrelated to the above
 
@@ -196,9 +205,17 @@ Wi-Fi MAC. It cleared on its own once the caches refreshed; nothing
 needed fixing, but it is worth expecting when service addresses change
 interface.
 
-## Still not fixed
+## A recommendation withdrawn
 
-The router hands out `192.168.1.253` as both primary and secondary DNS,
-so there is still no fallback resolver. Every device on the network
-depends on one Raspberry Pi answering correctly. Tonight is a reasonable
-argument for giving the second slot to something else.
+During this incident I twice suggested giving the second DNS slot to a
+public resolver for redundancy. That was wrong, and the reasoning against
+it was already written down in router-migration.md and milestone-1.md
+before I started. See the section above.
+
+It would have been actively harmful here. A public resolver in the second
+slot does not filter, and clients race their configured servers rather
+than preferring the primary. Tonight's fault was apps stalling on blocked
+names; with a bypass in place the symptom would have come and gone
+depending on which resolver won each race, which is far harder to
+diagnose than a consistent failure - and the ad blocking would have been
+quietly defeated the rest of the time.
