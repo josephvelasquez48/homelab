@@ -15,6 +15,19 @@ Local encrypted backups are installed on the Mac. No cloud service is used.
   Runs at 03:00 Mac local time and at agent load/login. Requires the Mac user
   session and network availability; it does not provide backups while the Mac
   is shut down or logged out. The collector uses the existing Mac-to-Pi SSH key.
+- FileVault is on and automatic login is off, so "logged out" includes every
+  reboot until someone types the password at the pre-boot unlock screen. The
+  same lock keeps `multipassd` from restoring the `m1-node` VM, so a power cut
+  takes the second K3s node down with the backups. See
+  [node-migration.md](node-migration.md) for the node half and the options.
+- As of 2026-09-10 the 03:00 trigger has never fired. Every snapshot so far
+  came from a `RunAtLoad` or a manual `launchctl kickstart`; `launchctl print`
+  is the check, not the presence of snapshots.
+- The deployed copies under `~/.config/homelab-backup` should stay
+  byte-identical to `backup/`. The check is
+  `git show origin/main:backup/<file> | diff - ~/.config/homelab-backup/<file>`.
+  They drifted once, by carriage returns picked up in a Windows-side transfer,
+  and were redeployed from the committed copies on 2026-09-10.
 - Logs: `~/.config/homelab-backup/backup.log` and `backup-error.log`.
   Nonzero exit means failure. External failure notifications are not installed.
 - First snapshot `9d282746`: 19.7 MiB input, approximately 5.1 MiB stored.
