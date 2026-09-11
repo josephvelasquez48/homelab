@@ -1,0 +1,150 @@
+# Backup and recovery
+
+## Status (2026-09-10)
+
+Local encrypted backups are installed on the Mac. No cloud service is used.
+
+- Repository: `/Users/josephvelasquez/Backups/homelab/repository`.
+- Restic password: `~/.config/homelab-backup/password` on the Mac, mode 0600
+  inside a mode 0700 directory. Keep this outside the repository.
+- Independent password copy: `C:\Users\josep\.config\sops\age\mac-backup-restic-password.txt`
+  inside the restricted Windows key directory. Passwords are never committed.
+- SOPS age key copied to the Mac's protected `~/.config/homelab-backup/recovery/`
+  directory and included in its own encrypted recovery snapshot.
+- LaunchAgent: `~/Library/LaunchAgents/local.homelab.backup.plist`.
+  Runs at 03:00 Mac local time and at agent load/login. Requires the Mac user
+  session and network availability; it does not provide backups while the Mac
+  is shut down or logged out. The collector uses the existing Mac-to-Pi SSH key.
+- Logs: `~/.config/homelab-backup/backup.log` and `backup-error.log`.
+  Nonzero exit means failure. External failure notifications are not installed.
+- First snapshot `9d282746`: 19.7 MiB input, approximately 5.1 MiB stored.
+  Recovery-key snapshot `a79a1396` is separate.
+- No automatic pruning yet; retained snapshots accumulate until a reviewed
+  retention policy is enabled. Monitor free space and rotate logs as needed.
+
+### What is captured
+
+`backup/pi-snapshot.py` runs as root on the Pi and streams a tar over SSH.
+It uses SQLite's online backup API for K3s and Grafana, a PostgreSQL custom-format
+dump plus role definitions, and Redis's replication RDB snapshot. It includes
+the K3s token, service configuration, NetworkManager profiles, firewall files,
+CoreDNS files and AdGuard YAML. Each database is independently consistent;
+there is no atomic transaction spanning all these services.
+
+`backup/mac-backup.py` stages that stream in a private temporary directory,
+stores it in Restic, backs up the recovery key, then runs `restic check --read-data`.
+A file lock prevents concurrent collectors. Temporary plaintext is removed on
+normal completion or handled errors; an abrupt power loss can leave staging
+files and they must be handled as secrets. No live service is stopped.
+
+Excluded: Prometheus history, AdGuard query history/statistics/filter cache,
+Ollama models, Grafana plugin binaries, and local Terraform state. AdGuard
+configuration is checked for changes during capture; its caches can rebuild.
+Encrypted repository storage does not protect against someone controlling the
+Mac account, which also has the password and recovery key.
+
+### Verification completed
+
+- First run and full encrypted repository data check passed.
+- Retrieved the archive from Restic and integrity-checked restored K3s/Grafana
+  SQLite databases.
+- Restored the Postgres dump into a disposable PostgreSQL 17/pgvector Docker
+  container on the Pi with `--network none`, no published ports, a tmpfs data
+  directory and resource limits. Found 2 documents, 2 jobs and pgvector 0.8.6.
+  The container was removed; production database was not modified.
+- Expanded restore rehearsal passed: Redis loaded the saved RDB and answered
+  PONG; Grafana 13.2.1 started on the restored database and reported database
+  health OK; AdGuard v0.107.79 passed configuration validation and served its
+  login page. These ran in disposable containers with `--network none`, no
+  published ports and only temporary restored files mounted. Containers were
+  removed afterward. AdGuard upstream resolution and live filtering were not
+  tested, since network isolation intentionally prevents upstream access.
+- A full K3s boot/recovery rehearsal is still untested. SQLite integrity alone
+  does not establish full control-plane recovery.
+
+### Run and inspect (on the Mac)
+
+```sh
+/usr/bin/python3 ~/.config/homelab-backup/mac-backup.py
+export RESTIC_REPOSITORY="$HOME/Backups/homelab/repository"
+export RESTIC_PASSWORD_FILE="$HOME/.config/homelab-backup/password"
+/opt/homebrew/bin/restic snapshots
+/usr/bin/python3 ~/.config/homelab-backup/verify-mac.py
+```
+
+The last command repeats PostgreSQL, Redis, Grafana, AdGuard and SQLite
+checks using temporary containers on the Pi, never production volumes.
+To recover individual files, use `restic restore` to a new private directory.
+Choose the `pi` or `recovery` tag explicitly: there are separate snapshots.
+Never restore directly over live database directories.
+
+### Installed code
+
+- Pi: `/usr/local/lib/homelab-backup/pi-snapshot.py` , `verify-postgres.py` and `verify-services.py`.
+- Mac: `~/.config/homelab-backup/mac-backup.py` and `verify-mac.py`.
+- Initial setup helpers are under `backup/` in this repository. Changes to the
+  repository do not automatically update these installed scripts.
+
+## Inventory
+
+- Pi `joe`, 192.168.1.253: K3s control plane with SQLite datastore.
+  `/var/lib/rancher/k3s/server/db/state.db` has active WAL/SHM files.
+- K3s server token: `/var/lib/rancher/k3s/server/token`. Keep with the
+  datastore backup, encrypted. Recovery requires the original token.
+- Postgres: namespace `data`, Deployment `postgres`, database/user `homelab`,
+  pgvector on PostgreSQL 17. Database measured approximately 8 MB.
+- Redis: namespace `backend`, PVC `redis-data`; includes the job queue.
+- Grafana: namespace `monitoring`, PVC `grafana-data`; includes live settings.
+- Prometheus: namespace `monitoring`, PVC `prometheus-data`; metrics history.
+- DNS: `/home/joe/apps/homelab/docker/dns/`, including CoreDNS configuration,
+  `adguard/conf` and `adguard/work` (approximately 106 MB of work data).
+- Windows age identity: `C:\Users\josep\.config\sops\age\keys.txt`.
+  This is a private key, not a repository file. Its local second copy is
+  not protection against loss of the Windows disk.
+- Terraform state is local and gitignored; include it in secure operator backups.
+
+## Recovery requirements
+
+1. Store encrypted backups outside the Pi. Retain a separate secure copy of
+   the age private key and any backup encryption/repository credentials.
+   Do not encrypt the only key copy solely to that same key.
+2. Use a consistent PostgreSQL logical dump, not a copy of its running data
+   directory. Capture roles as needed for a fresh restore; treat dumps as secrets.
+3. Use a consistent SQLite snapshot or a controlled stopped-service copy for
+   K3s. Do not independently copy live DB/WAL/SHM files and assume consistency.
+   Include the server token, K3s version, service configuration and host setup.
+4. Back up Redis and Grafana using application-consistent methods. Record
+   whether queued jobs may be lost or replayed. Restore exercises must not
+   start a worker against a copied production queue.
+5. Capture AdGuard configuration and state consistently. Any service stop
+   causes a DNS interruption and must be planned explicitly.
+6. Decide whether Prometheus history is retained or deliberately disposable.
+   K3s datastore recovery does not restore local-path application volumes.
+7. Record timestamps, versions, sizes, checksums, completion status and retention.
+   Fail loudly on missing inputs, failed encryption or failed remote transfer.
+   Apply retention only after a new backup has been verified.
+
+## Remaining full-recovery validation
+
+- Verify the off-host files decrypt and pass integrity checks.
+- Restore Postgres into a separate PostgreSQL 17/pgvector instance. Check schema,
+  document/job counts and representative embedding queries. Do not replace the
+  production database as a test.
+- Verify the copied SQLite database's integrity, then test full K3s recovery in
+  an isolated environment with the matching token and version. Isolation must
+  prevent restored controllers from reaching production nodes or reconciling
+  production resources. An integrity check alone is not a recovery test.
+- Test AdGuard configuration in isolation without binding production DNS ports.
+- Record the backup timestamp, test date, restore duration and any excluded data.
+- Document host-network recovery (Pi static address, DNS, firewall), manual SOPS
+  secret application and the manually managed inference Endpoints/Traefik config.
+
+## Remaining decisions
+
+- Local Mac destination chosen; an off-site copy is not configured.
+- Secure independent storage for the age identity and backup credentials.
+- Retention, schedule, and acceptable recovery point/recovery time.
+- Whether short service interruptions are acceptable for consistent snapshots.
+
+Reference: [K3s backup and restore](https://docs.k3s.io/datastore/backup-restore).
+The server token is required to recover encrypted bootstrap data.
