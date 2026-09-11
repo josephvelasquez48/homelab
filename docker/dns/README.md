@@ -211,3 +211,85 @@ dashboard.home`) and external resolution still forwards correctly
 (`getent hosts google.com`) - `ignore-auto-dns` only stops DHCP from
 overwriting the DNS *server* used, it doesn't break CoreDNS's own
 upstream forwarding for non-`.home` queries.
+
+## Tracking AdGuard's config
+
+CoreDNS is config-as-code: the `Corefile` in this directory *is* what runs.
+AdGuard is not, and cannot be made so. It owns `AdGuardHome.yaml` at
+runtime and rewrites it on every settings change in the web UI, and the
+compose mount is read-write because the UI has to be able to save. So
+`adguard-config/AdGuardHome.yaml` here is a **snapshot for rebuild and
+review**,
+not a source of truth.
+
+That distinction is the whole reason this exists. Until 2026-09-10 the
+file was untracked, which meant a rebuild from this repo would have come
+back with default filtering behaviour and no record that anything had been
+chosen. `blocking_mode`, the `user_rules` allowlist, the upstreams and the
+filter list selection all lived only on the box.
+
+| Script | Direction | When |
+| --- | --- | --- |
+| `adguard-capture.py` | Pi to repo | after changing anything in the web UI |
+| `adguard-restore.py` | repo to Pi | rebuilding the box |
+
+Run capture after UI changes and `git diff` shows exactly what moved. An
+empty diff means the repo matches the Pi. A surprising diff means someone
+changed something in the UI and did not say so, which is the drift this is
+meant to catch.
+
+**The admin password hash never enters the working tree.** Capture
+replaces it with `SOPS_ADGUARD_ADMIN_PASSWORD_HASH`, and the real value
+lives in `secrets/adguard-password-hash.enc.yaml`, encrypted to the same
+age recipient as everything else here. Restore decrypts it and substitutes
+it back on the way to the Pi. Capture refuses to write at all if it does
+not find exactly one hash to redact, rather than guessing and risking a
+commit of a live credential. The hash is bcrypt cost 5, which is weak
+enough that treating it as public would be a real mistake.
+
+Restore stages the complete configuration on the Pi, stops AdGuard, takes
+a timestamped backup if a configuration already exists, and atomically
+replaces the configuration before starting AdGuard and CoreDNS with Compose.
+Stopping AdGuard first prevents it from overwriting the restored settings.
+On a fresh rebuild, the script creates the configuration directory and
+does not require an existing file or container. Docker with Compose and the
+repo checkout at `/home/joe/apps/homelab` must already be present.
+If a step fails after AdGuard stops, the script exits with an error; inspect
+the configuration and backup before starting the stack again. For routine
+changes use the UI and then capture.
+
+### Host settings that live in Ansible, not here
+
+Not everything DNS-related is in this directory. Two host settings matter
+to DNS and are codified in the Ansible `common` role rather than captured
+by the scripts above, because they are properties of the Pi rather than of
+AdGuard (see `docs/dns-loop.md`):
+
+- **`enable-wide-area=no`** in `/etc/avahi/avahi-daemon.conf`. With this
+  on, avahi queries `lb._dns-sd._udp.<reverse-subnet>.in-addr.arpa` over
+  unicast DNS at roughly 13 per second, all failing, all forwarded
+  upstream.
+- **The Pi's own resolver**, `ipv4.dns 127.0.0.1` / `ipv6.dns ::1` with
+  `ignore-auto-dns` on both, documented above. After the move to Ethernet
+  this lives on `Wired connection 1` rather than the Wi-Fi connection.
+
+Both are in `ansible/roles/common`, so a rebuild applies them. The role
+looks the connection up by device rather than by name, and fails loudly
+if nothing is active on `pi_lan_interface` instead of silently
+configuring nothing - that variable had to change from `wlan0` to `eth0`
+when the Pi was wired.
+
+Applying the resolver setting requires reactivating the connection, which
+drops the Pi off the network for a few seconds. The Pi is the only
+resolver on this LAN, so every client loses DNS while that happens. The
+handler is deliberately the only thing that bounces it, and the task
+guarding it compares against the live values first.
+
+**The Pi is now the Ansible control node.** Ansible 12 is installed with
+the required collections bundled. Run from `~/apps/homelab/ansible` with
+`ansible-playbook playbooks/site.yml --check --diff -c local`; `joe` has
+`NOPASSWD: ALL`, so become needs no password. The check run returned 27 ok,
+0 failed, and the resolver task skipped. The two reported changes were an
+IPv6 ufw rule comment and the repo task selecting main from a test branch.
+See [the Ansible notes](../../docs/ansible.md) for the control-node setup
+and the limitations of running recovery automation on the Pi itself.

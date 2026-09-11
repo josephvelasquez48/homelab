@@ -1,0 +1,15 @@
+---
+- name: Restart avahi-daemon
+  ansible.builtin.systemd:
+    name: avahi-daemon
+    state: restarted
+
+# Reactivating is what actually applies a DNS change - `nmcli connection
+# modify` only writes the stored profile. This briefly drops the Pi off
+# the network, and the Pi is the only resolver on this LAN, so every
+# client loses DNS for a second or two while it happens.
+- name: Reactivate the LAN connection
+  ansible.builtin.command:
+    argv: [nmcli, connection, up, '{{ pi_nm_connection.stdout | trim }}']
+  async: 60
+  poll: 0
