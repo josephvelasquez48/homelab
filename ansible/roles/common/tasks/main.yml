@@ -32,3 +32,81 @@
   ansible.builtin.reboot:
     reboot_timeout: 120
   when: cmdline_updated is changed
+
+# Avahi's wide-area mode makes it query lb._dns-sd._udp.<reverse-subnet>
+# .in-addr.arpa over unicast DNS, which nothing here serves. On 2026-09-10
+# that was running at roughly 13 queries a second, every one failing and
+# every one forwarded out to the upstream resolvers - about 90% of all
+# traffic through the Pi's own DNS stack. See docs/dns-loop.md.
+#
+# Nothing on this network uses wide-area Bonjour. Local mDNS is unaffected.
+- name: Disable avahi wide-area DNS-SD
+  ansible.builtin.lineinfile:
+    path: /etc/avahi/avahi-daemon.conf
+    regexp: '^\s*enable-wide-area\s*='
+    line: enable-wide-area=no
+    insertafter: '^\[wide-area\]'
+  notify: Restart avahi-daemon
+
+# The Pi runs CoreDNS but that does not make its own OS use it. Until this
+# was set, *.home resolved from every LAN client and failed from a browser
+# on the Pi's own desktop, because NetworkManager still pointed
+# /etc/resolv.conf at the router. See docker/dns/README.md.
+- name: Find the NetworkManager connection on the LAN interface
+  ansible.builtin.shell: |
+    set -o pipefail
+    nmcli -t -f NAME,DEVICE connection show --active |
+      awk -F: -v d='{{ pi_lan_interface }}' '$2 == d { print $1; exit }'
+  args:
+    executable: /bin/bash
+  register: pi_nm_connection
+  changed_when: false
+  check_mode: false
+
+- name: Fail clearly when no connection is active on that interface
+  ansible.builtin.fail:
+    msg: >-
+      No active NetworkManager connection on {{ pi_lan_interface }}.
+      Set pi_lan_interface to the interface holding the LAN address, or
+      this role would silently configure nothing.
+  when: pi_nm_connection.stdout | trim == ''
+
+- name: Read the connection's current DNS settings
+  ansible.builtin.command:
+    argv:
+      - nmcli
+      # --escape no, or nmcli returns the IPv6 address as \:\:1 and the
+      # comparison below never matches - the task would then re-run and
+      # bounce the network on every single play.
+      - --escape
+      - 'no'
+      - --get-values
+      - ipv4.dns,ipv4.ignore-auto-dns,ipv6.dns,ipv6.ignore-auto-dns
+      - connection
+      - show
+      - '{{ pi_nm_connection.stdout | trim }}'
+  register: pi_nm_dns
+  changed_when: false
+  check_mode: false
+
+# ignore-auto-dns matters as much as the servers themselves: without it
+# NetworkManager appends what DHCP and the RAs advertise, and resolution
+# goes to whichever of those answers first.
+- name: Point the Pi's own resolver at its local CoreDNS
+  ansible.builtin.command:
+    argv:
+      - nmcli
+      - connection
+      - modify
+      - '{{ pi_nm_connection.stdout | trim }}'
+      - ipv4.dns
+      - '{{ pi_resolver_ipv4 }}'
+      - ipv4.ignore-auto-dns
+      - 'yes'
+      - ipv6.dns
+      - '{{ pi_resolver_ipv6 }}'
+      - ipv6.ignore-auto-dns
+      - 'yes'
+  when: pi_nm_dns.stdout_lines | map('trim') | list
+        != [pi_resolver_ipv4, 'yes', pi_resolver_ipv6, 'yes']
+  notify: Reactivate the LAN connection

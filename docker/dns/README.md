@@ -251,10 +251,12 @@ Restore overwrites the running config and restarts the container, taking a
 timestamped backup on the Pi first. It is the rebuild path, not the edit
 path - for routine changes use the UI and then capture.
 
-### Host settings that still live only on the Pi
+### Host settings that live in Ansible, not here
 
-Not everything DNS-related is in this directory, and one of these caused a
-genuine outage class (see `docs/dns-loop.md`):
+Not everything DNS-related is in this directory. Two host settings matter
+to DNS and are codified in the Ansible `common` role rather than captured
+by the scripts above, because they are properties of the Pi rather than of
+AdGuard (see `docs/dns-loop.md`):
 
 - **`enable-wide-area=no`** in `/etc/avahi/avahi-daemon.conf`. With this
   on, avahi queries `lb._dns-sd._udp.<reverse-subnet>.in-addr.arpa` over
@@ -264,6 +266,20 @@ genuine outage class (see `docs/dns-loop.md`):
   `ignore-auto-dns` on both, documented above. After the move to Ethernet
   this lives on `Wired connection 1` rather than the Wi-Fi connection.
 
-Neither is captured by the scripts here. A rebuild needs them applied by
-hand, or moved into the Ansible `common` role, which is the better answer
-and has not been done.
+Both are in `ansible/roles/common`, so a rebuild applies them. The role
+looks the connection up by device rather than by name, and fails loudly
+if nothing is active on `pi_lan_interface` instead of silently
+configuring nothing - that variable had to change from `wlan0` to `eth0`
+when the Pi was wired.
+
+Applying the resolver setting requires reactivating the connection, which
+drops the Pi off the network for a few seconds. The Pi is the only
+resolver on this LAN, so every client loses DNS while that happens. The
+handler is deliberately the only thing that bounces it, and the task
+guarding it compares against the live values first.
+
+**There is currently no Ansible control node.** The playbook used to run
+from the WSL2 instance, which was retired during the node migration, and
+neither the Mac nor the Pi has Ansible installed. The role is written and
+its lookups were tested by hand against the Pi, but it has not been run
+end to end. That gap is worth closing before anyone relies on a rebuild.
