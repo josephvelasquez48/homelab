@@ -20,6 +20,8 @@ Local encrypted backups are installed on the Mac. No cloud service is used.
   same lock keeps `multipassd` from restoring the `m1-node` VM, so a power cut
   takes the second K3s node down with the backups. See
   [node-migration.md](node-migration.md) for the node half and the options.
+  `sudo fdesetup authrestart` unlocks the volume once for a planned reboot,
+  which restores both; it cannot help after an unplanned power cut.
 - As of 2026-09-10 the 03:00 trigger has never fired. Every snapshot so far
   came from a `RunAtLoad` or a manual `launchctl kickstart`; `launchctl print`
   is the check, not the presence of snapshots.

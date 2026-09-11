@@ -504,8 +504,20 @@ crossed this path yet. Treat VM restore as unproven until a real reboot
 proves it, the same way the desktop's Ollama autostart looked fine until
 the first reboot disagreed.
 
+One qualifier, found while re-checking the above:
+`fdesetup supportsauthrestart` returns `true` on this machine, so
+`sudo fdesetup authrestart` can reboot it and unlock the volume once with
+nobody at the keyboard. That covers the planned case, an OS update or a
+deliberate restart, but not the unplanned one. A power cut still lands at
+the unlock screen, because nothing had the chance to arm the one-time
+unlock first. The paragraphs above overstate the problem by treating both
+cases the same.
+
 The options, none taken yet:
 
+- **Use `sudo fdesetup authrestart` for planned reboots.** Cheapest, and
+  it leaves the at-rest posture alone. It does nothing for a power cut, so
+  it narrows the problem rather than solving it.
 - **Enable automatic login.** Fixes both halves. It also stores the
   FileVault unlock key so the machine boots unattended, which is most of
   what FileVault was protecting on a portable machine. A real trade,
