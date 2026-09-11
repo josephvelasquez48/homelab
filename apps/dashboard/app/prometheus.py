@@ -27,6 +27,24 @@ QUERIES = {
     "oom_kills": 'node_vmstat_oom_kill{job="node-pi"}',
 }
 
+# Backup health and inference reachability. Both are published by things
+# outside the cluster - the Mac writes the backup gauges into the Pi's
+# node_exporter textfile collector, and the api sets the inference gauge
+# on every readiness probe - so Prometheus is the only place they meet.
+#
+# Ages are computed here rather than in the page, so a stale value is
+# obvious as a number instead of a timestamp someone has to subtract.
+BACKUP_QUERIES = {
+    "backup_age_hours": "(time() - homelab_backup_last_snapshot_timestamp_seconds) / 3600",
+    "backup_last_exit_code": "homelab_backup_last_exit_code",
+    "backup_repository_readable": "homelab_backup_repository_readable",
+    "backup_snapshot_count": "homelab_backup_snapshot_count",
+    "backup_report_age_hours": "(time() - homelab_backup_report_timestamp_seconds) / 3600",
+    # min() across replicas: if any replica cannot reach Ollama, say so,
+    # rather than letting a healthy one mask it.
+    "inference_reachable": "min(homelab_inference_reachable)",
+}
+
 async def _query_one(client: httpx.AsyncClient, expr: str) -> float | None:
     try:
         r = await client.get(f"{PROMETHEUS_URL}/api/v1/query", params={"query": expr})
@@ -76,3 +94,14 @@ async def get_cross_node_status(client: httpx.AsyncClient, nodes: list[dict]) ->
         return "down" if any(value == 0 for value in values) else "up"
     except Exception:
         return None
+
+
+async def get_backup_health(client: httpx.AsyncClient) -> dict[str, float | None]:
+    """Backup and inference gauges.
+
+    Every value can legitimately be None, and None means something
+    different from zero here: "Prometheus has no series for this" rather
+    than "the value is 0". A backup age of None is the dangerous case -
+    nothing is reporting - so the page must not render it as healthy.
+    """
+    return await _gather_metrics(client, BACKUP_QUERIES)

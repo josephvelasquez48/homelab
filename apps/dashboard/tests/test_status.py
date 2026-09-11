@@ -70,3 +70,57 @@ def test_login_cookie_requires_https(client, password):
     assert "secure" in cookie
     assert "httponly" in cookie
     assert "samesite=strict" in cookie
+
+
+def test_status_reports_pods_per_node(client):
+    """A Ready node running nothing is invisible without this.
+
+    m1-node sat Ready, untainted and empty for a day after joining, because
+    nothing reschedules onto a new node on its own. The page said "Ready"
+    and looked fine.
+    """
+    data = client.get("/api/status").json()
+    per_node = data["pods_per_node"]
+
+    assert set(per_node) == {n["name"] for n in FAKE_NODES}
+    assert sum(per_node.values()) == sum(
+        1 for p in data["pods"] if p.get("node") in per_node
+    )
+
+
+def test_backup_and_alerts_are_present(client):
+    data = client.get("/api/status").json()
+    assert "backup" in data
+    assert "alerts" in data
+
+
+def test_unreachable_alertmanager_is_not_an_empty_list(client, monkeypatch):
+    """"Nothing is firing" and "I cannot tell" must not look the same.
+
+    The page colours an empty list green. If a failed fetch returned [],
+    an unreachable Alertmanager would render as all-clear - the worst
+    possible failure for an alerting display.
+    """
+    from app import main
+
+    monkeypatch.setattr(main, "_active_alerts", AsyncMock(return_value=None))
+
+    data = client.get("/api/status").json()
+    assert data["alerts"] is None
+
+
+def test_backup_metrics_degrade_to_none_not_zero(client, monkeypatch):
+    """A missing backup metric must not read as a fresh backup.
+
+    Zero would render as "0.0 h ago", i.e. a backup seconds old, which is
+    precisely backwards when the truth is that nothing is reporting.
+    """
+    from app import prometheus
+
+    monkeypatch.setattr(
+        prometheus, "get_backup_health", AsyncMock(side_effect=Exception("prometheus down"))
+    )
+
+    data = client.get("/api/status").json()
+    assert data["backup"] == dict.fromkeys(prometheus.BACKUP_QUERIES)
+    assert data["backup"]["backup_age_hours"] is None

@@ -72,8 +72,14 @@
   </div>
 
   <div class="card" style="margin-bottom: 24px;">
-    <h2>Worker connectivity</h2>
-    <div id="cross-node-status" style="margin-bottom: 12px;"></div>
+    <h2>Alerts</h2>
+    <div id="alerts"></div>
+  </div>
+
+  <div class="card" style="margin-bottom: 24px;">
+    <h2>Backups</h2>
+    <div id="backups"></div>
+    <div id="cross-node-status" style="margin-top: 12px;"></div>
   </div>
 
   <div class="grid">
@@ -167,12 +173,22 @@ async function refresh() {
     const res = await fetch('/api/status');
     const data = await res.json();
 
-    document.getElementById('nodes').innerHTML = data.nodes.map(n => `
+    // Pod count per node. A node can be Ready, untainted and running
+    // nothing at all - nothing reschedules onto a new node on its own -
+    // and "Ready" alone hides that completely.
+    const perNode = data.pods_per_node || {};
+    document.getElementById('nodes').innerHTML = data.nodes.map(n => {
+      const count = perNode[n.name];
+      const idle = n.ready && count === 0;
+      const state = n.ready ? (idle ? 'warn' : 'ok') : 'bad';
+      const detail = !n.ready ? 'NotReady'
+        : (idle ? 'Ready but running nothing' : `Ready · ${count} pod${count === 1 ? '' : 's'}`);
+      return `
       <div class="row">
-        <span>${dot(n.ready ? 'ok' : 'bad')}${n.name}</span>
-        <span class="muted">${n.ready ? 'Ready' : 'NotReady'}${n.schedulable ? '' : ', cordoned'}</span>
-      </div>
-    `).join('') || '<div class="muted">no data</div>';
+        <span>${dot(state)}${n.name}</span>
+        <span class="muted">${detail}${n.schedulable ? '' : ', cordoned'}</span>
+      </div>`;
+    }).join('') || '<div class="muted">no data</div>';
 
     document.getElementById('argo-apps').innerHTML = data.argo_apps.map(a => `
       <div class="row">
@@ -202,7 +218,10 @@ async function refresh() {
 
     const crossNode = data.cross_node_status;
     const crossNodeDot = crossNode === 'up' ? 'ok' : (crossNode === 'down' ? 'bad' : 'warn');
-    const crossNodeLabel = crossNode === 'up' ? 'Worker pod scrapes succeeding' : (crossNode === 'down' ? 'A worker pod scrape is failing' : 'Unknown — no worker scrape data or monitoring unavailable');
+    // "Unknown" here almost always means the worker is running no scraped
+    // pods, not that monitoring is broken. Saying so is more useful than
+    // reporting an absence the reader has to interpret.
+    const crossNodeLabel = crossNode === 'up' ? 'Worker pod scrapes succeeding' : (crossNode === 'down' ? 'A worker pod scrape is failing' : 'No scraped pods on a worker node yet');
     document.getElementById('cross-node-status').innerHTML = `
       <div class="row">
         <span>${dot(crossNodeDot)}Cross-node scrape health</span>
@@ -210,6 +229,56 @@ async function refresh() {
       </div>
     `;
 
+    // Alerts. null means Alertmanager could not be reached, which must not
+    // look like 'nothing is firing' on a page whose job is to tell you
+    // something is wrong.
+    const alerts = data.alerts;
+    document.getElementById('alerts').innerHTML =
+      alerts === null
+        ? `<div class="row">${dot('warn')}Alertmanager unreachable<span class="muted">cannot tell what is firing</span></div>`
+        : (alerts.length === 0
+          ? `<div class="row">${dot('ok')}Nothing firing<span class="muted">${'all clear'}</span></div>`
+          : alerts.map(a => `
+      <div class="row">
+        <span>${dot(a.severity === 'critical' ? 'bad' : 'warn')}${a.name}</span>
+        <span class="muted">${a.summary || a.severity || a.state}</span>
+      </div>`).join(''));
+
+    // Backups. Age is the headline because it stays true whatever went
+    // wrong; the exit code only describes runs that actually happened.
+    const b = data.backup || {};
+    const backupRows = [];
+    const age = b.backup_age_hours;
+    if (age === null || age === undefined) {
+      backupRows.push([dot('bad'), 'Last backup', 'no data - nothing is reporting']);
+    } else {
+      const d = age > 26 ? 'bad' : (age > 12 ? 'warn' : 'ok');
+      backupRows.push([dot(d), 'Last backup', `${fmtNum(age, 1)} h ago` + (age > 26 ? ' - overdue' : '')]);
+    }
+    const exitCode = b.backup_last_exit_code;
+    if (exitCode !== null && exitCode !== undefined) {
+      backupRows.push([dot(exitCode === 0 ? 'ok' : 'bad'), 'Last run exit code',
+        exitCode === 0 ? '0' : `${exitCode} - the log may still read "succeeded"`]);
+    }
+    if (b.backup_repository_readable !== null && b.backup_repository_readable !== undefined) {
+      backupRows.push([dot(b.backup_repository_readable === 1 ? 'ok' : 'bad'), 'Repository',
+        b.backup_repository_readable === 1 ? 'readable' : 'restic could not list it']);
+    }
+    if (b.backup_snapshot_count !== null && b.backup_snapshot_count !== undefined) {
+      backupRows.push(['', 'Snapshots', `${fmtNum(b.backup_snapshot_count, 0)}`]);
+    }
+    const reportAge = b.backup_report_age_hours;
+    if (reportAge !== null && reportAge !== undefined && reportAge > 3) {
+      backupRows.push([dot('warn'), 'Reporter', `${fmtNum(reportAge, 1)} h stale - figures above may be out of date`]);
+    }
+    const inference = b.inference_reachable;
+    if (inference !== null && inference !== undefined) {
+      backupRows.push([dot(inference === 1 ? 'ok' : 'warn'), 'Inference (desktop)',
+        inference === 1 ? 'reachable' : 'unreachable - desktop asleep or Ollama down']);
+    }
+    document.getElementById('backups').innerHTML = backupRows.map(
+      ([d, label, detail]) => `<div class="row"><span>${d}${label}</span><span class="muted">${detail}</span></div>`
+    ).join('');
     gpuModels = data.gpu_models;
     applyAuthState();
   } catch (e) {
