@@ -109,4 +109,32 @@
       - 'yes'
   when: pi_nm_dns.stdout_lines | map('trim') | list
         != [pi_resolver_ipv4, 'yes', pi_resolver_ipv6, 'yes']
-  notify: Reactivate the LAN connection
+  register: pi_resolver_write
+
+# Writing the profile above is harmless and persists, so the config
+# converges either way and takes effect at the next reboot on its own.
+# Reactivating is the disruptive half: it drops the Pi off the network for
+# several seconds, and the Pi is the only resolver on this LAN as well as
+# the K3s control plane and the Ansible control node. A routine play must
+# not be able to do that as a side effect, so it is opt-in rather than a
+# handler that fires on its own.
+- name: Reactivate the LAN connection to apply the resolver change
+  ansible.builtin.command:
+    argv: [nmcli, connection, up, '{{ pi_nm_connection.stdout | trim }}']
+  when:
+    - pi_resolver_write is changed
+    - pi_allow_network_bounce | bool
+  async: 60
+  poll: 0
+
+- name: Report a staged resolver change that was not applied
+  ansible.builtin.debug:
+    msg: >-
+      The resolver profile was updated but the connection was NOT
+      reactivated, so /etc/resolv.conf still holds the old values. It will
+      correct itself at the next reboot. To apply it now, re-run with
+      -e pi_allow_network_bounce=true and expect a few seconds without DNS
+      on every device on the LAN.
+  when:
+    - pi_resolver_write is changed
+    - not (pi_allow_network_bounce | bool)
