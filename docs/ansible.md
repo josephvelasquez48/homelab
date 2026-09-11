@@ -162,3 +162,46 @@ ansible-playbook playbooks/site.yml --tags github_runner \
   The Pi being both control node and only target is a weakness worth
   stating: a change that breaks its networking also breaks the thing that
   would fix it, and this role now edits precisely that.
+
+- 2026-09-11: **Gated the network bounce, and taught the firewall role to
+  clean up after itself.**
+
+  Making the Pi the control node the night before turned the resolver task
+  into a trap. It fired its handler unconditionally, so any routine play
+  would reactivate the connection and drop DNS for every device on the LAN
+  for several seconds - on the one host that is simultaneously the only
+  resolver, the K3s control plane, and the machine running the play.
+
+  Writing the NetworkManager profile is harmless and persists, so the
+  config still converges and corrects itself at the next reboot. Only the
+  disruptive half is now opt-in:
+
+  ```bash
+  ansible-playbook playbooks/site.yml -c local -e pi_allow_network_bounce=true
+  ```
+
+  Without it, a staged-but-unapplied change prints a message saying so
+  rather than silently leaving `/etc/resolv.conf` stale. The handler is
+  gone - an explicit task puts the condition where someone reading the
+  role will actually see it, which a `notify:` line does not.
+
+  **`ufw` does not remove a rule just because Ansible stopped asking for
+  it.** Dropping a prefix from `lan_ipv6_prefix` only stops the rule being
+  created. The allow-rules for `fd00:f405:95c7:c412::/64` - the previous
+  router's self-generated ULA - had been sitting there matching nothing
+  ever since the router was replaced. A stale allow-rule is worse than no
+  rule, because it reads as protection that is not being provided, which
+  is the mistake this role's own comments refuse to make for Traefik's
+  ports. `retired_ipv6_prefixes` now deletes them explicitly.
+
+  Deleting is safe *because* nothing holds an address in that prefix. If
+  something did, the rule would be load-bearing and removal would be the
+  wrong fix - so the list is a deliberate record of retired prefixes, not
+  a diff against the live one.
+
+  Verified in the order the earlier entries in this log argue for: check
+  run first (both new tasks skipped, the two firewall changes reported),
+  then a real run (`changed=3`), then confirmation that `resolv.conf`, the
+  interface, DNS on both families and both cluster nodes were untouched,
+  then a **second real run reporting `changed=0`**. The firewall ended at
+  eight rules, all commented, no dead prefixes.

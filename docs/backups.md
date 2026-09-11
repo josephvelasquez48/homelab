@@ -163,3 +163,62 @@ Never restore directly over live database directories.
 
 Reference: [K3s backup and restore](https://docs.k3s.io/datastore/backup-restore).
 The server token is required to recover encrypted bootstrap data.
+
+## Backup health is measured now, not just logged
+
+On 2026-09-11 the backup agent exited 69 for fourteen minutes and nothing
+noticed. `/usr/bin/python3` had stopped working because the Xcode license
+had not been accepted, which takes the interpreter down with it on macOS.
+The last good backup was only hours old so nothing was lost, but the
+failure was invisible in the place anyone would look: `backup.log` still
+ended with "Backup and full repository integrity check succeeded", because
+a run that dies at the interpreter never writes anything. Only
+`launchctl print` showed the real exit code.
+
+`publish-backup-metrics.py` runs hourly on the Mac under its own
+LaunchAgent, `local.homelab.backup-metrics`, and publishes six gauges into
+the Pi's node_exporter textfile collector, which Prometheus already
+scrapes as `node-pi`.
+
+| Metric | Meaning |
+| --- | --- |
+| `homelab_backup_last_snapshot_timestamp_seconds` | newest restic snapshot |
+| `homelab_backup_snapshot_count` | snapshots in the repository |
+| `homelab_backup_repository_readable` | 1 if restic could list the repo |
+| `homelab_backup_last_exit_code` | last exit of the backup agent, -1 unknown |
+| `homelab_backup_agent_loaded` | 1 if the agent is loaded in launchd |
+| `homelab_backup_report_timestamp_seconds` | when the report was generated |
+
+The one to watch:
+
+```promql
+(time() - homelab_backup_last_snapshot_timestamp_seconds) / 3600
+```
+
+Under 26 is healthy. Above it means no successful backup since the last
+03:00 run, whatever the reason.
+
+### Three choices in here that are the actual design
+
+**The reporter is a separate agent from the backup.** A reporter that runs
+as part of the backup cannot report that the backup never ran, which is
+exactly what happened. Separating them is the whole point, not tidiness.
+
+**It reports state, not events.** Snapshot age stays true no matter what
+went wrong - a crashed run, an unloaded agent, a Mac that never woke.
+"Did the last run succeed" only describes runs that happened, so it is
+carried alongside as a secondary signal rather than as the primary one.
+
+**The Mac pushes; the Pi does not pull.** The Mac already holds an SSH key
+to the Pi for the backup itself, so publishing reuses it. Pulling would
+mean either a listener on the Mac or giving the Pi the restic password,
+and neither is worth it. The cost is that a dead Mac stops publishing
+rather than reporting its own death - covered because the metrics carry
+their own generation time, so a stale report is visible as staleness.
+
+### Still not done
+
+Nothing pages anyone. Alertmanager is still not deployed
+(`docs/monitoring.md`), so this is detection, not notification. It needs a
+human to look at Grafana, or a query run on a schedule. That is a smaller
+gap than before, but it is not zero.

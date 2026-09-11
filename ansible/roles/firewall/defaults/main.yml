@@ -15,3 +15,18 @@
 # repair the router half, so it is a documented tripwire rather than
 # something automated - see docs/router-migration.md.
 lan_ipv6_prefix: "2600:6c51:4500:20e2::/64"
+
+# Prefixes this LAN used to run on. ufw keeps enforcing rules for them
+# forever otherwise, because dropping a value from lan_ipv6_prefix only
+# stops the rule being created - it never deletes the one already there.
+# fd00:f405:95c7:c412::/64 came from the previous router, which
+# self-generated a ULA; the current one offers no ULA at all.
+retired_ipv6_prefixes:
+  - "fd00:f405:95c7:c412::/64"
+
+# The ports those retired prefixes were ever opened for. Kept alongside
+# the live list above rather than inferred from it, so removing a service
+# from the live rules does not silently stop cleaning up its old rule.
+retired_ipv6_ports:
+  - { port: "53", proto: any }
+  - { port: "3000", proto: tcp }
