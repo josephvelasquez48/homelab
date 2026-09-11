@@ -12,6 +12,7 @@ from starlette.middleware.sessions import SessionMiddleware
 from app import gpu, k8s, prometheus
 from app.auth import check_password, is_authenticated, require_json, require_session
 from app.config import (
+    ALERTMANAGER_URL,
     API_HEALTH_URL,
     DASHBOARD_PASSWORD,
     SESSION_MAX_AGE,
@@ -73,6 +74,28 @@ async def health():
     return {"status": "ok"}
 
 
+async def _active_alerts(client: httpx.AsyncClient) -> list[dict] | None:
+    """What Alertmanager is currently holding, not what Prometheus is evaluating.
+
+    Returns None on failure rather than [], because "no alerts" and
+    "cannot tell" must not look the same on a page whose whole job is
+    telling you something is wrong.
+    """
+    try:
+        r = await client.get(f"{ALERTMANAGER_URL}/api/v2/alerts", timeout=5.0)
+        r.raise_for_status()
+        return [
+            {
+                "name": a.get("labels", {}).get("alertname", "unknown"),
+                "severity": a.get("labels", {}).get("severity", ""),
+                "summary": a.get("annotations", {}).get("summary", ""),
+                "state": a.get("status", {}).get("state", ""),
+            }
+            for a in r.json()
+        ]
+    except Exception:
+        return None
+
 @app.get("/api/status")
 async def status():
     k8s_client = app.state.k8s
@@ -100,6 +123,16 @@ async def status():
     except Exception:
         cross_node_status = None
 
+    backup, alerts = await asyncio.gather(
+        prometheus.get_backup_health(app.state.http),
+        _active_alerts(app.state.http),
+        return_exceptions=True,
+    )
+    if isinstance(backup, Exception):
+        backup = dict.fromkeys(prometheus.BACKUP_QUERIES)
+    if isinstance(alerts, Exception):
+        alerts = None
+
     # What is resident on the GPU, which is the only contention left now
     # that no cluster workload runs on the machine hosting it.
     try:
@@ -113,8 +146,21 @@ async def status():
     except Exception as exc:
         api_health = {"reachable": False, "error": str(exc)}
 
+    # Pod counts per node. Cheap to compute here, and it answers a question
+    # the page could not previously answer at all: a node can be Ready,
+    # untainted and running nothing, which is exactly what m1-node was
+    # doing after it joined - nothing reschedules onto a new node on its own.
+    pods_per_node: dict[str, int] = {n["name"]: 0 for n in nodes}
+    for pod in pods:
+        node_name = pod.get("node")
+        if node_name in pods_per_node:
+            pods_per_node[node_name] += 1
+
     return {
         "nodes": nodes,
+        "pods_per_node": pods_per_node,
+        "backup": backup,
+        "alerts": alerts,
         "pods": pods,
         "argo_apps": argo_apps,
         "gpu_models": gpu_models,
