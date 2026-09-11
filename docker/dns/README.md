@@ -211,3 +211,59 @@ dashboard.home`) and external resolution still forwards correctly
 (`getent hosts google.com`) - `ignore-auto-dns` only stops DHCP from
 overwriting the DNS *server* used, it doesn't break CoreDNS's own
 upstream forwarding for non-`.home` queries.
+
+## Tracking AdGuard's config
+
+CoreDNS is config-as-code: the `Corefile` in this directory *is* what runs.
+AdGuard is not, and cannot be made so. It owns `AdGuardHome.yaml` at
+runtime and rewrites it on every settings change in the web UI, and the
+compose mount is read-write because the UI has to be able to save. So
+`adguard-config/AdGuardHome.yaml` here is a **snapshot for rebuild and
+review**,
+not a source of truth.
+
+That distinction is the whole reason this exists. Until 2026-09-10 the
+file was untracked, which meant a rebuild from this repo would have come
+back with default filtering behaviour and no record that anything had been
+chosen. `blocking_mode`, the `user_rules` allowlist, the upstreams and the
+filter list selection all lived only on the box.
+
+| Script | Direction | When |
+| --- | --- | --- |
+| `adguard-capture.py` | Pi to repo | after changing anything in the web UI |
+| `adguard-restore.py` | repo to Pi | rebuilding the box |
+
+Run capture after UI changes and `git diff` shows exactly what moved. An
+empty diff means the repo matches the Pi. A surprising diff means someone
+changed something in the UI and did not say so, which is the drift this is
+meant to catch.
+
+**The admin password hash never enters the working tree.** Capture
+replaces it with `SOPS_ADGUARD_ADMIN_PASSWORD_HASH`, and the real value
+lives in `secrets/adguard-password-hash.enc.yaml`, encrypted to the same
+age recipient as everything else here. Restore decrypts it and substitutes
+it back on the way to the Pi. Capture refuses to write at all if it does
+not find exactly one hash to redact, rather than guessing and risking a
+commit of a live credential. The hash is bcrypt cost 5, which is weak
+enough that treating it as public would be a real mistake.
+
+Restore overwrites the running config and restarts the container, taking a
+timestamped backup on the Pi first. It is the rebuild path, not the edit
+path - for routine changes use the UI and then capture.
+
+### Host settings that still live only on the Pi
+
+Not everything DNS-related is in this directory, and one of these caused a
+genuine outage class (see `docs/dns-loop.md`):
+
+- **`enable-wide-area=no`** in `/etc/avahi/avahi-daemon.conf`. With this
+  on, avahi queries `lb._dns-sd._udp.<reverse-subnet>.in-addr.arpa` over
+  unicast DNS at roughly 13 per second, all failing, all forwarded
+  upstream.
+- **The Pi's own resolver**, `ipv4.dns 127.0.0.1` / `ipv6.dns ::1` with
+  `ignore-auto-dns` on both, documented above. After the move to Ethernet
+  this lives on `Wired connection 1` rather than the Wi-Fi connection.
+
+Neither is captured by the scripts here. A rebuild needs them applied by
+hand, or moved into the Ansible `common` role, which is the better answer
+and has not been done.
