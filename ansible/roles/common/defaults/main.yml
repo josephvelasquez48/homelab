@@ -14,3 +14,19 @@ pi_lan_interface: eth0
 # the Pi ends up resolving through whichever answers first.
 pi_resolver_ipv4: 127.0.0.1
 pi_resolver_ipv6: "::1"
+
+# Reactivating a NetworkManager connection is what actually applies a DNS
+# change - `nmcli connection modify` only writes the stored profile. On
+# this host that reactivation drops the Pi off the network for several
+# seconds, and the Pi is the only resolver on the LAN, the K3s
+# control plane, and the Ansible control node. So a routine play must not
+# be able to do it as a side effect.
+#
+# Default false: the profile is still written, so config converges and the
+# change takes effect at the next reboot on its own. Only the disruptive
+# step is withheld. Opt in deliberately when you are watching:
+#
+#   ansible-playbook playbooks/site.yml -e pi_allow_network_bounce=true
+#
+# See docs/dns-loop.md for the outage this is guarding against.
+pi_allow_network_bounce: false

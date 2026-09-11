@@ -49,3 +49,10 @@ for the deploy/verify commands - this doc is the decision/debugging log.
   would surface connection counts, query latency, cache hit rates, etc.
 - **No alerting.** Prometheus Alertmanager isn't deployed; the dashboard
   is look-at-it monitoring, not paged-when-something-breaks monitoring.
+  Backup health is the one thing now *measured* rather than merely
+  visible - `homelab_backup_*`, published by the Mac into the Pi's
+  node_exporter textfile collector (see `docs/backups.md`). That closes
+  the detection half of the gap for backups only; nothing pages anyone,
+  so it still needs a human to look. The metric worth watching is
+  `(time() - homelab_backup_last_snapshot_timestamp_seconds) / 3600`,
+  which should stay under about 26.

@@ -50,6 +50,28 @@
   # the tripwire that creates.
   when: lan_ipv6_prefix | length > 0
 
+# Rules ufw is still enforcing for prefixes nobody is on any more.
+#
+# ufw does not remove a rule just because Ansible stopped asking for it,
+# so retiring a prefix from lan_ipv6_prefix leaves the old allow-rules in
+# place indefinitely. fd00:f405:95c7:c412::/64 was the previous router's
+# self-generated ULA; its replacement hands out no ULA at all, so these
+# match nothing (docs/router-migration.md).
+#
+# A stale allow-rule is worse than no rule: it reads as protection that is
+# not being provided, which is the same mistake this role's own comments
+# refuse to make for Traefik's ports. Deleting is safe precisely because
+# nothing holds an address in that prefix - if something did, the rule
+# would be load-bearing and this task would be the wrong fix.
+- name: Remove allow-rules for retired IPv6 prefixes
+  community.general.ufw:
+    rule: allow
+    delete: true
+    from_ip: "{{ item.0 }}"
+    port: "{{ item.1.port }}"
+    proto: "{{ item.1.proto }}"
+  loop: "{{ retired_ipv6_prefixes | product(retired_ipv6_ports) | list }}"
+  when: retired_ipv6_prefixes | length > 0
 - name: Enable ufw
   community.general.ufw:
     state: enabled
