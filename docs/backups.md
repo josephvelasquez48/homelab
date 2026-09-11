@@ -74,8 +74,10 @@ Mac account, which also has the password and recovery key.
   published ports and only temporary restored files mounted. Containers were
   removed afterward. AdGuard upstream resolution and live filtering were not
   tested, since network isolation intentionally prevents upstream access.
-- A full K3s boot/recovery rehearsal is still untested. SQLite integrity alone
-  does not establish full control-plane recovery.
+- A full K3s boot/recovery rehearsal **has now been done** and is codified in
+  `rehearse-recovery.py`. SQLite integrity alone does not establish
+  control-plane recovery, which is why it was worth doing separately - see
+  "The recovery rehearsal" below.
 
 ### Run and inspect (on the Mac)
 
@@ -222,3 +224,76 @@ Nothing pages anyone. Alertmanager is still not deployed
 (`docs/monitoring.md`), so this is detection, not notification. It needs a
 human to look at Grafana, or a query run on a schedule. That is a smaller
 gap than before, but it is not zero.
+
+## The recovery rehearsal
+
+Everything else here verifies the archive is **intact**. This verifies it is
+**restorable**, which is a different claim. A `state.db` can pass
+`PRAGMA integrity_check` and still fail to boot a control plane, and those
+two outcomes are indistinguishable in every other check in this document.
+
+`rehearse-recovery.py` runs on the Mac, restores the newest `pi` snapshot
+into a throwaway multipass VM, boots K3s against it, checks the result, and
+destroys the VM in a `finally` block.
+
+### What it actually proves
+
+**`state.db` plus the token is sufficient.** K3s keeps its certificate
+authority in the datastore, encrypted with the server token, and regenerates
+`/var/lib/rancher/k3s/server/tls` on first start. That directory is
+deliberately not in the backup, so whether the backup is complete rests
+entirely on that mechanism working. The script asserts `tls/` is empty
+before starting, or the check afterwards would prove nothing.
+
+**The restored cluster is the same cluster.** This is the part worth the
+effort. A restore using a token from a different cluster than the datastore
+still starts, still serves the API, and still looks healthy - and would
+still refuse every existing agent, because its CA is different. Comparing
+the `server-ca.crt` SHA-256 fingerprint against the live Pi is what
+separates "a working cluster" from "your cluster".
+
+First run, 2026-09-11:
+
+| Check | Result |
+| --- | --- |
+| API server ready | 10 seconds |
+| TLS files regenerated from the datastore | 35 |
+| CA fingerprint vs the live Pi | identical |
+| Node records recovered | `joe`, `m1-node` |
+| Deployments / secrets / configmaps / PVCs | 18 / 24 / 29 / 4 |
+| Pods reaching Running in the restored cluster | 23 |
+
+### What it does not prove
+
+**PV contents are not in the archive.** The PVCs bind, but to empty local
+volumes. Postgres, Redis and Grafana data come back from the separate
+logical dumps (`postgres.dump`, `redis.rdb`, `grafana.db`), which the
+existing container rehearsals cover. A real recovery restores the control
+plane from here and the data from those.
+
+**It does not test the Pi's own rebuild.** The host half - Raspberry Pi OS,
+Docker, the DNS stack, ufw, NetworkManager - is Ansible's job, not this
+archive's, though the archive does carry copies of those configs.
+
+### Handling
+
+The VM is NAT-only and never bridged. A bridged VM would put a second
+control plane holding this cluster's exact identity onto the live LAN.
+While it runs it holds the complete credential set and a CA identical to
+production, so it is purged in a `finally` block rather than at the end of
+the happy path, and the staged archive is wiped with it.
+
+The archive is staged to a file rather than piped into the VM. Piping
+through `multipass exec` truncates silently, which extracts a partial tree
+and presents as a corrupt backup rather than a broken transfer - a
+genuinely misleading failure to debug.
+
+### What this unblocks
+
+Retention was deliberately gated behind this rehearsal, both here and in
+`mac-backup.py`. That gate is now satisfied. Worth noting the pressure is
+low regardless: the whole repository is about 22 MiB of raw data against
+280 GB free, so pruning is a tidiness decision rather than a deadline.
+
+An off-site copy is the more valuable next step, and is now worth doing
+precisely because what would be copied has been shown to work.
