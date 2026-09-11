@@ -18,16 +18,6 @@ data:
     groups:
       - name: backup
         rules:
-          # TEMPORARY. vector(1) is always true, so this fires immediately.
-          # Here only to confirm the Source link in notification emails
-          # resolves - a synthetic alert posted straight to Alertmanager
-          # carries no generatorURL, so only a rule-generated alert can
-          # prove it. Remove once verified.
-          - alert: HomelabAlertingSourceLinkTest
-            expr: vector(1)
-            labels: { severity: warning }
-            annotations:
-              summary: "Deliberate test - click Source, it should open prometheus.home"
           # The headline check. 26 hours rather than 24: the schedule is
           # 03:00 daily, so a 24h threshold would flap every night on
           # ordinary jitter between one run and the next.
