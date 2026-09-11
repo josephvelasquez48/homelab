@@ -103,6 +103,27 @@ sops kubernetes/secrets/alertmanager-config.enc.yaml
 Replace `REPLACE_WITH_GMAIL_APP_PASSWORD`, save, and the file re-encrypts
 on write.
 
+### Both UIs are exposed, and neither authenticates
+
+`alerts.home` and `prometheus.home` exist so the links inside alert emails
+resolve. Alertmanager builds them from `--web.external-url`, Prometheus
+builds the `generatorURL` behind the "Source" link the same way, and
+without those flags both point at pod hostnames that resolve nowhere.
+
+Neither has any authentication, which is a real consequence rather than an
+oversight. Anyone on the LAN who reaches `alerts.home` can silence alerts.
+Anyone reaching `prometheus.home` can read every metric the cluster
+collects.
+
+Prometheus runs without `--web.enable-admin-api` and without
+`--web.enable-lifecycle`, so what is exposed is readable, not mutable.
+Adding either flag changes that materially and should not be done while
+the Ingress is unauthenticated.
+
+Traefik basic-auth middleware in front of both is the obvious fix. The
+repo has no middleware pattern yet, so it would be new machinery rather
+than reuse, and it has not been done.
+
 ### Still not covered
 
 Nothing routes by severity - `critical` and `warning` go to the same
