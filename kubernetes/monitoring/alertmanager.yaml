@@ -115,6 +115,11 @@ spec:
           args:
             - --config.file=/etc/alertmanager/alertmanager.yml
             - --storage.path=/alertmanager
+            # Without this, every link in a notification email is built from
+            # the pod's own hostname - alertmanager-<replicaset>-<id>:9093 -
+            # which resolves nowhere outside the cluster. The first real
+            # alert email arrived with exactly that, and the link was dead.
+            - --web.external-url=https://alerts.home
           ports:
             - containerPort: 9093
           volumeMounts:
@@ -168,3 +173,24 @@ spec:
   ports:
     - port: 9093
       targetPort: 9093
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: alertmanager
+  namespace: monitoring
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: websecure
+spec:
+  tls:
+    - secretName: homelab-tls
+      hosts:
+        - alerts.home
+  rules:
+    - host: alerts.home
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service: { name: alertmanager, port: { number: 9093 } }
