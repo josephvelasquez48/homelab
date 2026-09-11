@@ -12,6 +12,7 @@ Make routine changes in the web UI and run adguard-capture.py instead.
 """
 import pathlib
 import re
+import shlex
 import subprocess
 import sys
 
@@ -35,17 +36,29 @@ if not match:
 
 rendered = config.replace(PLACEHOLDER, match.group(1))
 
-# Back up what is there before overwriting it. AdGuard is the only thing
-# holding the live state, so a bad push with no copy is unrecoverable
-# without the setup wizard.
+# Stage the complete file before stopping DNS. AdGuard must be stopped
+# before its config is replaced, including before taking the final backup.
+# Compose also handles a fresh rebuild where no container exists yet.
+remote_script = f"""set -eu
+umask 077
+config={shlex.quote(REMOTE)}
+cd /home/joe/apps/homelab/docker/dns
+mkdir -p "$(dirname "$config")"
+staged=$(mktemp "$config.restore.XXXXXX")
+trap 'rm -f "$staged"' EXIT
+cat > "$staged"
+docker compose stop adguardhome
+if [ -f "$config" ]; then
+    backup=$(mktemp "$config.bak-$(date +%s).XXXXXX")
+    cp -p "$config" "$backup"
+fi
+mv "$staged" "$config"
+docker compose up -d adguardhome coredns
+"""
 subprocess.run(
     ["ssh", "-o", "BatchMode=yes", PI,
-     "sudo cp %s %s.bak-$(date +%%s)" % (REMOTE, REMOTE)], check=True)
-subprocess.run(
-    ["ssh", "-o", "BatchMode=yes", PI, "sudo tee " + REMOTE + " >/dev/null"],
+     "sudo sh -c " + shlex.quote(remote_script)],
     input=rendered, text=True, check=True)
-subprocess.run(
-    ["ssh", "-o", "BatchMode=yes", PI, "sudo docker restart adguardhome"], check=True)
 
 check = subprocess.run(
     ["ssh", "-o", "BatchMode=yes", PI, "dig @192.168.1.253 apple.com +short +time=5"],

@@ -247,9 +247,16 @@ not find exactly one hash to redact, rather than guessing and risking a
 commit of a live credential. The hash is bcrypt cost 5, which is weak
 enough that treating it as public would be a real mistake.
 
-Restore overwrites the running config and restarts the container, taking a
-timestamped backup on the Pi first. It is the rebuild path, not the edit
-path - for routine changes use the UI and then capture.
+Restore stages the complete configuration on the Pi, stops AdGuard, takes
+a timestamped backup if a configuration already exists, and atomically
+replaces the configuration before starting AdGuard and CoreDNS with Compose.
+Stopping AdGuard first prevents it from overwriting the restored settings.
+On a fresh rebuild, the script creates the configuration directory and
+does not require an existing file or container. Docker with Compose and the
+repo checkout at `/home/joe/apps/homelab` must already be present.
+If a step fails after AdGuard stops, the script exits with an error; inspect
+the configuration and backup before starting the stack again. For routine
+changes use the UI and then capture.
 
 ### Host settings that live in Ansible, not here
 
@@ -278,8 +285,11 @@ resolver on this LAN, so every client loses DNS while that happens. The
 handler is deliberately the only thing that bounces it, and the task
 guarding it compares against the live values first.
 
-**There is currently no Ansible control node.** The playbook used to run
-from the WSL2 instance, which was retired during the node migration, and
-neither the Mac nor the Pi has Ansible installed. The role is written and
-its lookups were tested by hand against the Pi, but it has not been run
-end to end. That gap is worth closing before anyone relies on a rebuild.
+**The Pi is now the Ansible control node.** Ansible 12 is installed with
+the required collections bundled. Run from `~/apps/homelab/ansible` with
+`ansible-playbook playbooks/site.yml --check --diff -c local`; `joe` has
+`NOPASSWD: ALL`, so become needs no password. The check run returned 27 ok,
+0 failed, and the resolver task skipped. The two reported changes were an
+IPv6 ufw rule comment and the repo task selecting main from a test branch.
+See [the Ansible notes](../../docs/ansible.md) for the control-node setup
+and the limitations of running recovery automation on the Pi itself.
