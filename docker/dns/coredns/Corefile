@@ -6,14 +6,54 @@ home:53 {
     errors
 }
 
+# Private reverse zones, answered here and never forwarded.
+#
+# AdGuard resolves every client IP back to a name
+# (clients.runtime_sources.rdns: true). It is set to use private PTR
+# resolvers but has none configured (local_ptr_upstreams: []), so it falls
+# back to /etc/resolv.conf - which is 127.0.0.1, which is this server,
+# which forwarded straight back to AdGuard. Every private reverse lookup
+# went round that loop until it timed out.
+#
+# The cost was not subtle: one client address, 192.168.1.180, produced
+# 2430 SERVFAILs in ten minutes, and the collateral load pushed real
+# clients to a 21.6% query failure rate. See docs/dns-loop.md.
+#
+# NXDOMAIN is the correct answer here. Nothing on this network serves
+# reverse records for RFC1918 space, and a fast authoritative no is what
+# breaks the loop - answering is the fix, not forwarding somewhere else.
+10.in-addr.arpa 168.192.in-addr.arpa d.f.ip6.arpa 8.e.f.ip6.arpa {
+    template ANY ANY {
+        rcode NXDOMAIN
+    }
+    errors
+}
+
+# The 172.16/12 half of RFC1918, which is 172.16 through 172.31 only.
+# Listed out rather than written as 172.in-addr.arpa, because the rest of
+# 172/8 is public address space whose reverse lookups should still work.
+16.172.in-addr.arpa 17.172.in-addr.arpa 18.172.in-addr.arpa 19.172.in-addr.arpa 20.172.in-addr.arpa 21.172.in-addr.arpa 22.172.in-addr.arpa 23.172.in-addr.arpa 24.172.in-addr.arpa 25.172.in-addr.arpa 26.172.in-addr.arpa 27.172.in-addr.arpa 28.172.in-addr.arpa 29.172.in-addr.arpa 30.172.in-addr.arpa 31.172.in-addr.arpa {
+    template ANY ANY {
+        rcode NXDOMAIN
+    }
+    errors
+}
+
 # Everything else: hand off to AdGuard Home (127.0.0.1:5335, same host,
 # network_mode: host) for ad/tracker filtering + its own upstream
 # forwarding, instead of forwarding to a public resolver directly. The
 # StevenBlack hosts-file blocklist this used to load lives in AdGuard's
 # own filter config now - see docker/dns/README.md.
+#
+# cache 3600 is a ceiling, not a floor: answers keep their own TTL when it
+# is shorter. This used to read `cache 30`, which capped every answer at
+# 30 seconds no matter what the origin published - apple.com publishes
+# 900 - so every device re-resolved everything roughly thirty times more
+# often than it needed to. That multiplied the loop above rather than
+# causing it, but it is why the network felt slow even between bursts.
 .:53 {
     forward . 127.0.0.1:5335
-    cache 30
+    cache 3600
     log
     errors
 }
