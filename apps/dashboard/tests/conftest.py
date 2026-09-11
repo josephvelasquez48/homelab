@@ -32,6 +32,15 @@ FAKE_GPU_MODELS = [{"name": "qwen2.5-coder:7b", "size_vram": 4748056984}]
 TEST_PASSWORD = "correct-horse-battery-staple"
 
 
+FAKE_BACKUP = {
+    "backup_age_hours": 2.5,
+    "backup_last_exit_code": 0.0,
+    "backup_repository_readable": 1.0,
+    "backup_snapshot_count": 14.0,
+    "backup_report_age_hours": 0.4,
+    "inference_reachable": 1.0,
+}
+
 @pytest.fixture
 def client(monkeypatch):
     from app import auth, gpu, k8s, main, prometheus
@@ -48,6 +57,7 @@ def client(monkeypatch):
     monkeypatch.setattr(k8s, "get_argo_applications", AsyncMock(return_value=FAKE_ARGO_APPS))
     monkeypatch.setattr(prometheus, "get_pi_metrics", AsyncMock(return_value=FAKE_PI_METRICS))
     monkeypatch.setattr(prometheus, "get_cross_node_status", AsyncMock(return_value=FAKE_CROSS_NODE_STATUS))
+    monkeypatch.setattr(prometheus, "get_backup_health", AsyncMock(return_value=FAKE_BACKUP))
 
     fake_http = MagicMock()
     fake_http.get = AsyncMock(

@@ -12,6 +12,10 @@ dependencies = [
     "structlog>=24.4",
     "tenacity>=9.0",
     "prometheus-fastapi-instrumentator>=7.0",
+    # Imported directly in routers/health.py for the inference gauge. It
+    # arrives transitively via the instrumentator anyway, but an import we
+    # rely on should not depend on another package's dependency choices.
+    "prometheus-client>=0.20",
     "alembic>=1.14",
     "sqlalchemy>=2.0",
     "psycopg[binary]>=3.2",

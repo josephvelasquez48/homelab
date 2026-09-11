@@ -24,6 +24,14 @@ API_HEALTH_URL = os.environ.get("API_HEALTH_URL", "http://api.backend.svc.cluste
 # through Grafana, since this page only needs a handful of instant values.
 PROMETHEUS_URL = os.environ.get("PROMETHEUS_URL", "http://prometheus.monitoring.svc.cluster.local:9090")
 
+# Alertmanager, for the list of what is currently firing. Read-only, and
+# read directly rather than through Prometheus: Prometheus knows which
+# rules are firing, but Alertmanager knows what survived grouping,
+# inhibition and silences - which is what someone actually wants to see.
+ALERTMANAGER_URL = os.environ.get(
+    "ALERTMANAGER_URL", "http://alertmanager.monitoring.svc.cluster.local:9093"
+)
+
 # Session auth for the state-changing gaming-mode endpoints. Both values
 # come from the dashboard-auth Secret
 # (kubernetes/secrets/dashboard-auth.enc.yaml, SOPS-encrypted and applied
