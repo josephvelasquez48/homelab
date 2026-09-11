@@ -130,3 +130,28 @@ Nothing routes by severity - `critical` and `warning` go to the same
 mailbox. There is no second channel, so if email itself is broken the
 alert about it arrives by email. That is a real limitation of a
 single-receiver setup and worth remembering before trusting it completely.
+
+## Inference reachability is a metric, not a readiness failure
+
+`homelab_inference_reachable` is set by the API's `/ready` handler on every
+kubelet probe, so it tracks Ollama on the desktop without any extra
+polling.
+
+It exists because the check used to fail readiness, and that was wrong for
+this topology. Taking a replica out of the Service makes sense when there
+is somewhere else to route to. Ollama runs on a single desktop, so every
+replica failed the check at the same moment, the whole Deployment went
+unready, and Argo CD reported the `backend` app Degraded - because a PC had
+gone to sleep. Everything the API serves that has nothing to do with
+inference went down with it.
+
+Postgres and Redis still fail readiness. They are in-cluster, they have
+somewhere to route to, and a replica that cannot reach them genuinely
+cannot serve.
+
+**There is deliberately no alert on this metric.** The desktop sleeping is
+normal, so a rule on `homelab_inference_reachable == 0` would email every
+night and teach you to ignore alerts - which would eventually cost you a
+backup failure. Watch it on the dashboard instead. If the desktop ever
+becomes always-on infrastructure, an alert becomes reasonable at that
+point and not before.
