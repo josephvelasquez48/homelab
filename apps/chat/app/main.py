@@ -15,7 +15,7 @@ import httpx
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 
-from app.config import API_KEY, API_URL, STREAM_TIMEOUT
+from app.config import API_KEY, API_URL, CHAT_MODELS, STREAM_TIMEOUT
 
 STATIC = Path(__file__).parent / "static"
 
@@ -42,6 +42,23 @@ async def health() -> dict:
 @app.get("/")
 async def index() -> FileResponse:
     return FileResponse(STATIC / "index.html")
+
+
+@app.get("/api/models")
+async def models() -> JSONResponse:
+    """The models the picker offers, parsed from config rather than queried.
+
+    Deliberately not a live read of Ollama: everything installed is not
+    everything worth offering, and the embedding model would show up.
+    """
+    options = []
+    for entry in CHAT_MODELS.split(","):
+        entry = entry.strip()
+        if not entry:
+            continue
+        model, _, label = entry.partition("|")
+        options.append({"model": model.strip(), "label": (label or model).strip()})
+    return JSONResponse(content=options)
 
 
 @app.get("/api/conversations")

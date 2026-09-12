@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
-from app.config import OLLAMA_MODEL
+from app.config import CHAT_MODEL
 from app.logging import get_logger
 from app.ollama import chat_stream
 from app.rate_limit import rate_limit
@@ -27,7 +27,7 @@ TITLE_MAX = 60
 
 class ConversationCreate(BaseModel):
     title: str | None = None
-    model: str = OLLAMA_MODEL
+    model: str = CHAT_MODEL
 
 
 class ConversationSummary(BaseModel):

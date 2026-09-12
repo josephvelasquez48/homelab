@@ -75,3 +75,23 @@ def test_model_timeout_says_what_to_check(client):
 
     frames = _frames(client.post("/api/conversations/abc/messages", json={"content": "hi"}).text)
     assert "GPU host awake" in frames[-1]["error"]
+
+
+def test_models_are_parsed_from_config(client):
+    """Offered models come from config, not from asking Ollama.
+
+    Everything installed is not everything worth offering - the embedding
+    model would appear in a live query and is not a chat model.
+    """
+    options = client.get("/api/models").json()
+    assert {"model": "qwen2.5:7b", "label": "General (default)"} in options
+    assert {"model": "qwen2.5-coder:7b", "label": "Code"} in options
+    assert all("nomic" not in o["model"] for o in options)
+
+
+def test_chosen_model_is_forwarded(client):
+    """A conversation keeps the model it was created with."""
+    client.post("/api/conversations", json={"model": "qwen2.5-coder:7b"})
+    method, path, body = client.fake_api.calls[-1]
+    assert (method, path) == ("POST", "/v1/conversations")
+    assert body == {"model": "qwen2.5-coder:7b"}

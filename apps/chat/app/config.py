@@ -15,3 +15,14 @@ API_KEY = os.environ.get("API_KEY", "")
 # also pays a model load of roughly 45 seconds. A short timeout here would
 # cut off replies that were about to arrive.
 STREAM_TIMEOUT = float(os.environ.get("STREAM_TIMEOUT", "600"))
+
+# Models offered in the picker, as "id|label" pairs. A list rather than a
+# live query of Ollama: the card holds 8GB, so only one 7B model is resident
+# at a time and every switch costs a reload of roughly 45 seconds. Offering
+# everything installed would invite thrashing the GPU between turns.
+#
+# Chosen per conversation rather than per message for the same reason.
+CHAT_MODELS = os.environ.get(
+    "CHAT_MODELS",
+    "qwen2.5:7b|General (default),qwen2.5-coder:7b|Code",
+)
