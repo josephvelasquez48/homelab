@@ -29,6 +29,65 @@ Question -> FastAPI -> Embedding model -> pgvector -> Relevant documents -> Loca
   Distances were also sane (correct match: ~0.2-0.3 cosine distance;
   wrong-topic document in the GPU query's top-2: ~0.46).
 
+## A second retrieval path: Wikipedia, without embeddings
+
+Added 2026-09-12. The chat assistant can search a local copy of Wikipedia,
+and it deliberately does not go through the pipeline above.
+
+Embedding it was never realistic. The full archive is millions of articles;
+generating that many vectors on one 8GB card would take weeks and produce a
+pgvector table larger than the 127GB source. But the archive already ships a
+Xapian full-text index built by Kiwix, so the retrieval problem was solved
+before it started - the work was exposing it, not building it.
+
+```
+Question -> zimsearch -> Xapian index -> passages -> conversation context -> LLM
+```
+
+`apps/zimsearch` reads the archive through the libzim Python bindings and
+returns JSON. It runs beside kiwix-serve rather than inside the api, because
+the archive is a hostPath on `joe` and mounting it into the api would pin
+the api to that node and cost its second replica.
+
+Two archives are tried in order rather than merged. Simple English answers
+when it has the topic, since its articles cost a fraction of the context on
+a 7B model, and the full archive covers the long tail it misses. Falling
+through is decided on hit count, not on relevance score, because Xapian
+scores are not comparable across separate indexes.
+
+Retrieval is opt-in per message. Most turns in a conversation are not
+lookups, and searching an encyclopedia for "say that again shorter" returns
+articles about rewriting and shortness that then crowd out the actual
+conversation.
+
+The passages are stored beside the answer in a `sources` JSONB column, and
+the model is asked to mark borrowed claims as `[1]`. The page turns those
+markers into links to the article on `wikipedia.home`, and lists each source
+underneath with the excerpt the model was actually given. That excerpt is
+the part worth having: it is the only way to tell a grounded answer from one
+that merely mentions the same article.
+
+Citations were first appended to the reply as a text footer, which avoided
+the migration and was wrong twice over. The list replayed into the model's
+context on every following turn, and text cannot hold the passage itself -
+only which article it came from, which was never the part in doubt.
+
+The column is nullable rather than defaulting to an empty array. "This turn
+did not search" and "this turn searched and found nothing" are different
+facts, and the column is the only place that distinction survives.
+
+### What this does not do
+
+- **No reranking.** Xapian ranks on term statistics and has no idea what the
+  question means, so its ordering is a good shortlist and a poor final
+  answer. The `candidates` parameter over-fetches for a reranking step that
+  does not exist yet; the response reports `reranked: false` rather than
+  implying otherwise.
+- **No query rewriting.** The user's message is sent to Xapian as written,
+  so a follow-up like "and what about his brother" carries almost no usable
+  terms. Retrieval is weakest exactly where a conversation is most
+  conversational. Fixing it means a model round trip before the first token.
+
 ## Known simplifications (fine for now, worth knowing about)
 
 - **No chunking.** `POST /v1/documents` embeds and stores whatever

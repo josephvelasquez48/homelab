@@ -1,62 +1,34 @@
-name: Chat CI/CD
+name: ZIM Search CI/CD
 
 on:
   push:
     branches: [main]
     paths:
-      - "apps/chat/**"
-      - "kubernetes/chat/**"
-      - ".github/workflows/ci-chat.yml"
+      - "apps/zimsearch/**"
+      - "kubernetes/kiwix/**"
+      - ".github/workflows/ci-zimsearch.yml"
   pull_request:
     paths:
-      - "apps/chat/**"
+      - "apps/zimsearch/**"
 
 permissions:
   contents: write
   packages: write
 
 env:
-  IMAGE: ghcr.io/${{ github.repository_owner }}/homelab-chat
+  IMAGE: ghcr.io/${{ github.repository_owner }}/homelab-zimsearch
 
 jobs:
   test:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: apps/chat
+        working-directory: apps/zimsearch
     steps:
       - uses: actions/checkout@v6
       - uses: astral-sh/setup-uv@v9.0.0
       - run: uv sync
       - run: uv run pytest -v
-      - name: Reject inline event handlers
-        shell: bash
-        # An inline handler on a form runs with that form's controls in
-        # scope, so a control whose id matches a global silently shadows it.
-        # That broke the Send button: id="send" shadowed the send function,
-        # preventDefault never ran, and the form did a native submit that
-        # reloaded the page. Enter still worked, which made it look like a
-        # backend problem. Binding handlers in JS avoids the whole class.
-        run: |
-          # Markup only. The script below deliberately quotes the broken
-          # attribute in a comment explaining this rule.
-          if sed -n '1,/<script>/p' app/static/index.html \n             | grep -nE 'on(click|submit|keydown|change|input)="'; then
-            echo "Inline event handlers found - bind with addEventListener instead." >&2
-            exit 1
-          fi
-      - name: Check chat JavaScript syntax
-        shell: bash
-        run: |
-          python -c "import pathlib, re; print('\n'.join(re.findall(r'<script>(.*?)</script>', pathlib.Path('app/static/index.html').read_text(encoding='utf-8'), re.S)))" | node --check
-      - name: Check chat rendering
-        shell: bash
-        # The page builds HTML by string concatenation from values it does
-        # not own: message text, and source titles and URLs read back from
-        # the database. Two injections got through review here - a quote in
-        # a title added an event handler to the citation link, and a
-        # javascript: URL in the sources column became a live link. Neither
-        # is a syntax error, so the check above sees nothing wrong.
-        run: node tests/render.test.mjs
 
   build-and-push:
     needs: test
@@ -77,7 +49,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
       - uses: docker/build-push-action@v6
         with:
-          context: apps/chat
+          context: apps/zimsearch
           # arm64 only: both nodes are arm64 now (Pi + M1), so an amd64
           # half would be QEMU-emulated bytes nothing runs. Same call
           # already made in ci-adguard-exporter.yml. Re-add amd64 if an
@@ -107,10 +79,10 @@ jobs:
       - uses: actions/checkout@v6
       - run: |
           sed -i "s#image: ${{ env.IMAGE }}:.*#image: ${{ env.IMAGE }}:${{ needs.build-and-push.outputs.tag }}#" \
-            kubernetes/chat/chat.yaml
+            kubernetes/kiwix/kiwix.yaml
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add kubernetes/chat/chat.yaml
-          git diff --staged --quiet && echo "no image change" || git commit -m "Deploy chat ${{ needs.build-and-push.outputs.tag }} [skip ci]"
+          git add kubernetes/kiwix/kiwix.yaml
+          git diff --staged --quiet && echo "no image change" || git commit -m "Deploy zimsearch ${{ needs.build-and-push.outputs.tag }} [skip ci]"
           git pull --rebase origin main
           git push

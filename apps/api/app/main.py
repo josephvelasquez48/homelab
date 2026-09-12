@@ -10,6 +10,7 @@ from prometheus_fastapi_instrumentator import Instrumentator
 from app.config import OLLAMA_TIMEOUT, OLLAMA_URL
 from app.db import create_pg_pool, create_redis_client
 from app.logging import configure_logging, get_logger
+from app.retrieval import client as zimsearch_client
 from app.routers import chat, conversations, embed, health, jobs, rag
 
 configure_logging()
@@ -21,11 +22,16 @@ async def lifespan(app: FastAPI):
     app.state.pg_pool = await create_pg_pool()
     app.state.redis = create_redis_client()
     app.state.ollama = httpx.AsyncClient(base_url=OLLAMA_URL, timeout=OLLAMA_TIMEOUT)
+    # Its own client rather than a shared one: retrieval wants a tight
+    # timeout and generation wants a generous one, and they cannot both
+    # have it.
+    app.state.zimsearch = zimsearch_client()
     log.info("startup_complete")
     yield
     await app.state.pg_pool.close()
     await app.state.redis.aclose()
     await app.state.ollama.aclose()
+    await app.state.zimsearch.aclose()
     log.info("shutdown_complete")
 
 

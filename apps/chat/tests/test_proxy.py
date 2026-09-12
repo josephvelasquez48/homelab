@@ -95,3 +95,16 @@ def test_chosen_model_is_forwarded(client):
     method, path, body = client.fake_api.calls[-1]
     assert (method, path) == ("POST", "/v1/conversations")
     assert body == {"model": "qwen2.5-coder:7b"}
+
+
+def test_retrieval_flag_reaches_the_api(client):
+    """The proxy must not filter the body down to fields it knows about.
+
+    Retrieval is decided in the browser and acted on in the api; this hop
+    only carries it. A proxy that rebuilt the payload would drop the flag
+    and leave a checkbox that silently does nothing.
+    """
+    client.post("/api/conversations/abc/messages", json={"content": "hi", "retrieve": True})
+    method, path, body = client.fake_api.calls[-1]
+    assert (method, path) == ("POST", "/v1/conversations/abc/messages")
+    assert body == {"content": "hi", "retrieve": True}
