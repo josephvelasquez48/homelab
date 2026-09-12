@@ -21,7 +21,9 @@ flowchart TB
                 Prom["Prometheus"]
                 Graf["Grafana"]
                 AdGuardExporter["adguard-exporter<br/>NetworkPolicy: ingress from Prometheus only"]
+                Alert["Alertmanager<br/>emails on backup failure"]
             end
+            NodeExp["node_exporter (Docker Compose)<br/>+ textfile collector"]
         end
 
         subgraph M1["M1 MacBook — node 'm1-node' (K3s worker, Linux VM, bridged)"]
@@ -29,6 +31,7 @@ flowchart TB
                 API["FastAPI api<br/>2 replicas, HPA-free"]
                 Worker["Job worker<br/>(Redis queue consumer)"]
             end
+            Backup["restic backup collector<br/>nightly pull + restore rehearsal"]
         end
 
         subgraph Desktop["Windows desktop — GPU host, not a cluster member"]
@@ -55,10 +58,15 @@ flowchart TB
     Prom -.->|scrape /metrics, only pod NetworkPolicy allows in| AdGuardExporter
     AdGuardExporter -->|/control/status, /control/stats| AdGuard
     Graf -->|query| Prom
+    Prom -.->|fires rules| Alert
+    Alert -->|SMTP| Email["Email"]
+    Prom -.->|scrape| NodeExp
+    Backup -->|tar over SSH: K3s state.db, Postgres, Redis, Grafana| Pi
+    Backup -.->|snapshot age, last exit code| NodeExp
 
     ArgoCD -->|poll ~3min: new commits<br/>real-time: live drift| Repo
     ArgoCD -->|apply + selfHeal| PiWorkloads
-    ArgoCD -->|apply + selfHeal| DesktopWorkloads
+    ArgoCD -->|apply + selfHeal| M1Workloads
 ```
 
 ## Notes on what this diagram intentionally omits
