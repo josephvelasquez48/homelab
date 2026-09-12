@@ -69,7 +69,7 @@ spec:
         # schedulable on both nodes - mounting a 127GB hostPath into it
         # would cost the second replica.
         - name: zimsearch
-          image: ghcr.io/josephvelasquez48/homelab-zimsearch:latest
+          image: ghcr.io/josephvelasquez48/homelab-zimsearch:7bd672626aaa
           env:
             - { name: ZIM_DIR, value: /data }
           ports:
