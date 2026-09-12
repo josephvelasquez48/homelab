@@ -47,15 +47,15 @@
 <body>
   <div id="sidebar">
     <h1>Homelab Chat</h1>
-    <button id="new" onclick="newConversation()">New conversation</button>
+    <button id="new">New conversation</button>
     <div id="list"></div>
   </div>
 
   <div id="main">
     <div id="thread"><div class="empty">Start a conversation.</div></div>
     <div id="composer">
-      <form onsubmit="send(event)">
-        <textarea id="input" rows="2" placeholder="Ask something..." onkeydown="maybeSend(event)"></textarea>
+      <form id="composer-form">
+        <textarea id="input" rows="2" placeholder="Ask something..."></textarea>
         <button id="send" type="submit">Send</button>
       </form>
       <div id="status"></div>
@@ -73,7 +73,7 @@ async function loadList() {
   const res = await fetch('/api/conversations');
   const items = await res.json();
   el('list').innerHTML = items.map(c =>
-    '<div class="conv' + (c.id === current ? ' active' : '') + '" onclick="open_(\'' + c.id + '\')">'
+    '<div class="conv' + (c.id === current ? ' active' : '') + '" data-id="' + c.id + '">'
     + esc(c.title || 'Untitled') + '</div>').join('');
 }
 
@@ -113,7 +113,7 @@ async function send(event) {
   event.preventDefault();
   if (streaming) return;
   const text = el('input').value.trim();
-  if (!text) return;
+  if (!text) { el('status').textContent = 'Type a message first.'; return; }
   if (!current) await newConversation();
 
   el('input').value = '';
@@ -187,6 +187,22 @@ async function send(event) {
     loadList();
   }
 }
+
+// Handlers are bound here rather than as inline attributes, because an
+// inline handler on a form runs with that form's own controls in scope.
+// A control whose id matches a global shadows it. That is exactly what
+// broke Send: the button is id="send" and the function is named send, so
+// inside onsubmit="send(event)" the name resolved to the button element.
+// Calling it threw, preventDefault never ran, and the browser fell back to
+// a native form submit that reloaded the page. Enter kept working because
+// it goes through a handler on the textarea, where normal scoping applies.
+document.getElementById('composer-form').addEventListener('submit', send);
+document.getElementById('new').addEventListener('click', newConversation);
+document.getElementById('input').addEventListener('keydown', maybeSend);
+document.getElementById('list').addEventListener('click', (event) => {
+  const row = event.target.closest('.conv');
+  if (row) open_(row.dataset.id);
+});
 
 loadList();
 </script>

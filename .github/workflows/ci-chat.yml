@@ -29,6 +29,21 @@ jobs:
       - uses: astral-sh/setup-uv@v9.0.0
       - run: uv sync
       - run: uv run pytest -v
+      - name: Reject inline event handlers
+        shell: bash
+        # An inline handler on a form runs with that form's controls in
+        # scope, so a control whose id matches a global silently shadows it.
+        # That broke the Send button: id="send" shadowed the send function,
+        # preventDefault never ran, and the form did a native submit that
+        # reloaded the page. Enter still worked, which made it look like a
+        # backend problem. Binding handlers in JS avoids the whole class.
+        run: |
+          # Markup only. The script below deliberately quotes the broken
+          # attribute in a comment explaining this rule.
+          if sed -n '1,/<script>/p' app/static/index.html \n             | grep -nE 'on(click|submit|keydown|change|input)="'; then
+            echo "Inline event handlers found - bind with addEventListener instead." >&2
+            exit 1
+          fi
       - name: Check chat JavaScript syntax
         shell: bash
         run: |
