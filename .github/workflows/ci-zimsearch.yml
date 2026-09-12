@@ -1,0 +1,88 @@
+name: ZIM Search CI/CD
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "apps/zimsearch/**"
+      - "kubernetes/kiwix/**"
+      - ".github/workflows/ci-zimsearch.yml"
+  pull_request:
+    paths:
+      - "apps/zimsearch/**"
+
+permissions:
+  contents: write
+  packages: write
+
+env:
+  IMAGE: ghcr.io/${{ github.repository_owner }}/homelab-zimsearch
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/zimsearch
+    steps:
+      - uses: actions/checkout@v6
+      - uses: astral-sh/setup-uv@v9.0.0
+      - run: uv sync
+      - run: uv run pytest -v
+
+  build-and-push:
+    needs: test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v6
+      - id: tag
+        run: echo "tag=${GITHUB_SHA::12}" >> "$GITHUB_OUTPUT"
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: apps/zimsearch
+          # arm64 only: both nodes are arm64 now (Pi + M1), so an amd64
+          # half would be QEMU-emulated bytes nothing runs. Same call
+          # already made in ci-adguard-exporter.yml. Re-add amd64 if an
+          # x86 node ever joins. See docs/node-migration.md.
+          platforms: linux/arm64
+          push: true
+          tags: |
+            ${{ env.IMAGE }}:latest
+            ${{ env.IMAGE }}:${{ steps.tag.outputs.tag }}
+
+  # Same GitOps close-the-loop pattern as .github/workflows/ci.yml - see
+  # docs/argocd.md for why this only needs to write to git, not the
+  # cluster directly.
+  deploy:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    # Shared across both this workflow and ci.yml's deploy job - both push
+    # a manifest-update commit straight to main with no coordination, so
+    # two deploys landing in the same push (e.g. a commit touching both
+    # workflow files) race and the second's `git push` gets rejected
+    # (found via exactly that: bumping actions/checkout in both files at
+    # once). This serializes them - the loser waits and runs after,
+    # instead of failing.
+    concurrency:
+      group: git-deploy-main
+    steps:
+      - uses: actions/checkout@v6
+      - run: |
+          sed -i "s#image: ${{ env.IMAGE }}:.*#image: ${{ env.IMAGE }}:${{ needs.build-and-push.outputs.tag }}#" \
+            kubernetes/kiwix/kiwix.yaml
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add kubernetes/kiwix/kiwix.yaml
+          git diff --staged --quiet && echo "no image change" || git commit -m "Deploy zimsearch ${{ needs.build-and-push.outputs.tag }} [skip ci]"
+          git pull --rebase origin main
+          git push

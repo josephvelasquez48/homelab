@@ -30,7 +30,13 @@ spec:
       containers:
         - name: kiwix
           image: ghcr.io/kiwix/kiwix-serve:3.7.0
-          args: ["--port=8080", "/data/wikipedia_en_all_maxi_2026-08.zim"]
+          # Only the archive paths. The image entrypoint already supplies
+          # --port=8080, and kiwix-serve rejects a repeated option rather
+          # than taking the last one - it exits 0 with a message, which
+          # reads as a clean shutdown rather than a config error.
+          args:
+            - /data/wikipedia_en_all_maxi_2026-08.zim
+            - /data/wikipedia_en_simple_all_nopic_2026-05.zim
           ports:
             - containerPort: 8080
           volumeMounts:
@@ -57,6 +63,32 @@ spec:
           livenessProbe:
             httpGet: { path: /, port: 8080 }
             initialDelaySeconds: 30
+            timeoutSeconds: 10
+        # Retrieval for the chat assistant, beside kiwix-serve rather than
+        # inside the api. Same archive, same node pin, but the api stays
+        # schedulable on both nodes - mounting a 127GB hostPath into it
+        # would cost the second replica.
+        - name: zimsearch
+          image: ghcr.io/josephvelasquez48/homelab-zimsearch:latest
+          env:
+            - { name: ZIM_DIR, value: /data }
+          ports:
+            - containerPort: 8081
+          volumeMounts:
+            - name: archive
+              mountPath: /data
+              readOnly: true
+          resources:
+            requests: { cpu: 50m, memory: 128Mi }
+            limits: { cpu: "1", memory: 1Gi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          readinessProbe:
+            httpGet: { path: /health, port: 8081 }
+            initialDelaySeconds: 10
             timeoutSeconds: 10
       volumes:
         - name: archive
@@ -95,3 +127,14 @@ spec:
             pathType: Prefix
             backend:
               service: { name: kiwix, port: { number: 8080 } }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: zimsearch
+  namespace: kiwix
+spec:
+  selector: { app: kiwix }
+  ports:
+    - port: 8081
+      targetPort: 8081
