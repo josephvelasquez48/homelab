@@ -7,6 +7,10 @@ data:
   OLLAMA_URL: "http://inference.ai.svc.cluster.local:11434"
   OLLAMA_MODEL: "qwen2.5-coder:7b"
   OLLAMA_EMBED_MODEL: "nomic-embed-text"
+  # Full-text search over the local Wikipedia archive, for conversations
+  # that ask for it. Listed here even though the code defaults to the same
+  # value, so that reading this file tells you what the api talks to.
+  ZIMSEARCH_URL: "http://zimsearch.kiwix.svc.cluster.local:8081"
   RATE_LIMIT_PER_MINUTE: "60"
 # The api-secrets Secret referenced below lives in
 # kubernetes/secrets/api-secrets.enc.yaml (SOPS-encrypted, not synced by
