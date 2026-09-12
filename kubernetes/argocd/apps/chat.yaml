@@ -1,0 +1,18 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: chat
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: git@github.com:josephvelasquez48/homelab.git
+    targetRevision: main
+    path: kubernetes/chat
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: chat
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
