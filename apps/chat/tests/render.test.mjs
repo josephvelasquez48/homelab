@@ -22,9 +22,17 @@ const script = html.match(/<script>([\s\S]*?)<\/script>/)[1];
 // Enough DOM for the page to finish loading. The functions under test are
 // pure; these stubs exist so the handler bindings at the bottom of the
 // script do not throw before we reach them.
-const stub = { addEventListener() {}, focus() {}, set innerHTML(_v) {}, value: "", checked: false };
+const stub = {
+  addEventListener() {}, focus() {}, setAttribute() {}, querySelector: () => null,
+  set innerHTML(_v) {}, value: "", checked: false,
+};
 const globals = {
-  document: { getElementById: () => stub, querySelector: () => null },
+  document: {
+    getElementById: () => stub,
+    querySelector: () => null,
+    addEventListener() {},
+    body: { classList: { toggle() {}, contains: () => false } },
+  },
   fetch: async () => ({ ok: true, json: async () => [] }),
   confirm: () => false,
   setTimeout: () => 0,
