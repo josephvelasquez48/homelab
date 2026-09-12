@@ -103,11 +103,14 @@ class FakeConnection:
                 "created_at": _NOW, "updated_at": _NOW,
             }
         elif "INSERT INTO messages" in q:
-            mid, cid, content = args
+            # The user turn writes four columns and the assistant turn five,
+            # because only an answer can have sources.
+            mid, cid, content, *rest = args
             role = "user" if "'user'" in q else "assistant"
             self.db.setdefault("messages", []).append(
                 {"id": mid, "conversation_id": cid, "role": role,
-                 "content": content, "created_at": _NOW}
+                 "content": content, "created_at": _NOW,
+                 "sources": rest[0] if rest else None}
             )
         elif "UPDATE conversations SET title" in q:
             cid, title = args

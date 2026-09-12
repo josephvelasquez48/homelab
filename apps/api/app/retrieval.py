@@ -75,20 +75,47 @@ def as_context(results: list[dict]) -> str:
     )
     return (
         "Excerpts from a local copy of Wikipedia, retrieved for the question "
-        "below. Use them where they are relevant and say so. Where they do not "
-        "cover the question, answer from your own knowledge and say that "
-        "instead. Do not cite a passage that does not support what you wrote.\n\n"
-        f"{passages}"
+        "below. Use them where they are relevant, and mark each claim you take "
+        "from one with its number in square brackets, like [1]. Where they do "
+        "not cover the question, answer from your own knowledge and say so "
+        "rather than reaching for a passage. Never put a number on a sentence "
+        "the passages do not support."
+        + "\n\n"
+        + passages
     )
 
 
-def as_footer(results: list[dict]) -> str:
-    """The sources, appended to the reply rather than sent as metadata.
+# How much of each passage is kept with the answer. Enough to see why the
+# model said what it said, not so much that the stored conversation becomes
+# a copy of the encyclopedia - the whole article is one click away anyway.
+STORED_CHARS = 400
 
-    It becomes part of the stored message, so a conversation reopened next
-    month still shows where its answers came from. Metadata alongside the
-    message would need a schema change and would still be dropped by
-    anything that reads the conversation as text.
+
+def as_stored(results: list[dict]) -> list[dict]:
+    """The record of what an answer was given, kept beside it.
+
+    Stored rather than appended to the reply text. A text footer replayed
+    into the model's context on every following turn, and could not hold
+    the passage itself - only which article it came from, which was the
+    part that was never in doubt.
     """
-    lines = "\n".join(f"[{n}] {r['title']} - {r['url']}" for n, r in enumerate(results, 1))
-    return f"\n\nSources consulted:\n{lines}"
+    return [
+        {
+            "n": n,
+            "title": r["title"],
+            "archive": r["archive"],
+            "url": r["url"],
+            # Trimmed on a word boundary, because a passage cut mid-word
+            # reads as a rendering bug rather than a deliberate excerpt.
+            "excerpt": _trim(r["text"], STORED_CHARS),
+        }
+        for n, r in enumerate(results, 1)
+    ]
+
+
+def _trim(text: str, limit: int) -> str:
+    if len(text) <= limit:
+        return text
+    cut = text[:limit]
+    space = cut.rfind(" ")
+    return (cut[:space] if space > limit // 2 else cut) + "..."

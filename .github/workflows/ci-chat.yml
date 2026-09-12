@@ -48,6 +48,15 @@ jobs:
         shell: bash
         run: |
           python -c "import pathlib, re; print('\n'.join(re.findall(r'<script>(.*?)</script>', pathlib.Path('app/static/index.html').read_text(encoding='utf-8'), re.S)))" | node --check
+      - name: Check chat rendering
+        shell: bash
+        # The page builds HTML by string concatenation from values it does
+        # not own: message text, and source titles and URLs read back from
+        # the database. Two injections got through review here - a quote in
+        # a title added an event handler to the citation link, and a
+        # javascript: URL in the sources column became a live link. Neither
+        # is a syntax error, so the check above sees nothing wrong.
+        run: node tests/render.test.mjs
 
   build-and-push:
     needs: test

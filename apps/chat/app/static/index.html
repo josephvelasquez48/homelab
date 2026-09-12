@@ -52,6 +52,19 @@
           display: flex; align-items: center; gap: 7px; }
   #opts label { cursor: pointer; }
   .body a { color: var(--accent); }
+  /* A citation has to look clickable without turning the answer into a
+     field of links, so it reads as a marker rather than as body text. */
+  .cite { color: var(--accent); text-decoration: none; font-size: 12px;
+          vertical-align: super; padding: 0 1px; }
+  .cite:hover { text-decoration: underline; }
+  .src { margin-top: 12px; border: 1px solid var(--line); border-radius: 8px;
+         background: var(--panel); font-size: 13px; }
+  .src > summary { cursor: pointer; padding: 8px 11px; color: var(--muted); }
+  .src ol { margin: 0; padding: 0 14px 10px 30px; }
+  .src li { margin-bottom: 10px; }
+  .src li p { margin: 3px 0 0; color: var(--muted); white-space: normal; }
+  .arch { font-size: 11px; color: var(--muted); border: 1px solid var(--line);
+          border-radius: 10px; padding: 1px 7px; margin-left: 6px; }
   #status { max-width: 760px; margin: 8px auto 0; font-size: 12px; color: var(--muted); min-height: 16px; }
   .empty { color: var(--muted); text-align: center; margin-top: 15vh; }
 </style>
@@ -84,7 +97,13 @@ let current = null;
 let streaming = false;
 
 const el = (id) => document.getElementById(id);
-const esc = (s) => { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; };
+// Escapes quotes as well as tags, because these values are interpolated
+// into attributes and not only into text. The usual trick of assigning to
+// textContent and reading innerHTML back does not: a title containing a
+// double quote closes the attribute early, and `Ada" onmouseover="alert(1)`
+// becomes a real event handler on the citation link.
+const ESCAPES = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
+const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ESCAPES[c]);
 
 async function loadList() {
   const res = await fetch('/api/conversations');
@@ -113,7 +132,7 @@ async function open_(id) {
   current = id;
   const res = await fetch('/api/conversations/' + id);
   const conv = await res.json();
-  el('thread').innerHTML = conv.messages.map(m => bubble(m.role, m.content)).join('')
+  el('thread').innerHTML = conv.messages.map(m => bubble(m.role, m.content, '', m.sources)).join('')
     || '<div class="empty">Ask the first question.</div>';
   // A conversation keeps the model it was created with, so say which.
   el('status').textContent = conv.model ? 'Model: ' + conv.model : '';
@@ -121,15 +140,66 @@ async function open_(id) {
   await loadList();
 }
 
-// Citations are plain text inside the message, so they survive a reload and
-// a copy-paste. Linking happens at render time, after escaping - doing it
-// before would let a URL in someone's own message inject markup.
+// Anything a message carries that should become a link is linked at render
+// time, after escaping. Doing it before would let a URL someone typed into
+// their own message inject markup.
 const LINK = /https:\/\/[^\s<>"']+/g;
-const linkify = (s) => s.replace(LINK, (u) => '<a href="' + u + '" target="_blank" rel="noopener">' + u + '</a>');
+const CITE = /\[(\d{1,2})\]/g;
 
-function bubble(role, content, cls) {
+// Sources reach the page from the database, so their URLs are not typed
+// here and are not necessarily what this code expects. Today zimsearch only
+// ever builds https links into wikipedia.home, which is exactly why an
+// unchecked href would go unnoticed until something else wrote that column.
+// A javascript: URL in an anchor runs on click.
+const safeUrl = (u) => (typeof u === 'string' && /^https?:\/\//.test(u) ? u : '');
+
+const label = (archive) =>
+  archive.indexOf('simple') !== -1 ? 'Simple English' : 'Full English';
+
+// The model is asked to mark borrowed claims as [1], so those markers are
+// the natural place to click through to the article. Only numbers that
+// actually have a source become links - a 7B model will sometimes cite a
+// passage that was never there, and inventing a destination for it would
+// disguise exactly the failure worth seeing.
+function render(content, sources) {
+  let out = esc(content).replace(LINK, (u) =>
+    '<a href="' + u + '" target="_blank" rel="noopener">' + u + '</a>');
+  if (!sources || !sources.length) return out;
+  const byNumber = {};
+  sources.forEach((s) => { byNumber[s.n] = s; });
+  return out.replace(CITE, (whole, n) => {
+    const src = byNumber[n];
+    const href = src ? safeUrl(src.url) : '';
+    if (!href) return whole;
+    return '<a class="cite" href="' + esc(href) + '" target="_blank" rel="noopener"'
+      + ' title="' + esc(src.title) + '">[' + n + ']</a>';
+  });
+}
+
+// Collapsed by default. The excerpt is what the model was actually handed,
+// which is the only way to tell a grounded answer from one that merely
+// mentions the same article.
+function panel(sources) {
+  if (!sources || !sources.length) return '';
+  const items = sources.map((s) => {
+    const href = safeUrl(s.url);
+    // A source whose URL is not a link still gets listed. Dropping it would
+    // hide a passage the answer was actually built on.
+    const title = href
+      ? '<a href="' + esc(href) + '" target="_blank" rel="noopener">' + esc(s.title) + '</a>'
+      : esc(s.title);
+    return '<li>' + title
+      + '<span class="arch">' + esc(label(s.archive)) + '</span>'
+      + '<p>' + esc(s.excerpt) + '</p></li>';
+  }).join('');
+  const n = sources.length;
+  return '<details class="src"><summary>' + n + (n === 1 ? ' source' : ' sources')
+    + ' from the local Wikipedia</summary><ol>' + items + '</ol></details>';
+}
+
+function bubble(role, content, cls, sources) {
   return '<div class="msg ' + (cls || '') + '"><div class="who">' + role + '</div>'
-    + '<div class="body">' + linkify(esc(content)) + '</div></div>';
+    + '<div class="body">' + render(content, sources) + panel(sources) + '</div></div>';
 }
 
 async function remove(id) {
@@ -194,6 +264,10 @@ async function send(event) {
     const decoder = new TextDecoder();
     let buffer = '';
     let tokens = 0;
+    // Kept apart from the element's text because the sources panel lands
+    // inside the same element at the end, and reading the reply back off
+    // the DOM would then sweep the excerpts into it.
+    let reply = '';
 
     while (true) {
       const { done, value } = await reader.read();
@@ -217,9 +291,17 @@ async function send(event) {
         } else if (frame.token) {
           if (!tokens) { clearTimeout(slow); el('status').textContent = 'Generating...'; }
           tokens++;
-          target.textContent += frame.token;
+          reply += frame.token;
+          // Plain text while it streams. Re-parsing the whole reply on every
+          // token to find citations would do quadratic work for markup that
+          // cannot be complete until the sources arrive anyway.
+          target.textContent = reply;
           scrollDown();
-          if (frame.token.indexOf('http') !== -1) target.innerHTML = linkify(esc(target.textContent));
+        } else if (frame.sources) {
+          // Arrives after the last token, so this is the first point at
+          // which the citation numbers can be resolved to articles.
+          target.innerHTML = render(reply, frame.sources) + panel(frame.sources);
+          scrollDown();
         } else if (frame.done) {
           el('status').textContent = frame.tokens_per_sec
             ? frame.tokens_per_sec + ' tokens/sec' : '';

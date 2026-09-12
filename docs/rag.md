@@ -60,9 +60,21 @@ lookups, and searching an encyclopedia for "say that again shorter" returns
 articles about rewriting and shortness that then crowd out the actual
 conversation.
 
-Citations are appended to the reply text rather than stored as metadata, so
-a conversation reopened later still shows where its answers came from
-without a schema change.
+The passages are stored beside the answer in a `sources` JSONB column, and
+the model is asked to mark borrowed claims as `[1]`. The page turns those
+markers into links to the article on `wikipedia.home`, and lists each source
+underneath with the excerpt the model was actually given. That excerpt is
+the part worth having: it is the only way to tell a grounded answer from one
+that merely mentions the same article.
+
+Citations were first appended to the reply as a text footer, which avoided
+the migration and was wrong twice over. The list replayed into the model's
+context on every following turn, and text cannot hold the passage itself -
+only which article it came from, which was never the part in doubt.
+
+The column is nullable rather than defaulting to an empty array. "This turn
+did not search" and "this turn searched and found nothing" are different
+facts, and the column is the only place that distinction survives.
 
 ### What this does not do
 
