@@ -6,6 +6,13 @@ DATABASE_URL = os.environ["DATABASE_URL"]
 REDIS_URL = os.environ["REDIS_URL"]
 OLLAMA_URL = os.environ.get("OLLAMA_URL", "http://host.docker.internal:11434")
 OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "qwen2.5-coder:7b")
+
+# Conversations default to the general model, not the coder. They are
+# different jobs: OLLAMA_MODEL backs /v1/chat and the job worker, which are
+# code-shaped, while a conversation is someone talking. qwen2.5-coder is
+# tuned for completion and drifts toward emitting code unprompted, which
+# reads as the assistant ignoring you.
+CHAT_MODEL = os.environ.get("CHAT_MODEL", "qwen2.5:7b")
 OLLAMA_EMBED_MODEL = os.environ.get("OLLAMA_EMBED_MODEL", "nomic-embed-text")
 JOB_QUEUE_KEY = "jobs:queue"
 

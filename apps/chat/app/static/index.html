@@ -20,11 +20,19 @@
     display: flex; flex-direction: column; background: var(--panel);
   }
   #sidebar h1 { font-size: 15px; margin: 0; padding: 16px; border-bottom: 1px solid var(--line); }
-  #new { margin: 12px; padding: 9px; background: var(--accent); color: #04260d;
+  #model { margin: 12px 12px 0; padding: 7px; background: var(--bg); color: var(--text);
+           border: 1px solid var(--line); border-radius: 6px; font: inherit; font-size: 13px; }
+  #new { margin: 8px 12px 12px; padding: 9px; background: var(--accent); color: #04260d;
          border: 0; border-radius: 6px; font-weight: 600; cursor: pointer; }
   #list { flex: 1; overflow-y: auto; padding: 0 8px 12px; }
   .conv { padding: 9px 10px; border-radius: 6px; cursor: pointer; font-size: 13px;
-          color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+          color: var(--muted); display: flex; align-items: center; gap: 6px; }
+  .conv .label { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* Hidden until hover so the list stays calm, but focusable by keyboard */
+  .conv .del { flex: 0 0 auto; opacity: 0; border: 0; background: none; cursor: pointer;
+               color: var(--muted); font-size: 15px; line-height: 1; padding: 2px 4px; }
+  .conv:hover .del, .conv .del:focus { opacity: 1; }
+  .conv .del:hover { color: var(--bad); }
   .conv:hover { background: #1f2630; color: var(--text); }
   .conv.active { background: #1f2630; color: var(--text); }
   #main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
@@ -47,6 +55,7 @@
 <body>
   <div id="sidebar">
     <h1>Homelab Chat</h1>
+    <select id="model" title="Model for new conversations"></select>
     <button id="new">New conversation</button>
     <div id="list"></div>
   </div>
@@ -74,12 +83,16 @@ async function loadList() {
   const items = await res.json();
   el('list').innerHTML = items.map(c =>
     '<div class="conv' + (c.id === current ? ' active' : '') + '" data-id="' + c.id + '">'
-    + esc(c.title || 'Untitled') + '</div>').join('');
+    + '<span class="label">' + esc(c.title || 'Untitled') + '</span>'
+    + '<button class="del" title="Delete this conversation" aria-label="Delete conversation">&times;</button>'
+    + '</div>').join('');
 }
 
 async function newConversation() {
+  const chosen = el('model').value;
   const res = await fetch('/api/conversations', {
-    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}'
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(chosen ? { model: chosen } : {})
   });
   const conv = await res.json();
   current = conv.id;
@@ -94,6 +107,8 @@ async function open_(id) {
   const conv = await res.json();
   el('thread').innerHTML = conv.messages.map(m => bubble(m.role, m.content)).join('')
     || '<div class="empty">Ask the first question.</div>';
+  // A conversation keeps the model it was created with, so say which.
+  el('status').textContent = conv.model ? 'Model: ' + conv.model : '';
   scrollDown();
   await loadList();
 }
@@ -101,6 +116,25 @@ async function open_(id) {
 function bubble(role, content, cls) {
   return '<div class="msg ' + (cls || '') + '"><div class="who">' + role + '</div>'
     + '<div class="body">' + esc(content) + '</div></div>';
+}
+
+async function remove(id) {
+  // Deleting cascades to every message in the conversation and there is no
+  // undo, so this asks first. It is the only destructive action in the UI.
+  if (!confirm('Delete this conversation and all its messages?')) return;
+
+  const res = await fetch('/api/conversations/' + id, { method: 'DELETE' });
+  if (!res.ok && res.status !== 204) {
+    el('status').textContent = 'Could not delete that conversation.';
+    return;
+  }
+  // Only clear the thread if the deleted conversation is the one on screen.
+  if (id === current) {
+    current = null;
+    el('thread').innerHTML = '<div class="empty">Start a conversation.</div>';
+  }
+  el('status').textContent = '';
+  await loadList();
 }
 
 function scrollDown() { const t = el('thread'); t.scrollTop = t.scrollHeight; }
@@ -201,9 +235,20 @@ document.getElementById('new').addEventListener('click', newConversation);
 document.getElementById('input').addEventListener('keydown', maybeSend);
 document.getElementById('list').addEventListener('click', (event) => {
   const row = event.target.closest('.conv');
-  if (row) open_(row.dataset.id);
+  if (!row) return;
+  // The delete control sits inside the row, so its click would otherwise
+  // also open the conversation it is removing.
+  if (event.target.closest('.del')) remove(row.dataset.id);
+  else open_(row.dataset.id);
 });
 
+async function loadModels() {
+  const options = await (await fetch("/api/models")).json();
+  el("model").innerHTML = options.map(o =>
+    '<option value="' + o.model + '">' + esc(o.label) + '</option>').join("");
+}
+
+loadModels();
 loadList();
 </script>
 </body>

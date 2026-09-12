@@ -105,3 +105,24 @@ def test_delete_removes_the_conversation(client, auth_headers):
     cid = client.post("/v1/conversations", json={}, headers=auth_headers).json()["id"]
     assert client.delete(f"/v1/conversations/{cid}", headers=auth_headers).status_code == 204
     assert client.get(f"/v1/conversations/{cid}", headers=auth_headers).status_code == 404
+
+
+def test_conversations_default_to_the_general_model(client, auth_headers):
+    """Not the coder model, which backs /v1/chat and the job worker.
+
+    They are different jobs. qwen2.5-coder is tuned for completion and
+    drifts toward emitting code unprompted, which in a conversation reads
+    as the assistant ignoring what was asked.
+    """
+    from app.config import CHAT_MODEL
+
+    created = client.post("/v1/conversations", json={}, headers=auth_headers).json()
+    assert created["model"] == CHAT_MODEL
+    assert "coder" not in created["model"]
+
+
+def test_an_explicit_model_is_honoured(client, auth_headers):
+    created = client.post(
+        "/v1/conversations", json={"model": "qwen2.5-coder:7b"}, headers=auth_headers
+    ).json()
+    assert created["model"] == "qwen2.5-coder:7b"
