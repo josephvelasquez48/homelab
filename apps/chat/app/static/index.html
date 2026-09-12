@@ -48,6 +48,10 @@
   #send { padding: 0 20px; background: var(--accent); color: #04260d; border: 0;
           border-radius: 8px; font-weight: 600; cursor: pointer; }
   #send:disabled { opacity: .45; cursor: default; }
+  #opts { max-width: 760px; margin: 10px auto 0; font-size: 13px; color: var(--muted);
+          display: flex; align-items: center; gap: 7px; }
+  #opts label { cursor: pointer; }
+  .body a { color: var(--accent); }
   #status { max-width: 760px; margin: 8px auto 0; font-size: 12px; color: var(--muted); min-height: 16px; }
   .empty { color: var(--muted); text-align: center; margin-top: 15vh; }
 </style>
@@ -67,6 +71,10 @@
         <textarea id="input" rows="2" placeholder="Ask something..."></textarea>
         <button id="send" type="submit">Send</button>
       </form>
+      <div id="opts">
+        <input type="checkbox" id="retrieve">
+        <label for="retrieve">Look it up in Wikipedia first</label>
+      </div>
       <div id="status"></div>
     </div>
   </div>
@@ -113,9 +121,15 @@ async function open_(id) {
   await loadList();
 }
 
+// Citations are plain text inside the message, so they survive a reload and
+// a copy-paste. Linking happens at render time, after escaping - doing it
+// before would let a URL in someone's own message inject markup.
+const LINK = /https:\/\/[^\s<>"']+/g;
+const linkify = (s) => s.replace(LINK, (u) => '<a href="' + u + '" target="_blank" rel="noopener">' + u + '</a>');
+
 function bubble(role, content, cls) {
   return '<div class="msg ' + (cls || '') + '"><div class="who">' + role + '</div>'
-    + '<div class="body">' + esc(content) + '</div></div>';
+    + '<div class="body">' + linkify(esc(content)) + '</div></div>';
 }
 
 async function remove(id) {
@@ -164,6 +178,7 @@ async function send(event) {
   el('send').disabled = true;
   // Roughly how long a cold model load takes on this hardware. Saying so
   // is better than a spinner that gives no sense of whether to keep waiting.
+  if (el('retrieve').checked) el('status').textContent = 'Searching Wikipedia...';
   const slow = setTimeout(() => {
     if (!target.textContent) el('status').textContent = 'Loading the model into VRAM, this takes about 45 seconds when it has been idle.';
   }, 4000);
@@ -172,7 +187,7 @@ async function send(event) {
     const res = await fetch('/api/conversations/' + current + '/messages', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ content: text })
+      body: JSON.stringify({ content: text, retrieve: el('retrieve').checked })
     });
 
     const reader = res.body.getReader();
@@ -204,6 +219,7 @@ async function send(event) {
           tokens++;
           target.textContent += frame.token;
           scrollDown();
+          if (frame.token.indexOf('http') !== -1) target.innerHTML = linkify(esc(target.textContent));
         } else if (frame.done) {
           el('status').textContent = frame.tokens_per_sec
             ? frame.tokens_per_sec + ' tokens/sec' : '';

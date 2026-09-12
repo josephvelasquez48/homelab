@@ -14,6 +14,18 @@ OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "qwen2.5-coder:7b")
 # reads as the assistant ignoring you.
 CHAT_MODEL = os.environ.get("CHAT_MODEL", "qwen2.5:7b")
 OLLAMA_EMBED_MODEL = os.environ.get("OLLAMA_EMBED_MODEL", "nomic-embed-text")
+
+# Full-text search over the local Wikipedia archive. In-cluster, like the
+# chat app's call to this API: it is a lookup against a disk on the LAN and
+# has no reason to traverse Traefik or depend on DNS.
+ZIMSEARCH_URL = os.environ.get("ZIMSEARCH_URL", "http://zimsearch.kiwix.svc.cluster.local:8081")
+
+# Three passages of 1200 characters is roughly 900 tokens. The budget is
+# shared with 40 turns of history on a 7B model, and retrieval that crowds
+# out the conversation produces an assistant that answers the article
+# instead of the question.
+RETRIEVAL_RESULTS = int(os.environ.get("RETRIEVAL_RESULTS", "3"))
+RETRIEVAL_CHARS = int(os.environ.get("RETRIEVAL_CHARS", "1200"))
 JOB_QUEUE_KEY = "jobs:queue"
 
 # A single blanket timeout used to cover both "can we even reach Ollama"

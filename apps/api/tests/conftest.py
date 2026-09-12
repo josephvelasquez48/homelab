@@ -232,11 +232,51 @@ class FakeOllamaClient:
         pass
 
 
+class FakeZimsearchResponse:
+    def __init__(self, payload):
+        self._payload = payload
+
+    def raise_for_status(self):
+        pass
+
+    def json(self):
+        return self._payload
+
+
+class FakeZimsearchClient:
+    """Stands in for the ZIM retrieval service.
+
+    Separate from the Ollama fake even though both are httpx clients,
+    because the interesting failure is one being down while the other is
+    up - a shared fake cannot express that.
+    """
+
+    def __init__(self):
+        self.queries = []
+        self.results = []
+        # Set to an exception to simulate the kiwix pod being absent, which
+        # is the normal state on a node that has no archive.
+        self.fail_with = None
+
+    async def get(self, url, params=None, **kwargs):
+        self.queries.append((url, params))
+        if self.fail_with is not None:
+            raise self.fail_with
+        return FakeZimsearchResponse(
+            {"query": params["q"], "answered_by": "wikipedia_en_simple_all",
+             "tried": [], "reranked": False, "results": self.results}
+        )
+
+    async def aclose(self):
+        pass
+
+
 @pytest.fixture
 def client(monkeypatch):
     fake_pg = FakePgPool()
     fake_redis = FakeRedis()
     fake_ollama = FakeOllamaClient()
+    fake_zimsearch = FakeZimsearchClient()
 
     # app.main does `from app.db import create_pg_pool, create_redis_client`,
     # which binds its own local names at import time - patching app.db's
@@ -248,6 +288,10 @@ def client(monkeypatch):
     monkeypatch.setattr(app_main, "create_pg_pool", AsyncMock(return_value=fake_pg))
     monkeypatch.setattr(app_main, "create_redis_client", MagicMock(return_value=fake_redis))
     monkeypatch.setattr(app_main.httpx, "AsyncClient", MagicMock(return_value=fake_ollama))
+    # Patched by name rather than by URL, because the line above replaces
+    # httpx.AsyncClient wholesale - without this the retrieval client would
+    # be handed the Ollama fake and quietly answer search requests.
+    monkeypatch.setattr(app_main, "zimsearch_client", MagicMock(return_value=fake_zimsearch))
 
     app = app_main.app
 
@@ -255,6 +299,7 @@ def client(monkeypatch):
         c.fake_pg = fake_pg
         c.fake_redis = fake_redis
         c.fake_ollama = fake_ollama
+        c.fake_zimsearch = fake_zimsearch
         yield c
 
 

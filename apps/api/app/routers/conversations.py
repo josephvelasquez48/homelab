@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field
 from app.config import CHAT_MODEL
 from app.logging import get_logger
 from app.ollama import chat_stream
+from app.retrieval import as_context, as_footer, lookup
 from app.rate_limit import rate_limit
 
 router = APIRouter(dependencies=[Depends(rate_limit)])
@@ -50,6 +51,10 @@ class ConversationDetail(ConversationSummary):
 
 class MessageCreate(BaseModel):
     content: str = Field(min_length=1, max_length=32000)
+    # Per message, not per conversation. Within one conversation some turns
+    # are lookups and some are "say that again shorter", and searching an
+    # encyclopedia for the second wastes both the round trip and the context.
+    retrieve: bool = False
 
 
 @router.post("/v1/conversations", response_model=ConversationSummary, status_code=201)
@@ -151,6 +156,18 @@ async def send_message(
     messages = [{"role": r["role"], "content": r["content"]} for r in reversed(history)]
     model = conversation["model"]
 
+    sources: list[dict] = []
+    if body.retrieve:
+        sources = await lookup(request.app.state.zimsearch, body.content)
+        if sources:
+            # Inserted just before the question rather than at the front of
+            # the conversation. A 7B model weights the end of its context
+            # most heavily, and passages sitting 40 turns back read as old
+            # discussion rather than as material for the turn being asked.
+            messages.insert(
+                len(messages) - 1, {"role": "system", "content": as_context(sources)}
+            )
+
     async def event_stream():
         collected: list[str] = []
         try:
@@ -158,6 +175,14 @@ async def send_message(
                 if "token" in chunk:
                     collected.append(chunk["token"])
                 yield f"data: {json.dumps(chunk)}\n\n"
+            if sources and collected:
+                # Streamed as a token so it lands in the stored message
+                # and reads identically on a later reload. Only once a
+                # reply actually arrived: citations under an error would
+                # claim the sources produced something.
+                footer = as_footer(sources)
+                collected.append(footer)
+                yield f"data: {json.dumps({'token': footer})}\n\n"
         except Exception as exc:
             log.warning("chat_stream_failed", error=str(exc), conversation=str(conversation_id))
             yield f"data: {json.dumps({'error': f'{type(exc).__name__}: {exc}'})}\n\n"
