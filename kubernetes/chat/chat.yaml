@@ -1,0 +1,93 @@
+---
+# Streaming chat UI for the local LLM. A thin proxy in front of the api
+# service: it holds the API key server-side and relays SSE, so the page
+# never carries a credential. See apps/chat/app/main.py.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: chat-config
+  namespace: chat
+data:
+  # In-cluster, not api.home - this path does not depend on Traefik or DNS
+  # being healthy, and never leaves the pod network.
+  API_URL: "http://api.backend.svc.cluster.local:8000"
+  # Generous because a cold model load costs roughly 45 seconds on this
+  # hardware before the first token. A shorter timeout would cut off
+  # replies that were about to arrive.
+  STREAM_TIMEOUT: "600"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: chat
+  namespace: chat
+spec:
+  replicas: 1
+  strategy:
+    type: RollingUpdate
+  selector:
+    matchLabels: { app: chat }
+  template:
+    metadata:
+      labels: { app: chat }
+    spec:
+      containers:
+        - name: chat
+          image: ghcr.io/josephvelasquez48/homelab-chat:latest
+          envFrom:
+            - configMapRef: { name: chat-config }
+            # Holds API_KEY, which must match the api service's own.
+            # optional: true so a missing Secret starts the pod and breaks
+            # the proxy loudly, rather than blocking the rollout with an
+            # error that reads as an image problem.
+            - secretRef: { name: chat-secrets, optional: true }
+          ports:
+            - containerPort: 8000
+          resources:
+            requests: { cpu: 20m, memory: 64Mi }
+            limits: { cpu: 500m, memory: 256Mi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 65534
+            capabilities:
+              drop: ["ALL"]
+          readinessProbe:
+            httpGet: { path: /health, port: 8000 }
+            initialDelaySeconds: 5
+          livenessProbe:
+            httpGet: { path: /health, port: 8000 }
+            initialDelaySeconds: 15
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: chat
+  namespace: chat
+spec:
+  selector: { app: chat }
+  ports:
+    - port: 8000
+      targetPort: 8000
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: chat
+  namespace: chat
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: websecure
+spec:
+  tls:
+    - secretName: homelab-tls
+      hosts:
+        - chat.home
+  rules:
+    - host: chat.home
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service: { name: chat, port: { number: 8000 } }
