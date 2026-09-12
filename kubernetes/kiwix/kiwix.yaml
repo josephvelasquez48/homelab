@@ -1,0 +1,97 @@
+---
+# Offline Wikipedia. Serves a 127GB ZIM archive from the Pi's NVMe.
+#
+# Not in the cluster's storage: the archive is a hostPath on `joe`, because
+# a 127GB local-path PVC would be the same bytes on the same disk with an
+# extra layer of indirection, and nothing else can usefully consume it.
+# That pins this workload to one node, which is stated rather than implied.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kiwix
+  namespace: kiwix
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels: { app: kiwix }
+  template:
+    metadata:
+      labels: { app: kiwix }
+    spec:
+      # The archive lives on this node's disk and nowhere else.
+      nodeSelector:
+        kubernetes.io/hostname: joe
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        runAsGroup: 65534
+      containers:
+        - name: kiwix
+          image: ghcr.io/kiwix/kiwix-serve:3.7.0
+          args: ["--port=8080", "/data/wikipedia_en_all_maxi_2026-08.zim"]
+          ports:
+            - containerPort: 8080
+          volumeMounts:
+            - name: archive
+              mountPath: /data
+              readOnly: true
+          resources:
+            # kiwix-serve memory-maps the archive rather than reading it, so
+            # resident memory stays small and the kernel page cache does the
+            # work. The limit guards against a runaway, it is not a working
+            # set estimate - setting it near the file size would be wrong.
+            requests: { cpu: 50m, memory: 128Mi }
+            limits: { cpu: "1", memory: 1Gi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          readinessProbe:
+            httpGet: { path: /, port: 8080 }
+            initialDelaySeconds: 10
+            # A cold mmap of a 127GB file on first request can be slow.
+            timeoutSeconds: 10
+          livenessProbe:
+            httpGet: { path: /, port: 8080 }
+            initialDelaySeconds: 30
+            timeoutSeconds: 10
+      volumes:
+        - name: archive
+          hostPath:
+            path: /srv/kiwix
+            type: Directory
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: kiwix
+  namespace: kiwix
+spec:
+  selector: { app: kiwix }
+  ports:
+    - port: 8080
+      targetPort: 8080
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: kiwix
+  namespace: kiwix
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: websecure
+spec:
+  tls:
+    - secretName: homelab-tls
+      hosts:
+        - wikipedia.home
+  rules:
+    - host: wikipedia.home
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service: { name: kiwix, port: { number: 8080 } }
