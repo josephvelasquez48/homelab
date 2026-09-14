@@ -16,54 +16,91 @@ import datetime
 import json
 import os
 from pathlib import Path
+import re
 import shlex
 import subprocess
+import sys
 import time
 
-os.umask(0o077)
+# restic writes Go's RFC3339Nano, which drops trailing zeros from the
+# fraction, so a timestamp can carry anywhere from one to nine digits after
+# the seconds. Python 3.9's fromisoformat - the Mac's /usr/bin/python3 -
+# accepts exactly three or six. 2026-09-12T03:00:14.69541-07:00 has five.
+_RESTIC_TIME = re.compile(r"^(.*T\d\d:\d\d:\d\d)(?:\.(\d+))?(Z|[+-]\d\d:\d\d)$")
+
+
+def restic_time(value):
+    """Unix time for a restic snapshot timestamp, on any Python from 3.9."""
+    match = _RESTIC_TIME.match(value)
+    if not match:
+        raise ValueError("unrecognised restic timestamp: %r" % value)
+    base, fraction, offset = match.groups()
+    fraction = ((fraction or "") + "000000")[:6]
+    offset = "+00:00" if offset == "Z" else offset
+    return datetime.datetime.fromisoformat("%s.%s%s" % (base, fraction, offset)).timestamp()
+
+
+def newest_snapshot(snaps):
+    """Newest snapshot time, skipping any timestamp that cannot be read.
+
+    Skipping one rather than abandoning the list is the point. From
+    2026-09-12 a single five-digit fraction raised out of the loop, so every
+    snapshot after it was ignored: the report said the newest backup was
+    sixty-five hours old and the repository unreadable, while a good
+    snapshot had been taken every night.
+    """
+    newest = 0
+    for s in snaps:
+        try:
+            newest = max(newest, restic_time(s["time"]))
+        except (KeyError, ValueError) as exc:
+            print("skipping snapshot %s: %s" % (s.get("short_id", "?"), exc), file=sys.stderr)
+    return newest
+
 PI = 'joe@192.168.1.253'
 TEXTFILE = '/var/lib/node_exporter/textfile/homelab_backup.prom'
 config = Path.home() / '.config/homelab-backup'
-env = dict(os.environ,
-           RESTIC_REPOSITORY=str(Path.home() / 'Backups/homelab/repository'),
-           RESTIC_PASSWORD_FILE=str(config / 'password'))
 
-# Snapshot age is the metric that matters. It stays true whatever went
-# wrong - a crashed run, an unloaded agent, a Mac that never woke - where
-# "did the last run succeed" only describes runs that happened.
-newest, count, repo_ok = 0, 0, 1
-try:
-    out = subprocess.run(['/opt/homebrew/bin/restic', 'snapshots', '--json'],
-                         env=env, capture_output=True, text=True,
-                         check=True, timeout=120).stdout
-    snaps = json.loads(out)
+
+def main():
+    os.umask(0o077)
+    env = dict(os.environ,
+               RESTIC_REPOSITORY=str(Path.home() / 'Backups/homelab/repository'),
+               RESTIC_PASSWORD_FILE=str(config / 'password'))
+
+    # Snapshot age is the metric that matters. It stays true whatever went
+    # wrong - a crashed run, an unloaded agent, a Mac that never woke - where
+    # "did the last run succeed" only describes runs that happened.
+    repo_ok = 1
+    try:
+        out = subprocess.run(['/opt/homebrew/bin/restic', 'snapshots', '--json'],
+                             env=env, capture_output=True, text=True,
+                             check=True, timeout=120).stdout
+        snaps = json.loads(out)
+    except Exception:
+        # Only a failure to list is "unreadable". A timestamp this script
+        # cannot parse is this script's problem, not the repository's.
+        repo_ok, snaps = 0, []
     count = len(snaps)
-    # restic emits RFC3339 with a numeric offset. fromisoformat handles that
-    # on 3.9 (it is the trailing "Z" form it cannot parse, which restic does
-    # not emit), and .timestamp() on an aware datetime needs no local-time
-    # correction - which is the whole reason not to hand-roll the offset.
-    for s in snaps:
-        newest = max(newest, datetime.datetime.fromisoformat(s['time']).timestamp())
-except Exception:
-    repo_ok = 0
+    newest = newest_snapshot(snaps)
 
-# launchd's own record of the last run. Distinguishes "ran and failed"
-# from "never ran", which the snapshot age alone cannot.
-exit_code, agent_loaded = -1, 0
-try:
-    out = subprocess.run(
-        ['launchctl', 'print', 'gui/%d/local.homelab.backup' % os.getuid()],
-        capture_output=True, text=True, timeout=30).stdout
-    if out.strip():
-        agent_loaded = 1
-        for line in out.splitlines():
-            if 'last exit code' in line:
-                value = line.split('=')[-1].strip().split(':')[0]
-                exit_code = int(value) if value.isdigit() else -1
-except Exception:
-    pass
+    # launchd's own record of the last run. Distinguishes "ran and failed"
+    # from "never ran", which the snapshot age alone cannot.
+    exit_code, agent_loaded = -1, 0
+    try:
+        out = subprocess.run(
+            ['launchctl', 'print', 'gui/%d/local.homelab.backup' % os.getuid()],
+            capture_output=True, text=True, timeout=30).stdout
+        if out.strip():
+            agent_loaded = 1
+            for line in out.splitlines():
+                if 'last exit code' in line:
+                    value = line.split('=')[-1].strip().split(':')[0]
+                    exit_code = int(value) if value.isdigit() else -1
+    except Exception:
+        pass
 
-body = """# HELP homelab_backup_last_snapshot_timestamp_seconds Newest restic snapshot, unix time.
+    body = """# HELP homelab_backup_last_snapshot_timestamp_seconds Newest restic snapshot, unix time.
 # TYPE homelab_backup_last_snapshot_timestamp_seconds gauge
 homelab_backup_last_snapshot_timestamp_seconds %d
 # HELP homelab_backup_snapshot_count Snapshots in the repository.
@@ -83,10 +120,10 @@ homelab_backup_agent_loaded %d
 homelab_backup_report_timestamp_seconds %d
 """ % (newest, count, repo_ok, exit_code, agent_loaded, time.time())
 
-# Rename into place on the Pi rather than writing directly: node_exporter
-# reads this directory on every scrape and a half-written file is a parse
-# error, which would look like the exporter breaking rather than a slow copy.
-remote = """set -eu
+    # Rename into place on the Pi rather than writing directly: node_exporter
+    # reads this directory on every scrape and a half-written file is a parse
+    # error, which would look like the exporter breaking rather than a slow copy.
+    remote = """set -eu
 umask 022
 dir=$(dirname %s)
 mkdir -p "$dir"
@@ -96,10 +133,14 @@ chmod 0644 "$tmp"
 mv "$tmp" %s
 """ % (shlex.quote(TEXTFILE), TEXTFILE, shlex.quote(TEXTFILE))
 
-subprocess.run(['ssh', '-o', 'BatchMode=yes', '-o', 'StrictHostKeyChecking=yes',
-                '-o', 'ConnectTimeout=15', PI, 'sh -c ' + shlex.quote(remote)],
-               input=body, text=True, check=True, timeout=120)
+    subprocess.run(['ssh', '-o', 'BatchMode=yes', '-o', 'StrictHostKeyChecking=yes',
+                    '-o', 'ConnectTimeout=15', PI, 'sh -c ' + shlex.quote(remote)],
+                   input=body, text=True, check=True, timeout=120)
 
-age = (time.time() - newest) / 3600 if newest else -1
-print('published: %d snapshots, newest %.1fh old, last exit %d'
-      % (count, age, exit_code), flush=True)
+    age = (time.time() - newest) / 3600 if newest else -1
+    print('published: %d snapshots, newest %.1fh old, last exit %d'
+          % (count, age, exit_code), flush=True)
+
+
+if __name__ == '__main__':
+    main()

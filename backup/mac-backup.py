@@ -14,6 +14,14 @@ restic = '/opt/homebrew/bin/restic'
 base.mkdir(parents=True, exist_ok=True)
 with (base / 'run.lock').open('w') as lock:
     fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    # Clear locks left by restic processes that no longer exist. Every restic
+    # call in these scripts has a subprocess timeout, and a timeout kills with
+    # SIGKILL, which gives restic no chance to remove its lock. One left on
+    # 2026-09-11 made every nightly integrity check fail for two nights with
+    # "repository is already locked", though the snapshots themselves saved.
+    # unlock only removes stale locks, so a rehearsal running at the same time
+    # keeps its own; the flock above already rules out a second backup.
+    subprocess.run([restic, 'unlock'], env=env, check=True, timeout=120)
     with tempfile.TemporaryDirectory(prefix='staging-', dir=base) as tmp:
         archive = Path(tmp) / 'pi.tar'
         with archive.open('wb') as out:
