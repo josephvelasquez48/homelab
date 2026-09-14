@@ -1,0 +1,22 @@
+name: Backup scripts
+
+on:
+  push:
+    branches: [main]
+    paths: ["backup/**", ".github/workflows/ci-backup.yml"]
+  pull_request:
+    paths: ["backup/**", ".github/workflows/ci-backup.yml"]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      # Python 3.9 because that is /usr/bin/python3 on the Mac, where these
+      # scripts run. The timestamp bug these tests cover only exists on 3.9;
+      # a newer interpreter would pass them against the broken code.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.9"
+      - run: pip install pytest
+      - run: python -m pytest -v backup/tests
