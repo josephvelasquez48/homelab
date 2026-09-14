@@ -101,8 +101,29 @@ def _keywords(text: str) -> list[str]:
     return list(seen)
 
 
+# A question longer than this many subject words is searched for its first
+# ones. Someone pasting a paragraph and asking about it names the subject
+# early, and a Xapian query of two hundred terms matches everything weakly.
+MAX_TERMS = 12
+
+
+def _stem(word: str) -> str:
+    """Just enough to match "vaccines" to the article "Vaccine".
+
+    Not a stemmer - Xapian stems its own queries. This is only for comparing
+    a question's words with titles, which are almost always singular. Found
+    by the evaluation: "how do vaccines work" judged every Simple English
+    result off topic and fell through to a worse answer from the full archive.
+    """
+    if len(word) > 4 and word.endswith("ies"):
+        return word[:-3] + "y"
+    if len(word) > 3 and word.endswith("s") and not word.endswith("ss"):
+        return word[:-1]
+    return word
+
+
 def _terms(text: str) -> set[str]:
-    return set(_keywords(text))
+    return {_stem(w) for w in _keywords(text)[:MAX_TERMS]}
 
 
 def _on_topic(question: str, titles: list[str]) -> bool:
@@ -163,7 +184,11 @@ async def health() -> dict:
 
 @app.get("/search")
 async def search(
-    q: str = Query(min_length=1, max_length=500),
+    # As long as a chat message may be. A lower cap here turned long
+    # questions into a 422 that the api, correctly, treats as "no sources" -
+    # so the lookup failed silently for exactly the questions with the most
+    # context in them.
+    q: str = Query(min_length=1, max_length=32000),
     k: int = Query(3, ge=1, le=10),
     chars: int = Query(DEFAULT_CHARS, ge=100, le=8000),
     book: str | None = None,
@@ -196,7 +221,7 @@ async def search(
     # The chat sends the question as typed. Xapian gets its subject words;
     # a question that is nothing but stop words is searched as written
     # rather than as an empty query.
-    xapian_q = " ".join(_keywords(q)) or q
+    xapian_q = " ".join(_keywords(q)[:MAX_TERMS]) or q[:200]
 
     for index, (name, archive) in enumerate(order):
         last = index == len(order) - 1

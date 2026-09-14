@@ -97,6 +97,39 @@ The column is nullable rather than defaulting to an empty array. "This turn
 did not search" and "this turn searched and found nothing" are different
 facts, and the column is the only place that distinction survives.
 
+### Measuring it
+
+`apps/zimsearch/eval` holds 40 labelled questions and a runner that scores
+one or more running instances against the real archives. It cannot run in
+CI, because the archive only exists on the Pi. Run it there before merging
+anything that changes query handling or the cascade:
+
+```
+python3 run.py http://127.0.0.1:8096=deployed http://127.0.0.1:8097=branch
+```
+
+Results on 2026-09-13, before and after subject-word search, the title
+check, and plural matching:
+
+| Questions | Right article first, before | After | In top three, after |
+|---|---|---|---|
+| Common topics | 5 of 15 | 11 of 15 | 13 of 15 |
+| Obscure topics | 8 of 15 | 15 of 15 | 15 of 15 |
+| Unusual phrasing | 3 of 10 | 6 of 10 | 8 of 10 |
+
+Two questions got worse. "what is the capital of Australia" found Canberra
+from the raw wording and now finds the Australian Capital Territory, and
+"inflation in economics" now ranks Stagflation above Inflation. Still
+wrong either way: a misspelling ("eifel tower", no spelling correction), a
+question whose answer is not its subject ("current president of France"),
+and non-English questions, which the English archives cannot answer.
+
+Under load with the pod's one-CPU limit the service handles about 50
+searches a second with no failures and memory flat around 130 MiB, far under
+its 1 GiB limit. Making the endpoint synchronous so FastAPI threads it was
+measured too: no throughput gain, since the limit is the CPU rather than the
+event loop, and twice the memory. It stays async.
+
 ### What this does not do
 
 - **No reranking.** Xapian ranks on term statistics and has no idea what the

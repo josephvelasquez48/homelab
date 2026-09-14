@@ -165,6 +165,39 @@ def test_a_question_of_only_stop_words_is_searched_as_written(mod):
     assert StubSearcher.queries == ["who was it"]
 
 
+def test_plurals_in_a_question_match_singular_titles(mod):
+    """Found by the evaluation: "vaccines" did not match the article "Vaccine"."""
+    assert mod._on_topic("how do vaccines work", ["RNA vaccine", "Vaccine"])
+    assert mod._on_topic("explain black holes", ["Black hole"])
+    assert mod._on_topic("what are galaxies", ["Galaxy"])
+    # A word ending in ss is not a plural.
+    assert mod._stem("glass") == "glass"
+
+
+def test_a_long_question_is_searched_for_its_first_subject_words(mod):
+    """A pasted paragraph must not become a two-hundred-term query."""
+    StubSearcher.queries.clear()
+    mod._archives.update({"wikipedia_en_simple_all_x": StubArchive(["Ada Lovelace"])})
+    question = "Ada Lovelace " + " ".join(f"word{i}" for i in range(300))
+
+    call(mod, q=question)
+
+    assert len(StubSearcher.queries[0].split()) == mod.MAX_TERMS
+    assert StubSearcher.queries[0].startswith("ada lovelace")
+
+
+def test_the_endpoint_accepts_anything_a_chat_message_can_hold():
+    """Below the chat's own limit, long questions got a 422 and silently no sources."""
+    import inspect
+
+    import app.main as m
+
+    limit = inspect.signature(m.search).parameters["q"].default
+    max_length = next(x.max_length for x in limit.metadata if hasattr(x, "max_length"))
+    # The api's MessageCreate allows 32000 characters.
+    assert max_length >= 32000
+
+
 def test_titles_split_on_punctuation(mod):
     """Article titles use en dashes; a query typed on a phone does not."""
     assert mod._on_topic("zermelo fraenkel axiom of choice", ["Zermelo–Fraenkel set theory"])
