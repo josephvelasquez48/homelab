@@ -51,9 +51,30 @@ the api to that node and cost its second replica.
 
 Two archives are tried in order rather than merged. Simple English answers
 when it has the topic, since its articles cost a fraction of the context on
-a 7B model, and the full archive covers the long tail it misses. Falling
-through is decided on hit count, not on relevance score, because Xapian
-scores are not comparable across separate indexes.
+a 7B model, and the full archive covers the long tail it misses.
+
+Deciding when to fall through took two attempts, both judged on the real
+archives rather than on test fixtures. Hit count alone never fell through:
+Xapian matches loosely enough that almost any question finds a few articles,
+so for "Treaty of Nerchinsk" Simple English answered with the year pages
+1680s, 1689 and 1685 while the full archive had the treaty itself. Relevance
+scores were not an option, since Xapian scores are not comparable across
+separate indexes. So an archive now has to return titles that name the
+subject: two of the question's subject words, or half of them.
+
+The larger problem was the query. The chat sent the question as typed, and
+the question words steered the index: "who was Ada Lovelace" returned
+Federico Menabrea, Charles Babbage and Nottingham from Simple English, and
+"explain the Kessler syndrome" returned lists of deaths. Xapian now gets the
+subject words only. Both changes together:
+
+| Question | Before | After |
+|---|---|---|
+| who was Ada Lovelace | Federico Menabrea (simple) | Ada Lovelace (simple) |
+| explain the Kessler syndrome | Deaths in May 2017 (simple) | Kessler Syndrome (simple) |
+| how does photosynthesis work | Electron transport chain (simple) | Photosynthesis (simple) |
+| What was the Treaty of Nerchinsk? | Kangxi Emperor (simple) | Treaty of Nerchinsk (full) |
+| what caused the Byzantine iconoclasm | History of the Catholic Church (simple) | Byzantine Iconoclasm (full) |
 
 Retrieval is opt-in per message. Most turns in a conversation are not
 lookups, and searching an encyclopedia for "say that again shorter" returns
