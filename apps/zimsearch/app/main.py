@@ -54,9 +54,22 @@ ARCHIVE_ORDER = [
 ]
 
 # Below this many hits, the concise archive is treated as not really having
-# the topic and the query falls through. A count rather than a relevance
-# score because Xapian scores are not comparable across separate indexes.
+# the topic and the query falls through.
 MIN_HITS = int(os.environ.get("MIN_HITS", "2"))
+
+# Words that say what kind of answer someone wants rather than what it is
+# about. Left in, they steer Xapian toward whatever article uses them most:
+# measured on the real Simple English archive, "who was Ada Lovelace"
+# returned Federico Menabrea, Charles Babbage and Nottingham, while "ada
+# lovelace" returned Ada Lovelace. "explain the Kessler syndrome" returned
+# lists of deaths. "work" and "important" are here for the same reason -
+# "how does photosynthesis work" found biochemists, not photosynthesis.
+_STOP = frozenset(
+    "a an and are as at be by can did do does explain describe for from how i "
+    "in is it me of on or tell the this to was were what when where which who "
+    "why with you about work works important mean means meaning happened".split()
+)
+_WORD = re.compile(r"\w+")
 
 app = FastAPI(title="ZIM Search")
 
@@ -77,6 +90,65 @@ def _load() -> dict[str, Archive]:
             except Exception:
                 continue
     return _archives
+
+
+def _keywords(text: str) -> list[str]:
+    """The words of a question that name its subject, in the order written."""
+    seen: dict[str, None] = {}
+    for w in _WORD.findall(text.lower()):
+        if len(w) > 1 and w not in _STOP:
+            seen.setdefault(w)
+    return list(seen)
+
+
+# A question longer than this many subject words is searched for its first
+# ones. Someone pasting a paragraph and asking about it names the subject
+# early, and a Xapian query of two hundred terms matches everything weakly.
+MAX_TERMS = 12
+
+
+def _stem(word: str) -> str:
+    """Just enough to match "vaccines" to the article "Vaccine".
+
+    Not a stemmer - Xapian stems its own queries. This is only for comparing
+    a question's words with titles, which are almost always singular. Found
+    by the evaluation: "how do vaccines work" judged every Simple English
+    result off topic and fell through to a worse answer from the full archive.
+    """
+    if len(word) > 4 and word.endswith("ies"):
+        return word[:-3] + "y"
+    if len(word) > 3 and word.endswith("s") and not word.endswith("ss"):
+        return word[:-1]
+    return word
+
+
+def _terms(text: str) -> set[str]:
+    return {_stem(w) for w in _keywords(text)[:MAX_TERMS]}
+
+
+def _on_topic(question: str, titles: list[str]) -> bool:
+    """Whether the top results are about the question, judged by their titles.
+
+    Hit count alone does not work, which was found on the real archives
+    rather than in tests. Xapian matches loosely enough that almost any
+    question finds two or more articles, so the concise archive always
+    "covered" the topic and the full one was never consulted. For "Treaty of
+    Nerchinsk", Simple English returned the articles 1680s, 1689 and 1685 -
+    pages that mention the year it was signed - and those were handed to the
+    model while the full archive had the treaty itself.
+
+    Titles rather than article text because every result matched the text;
+    that is why it was returned. A title naming the subject is the signal
+    Xapian's own ranking does not give. Two matching terms, or half of them,
+    counts as on topic: one term out of four is how "Treaty" alone would
+    claim to cover "the Treaty of Nerchinsk".
+    """
+    wanted = _terms(question)
+    if not wanted:
+        return True
+    seen = set().union(*(_terms(t) for t in titles)) if titles else set()
+    found = wanted & seen
+    return len(found) >= 2 or len(found) * 2 >= len(wanted)
 
 
 def _ordered(archives: dict[str, Archive]) -> list[tuple[str, Archive]]:
@@ -112,7 +184,11 @@ async def health() -> dict:
 
 @app.get("/search")
 async def search(
-    q: str = Query(min_length=1, max_length=500),
+    # As long as a chat message may be. A lower cap here turned long
+    # questions into a 422 that the api, correctly, treats as "no sources" -
+    # so the lookup failed silently for exactly the questions with the most
+    # context in them.
+    q: str = Query(min_length=1, max_length=32000),
     k: int = Query(3, ge=1, le=10),
     chars: int = Query(DEFAULT_CHARS, ge=100, le=8000),
     book: str | None = None,
@@ -142,11 +218,15 @@ async def search(
     order = [(book, archives[book])] if book else _ordered(archives)
     fetch = max(k, candidates)
     tried: list[str] = []
+    # The chat sends the question as typed. Xapian gets its subject words;
+    # a question that is nothing but stop words is searched as written
+    # rather than as an empty query.
+    xapian_q = " ".join(_keywords(q)[:MAX_TERMS]) or q[:200]
 
     for index, (name, archive) in enumerate(order):
         last = index == len(order) - 1
         try:
-            result = Searcher(archive).search(ZimQuery().set_query(q))
+            result = Searcher(archive).search(ZimQuery().set_query(xapian_q))
             paths = list(result.getResults(0, fetch))
         except Exception as exc:
             tried.append(f"{name} (error: {type(exc).__name__})")
@@ -159,10 +239,22 @@ async def search(
         if len(paths) < MIN_HITS and not last:
             continue
 
-        hits = []
+        entries = []
         for path in paths:
             try:
-                entry = archive.get_entry_by_path(path)
+                entries.append((path, archive.get_entry_by_path(path)))
+            except Exception:
+                continue
+        # Judged on what would be returned, not on the whole candidate list:
+        # an on-topic article at position 30 does not help an answer built
+        # from the first three.
+        if not last and not _on_topic(q, [e.title for _, e in entries[:k]]):
+            tried[-1] = f"{name} ({len(paths)} hits, none on topic)"
+            continue
+
+        hits = []
+        for path, entry in entries:
+            try:
                 text = _to_text(bytes(entry.get_item().content))
             except Exception:
                 continue
@@ -181,6 +273,7 @@ async def search(
 
         return {
             "query": q,
+            "searched_for": xapian_q,
             "answered_by": name,
             # Which archives were consulted and what each returned. Without
             # this a thin answer is indistinguishable from a broken cascade.
@@ -189,4 +282,11 @@ async def search(
             "results": hits[:k],
         }
 
-    return {"query": q, "answered_by": None, "tried": tried, "reranked": False, "results": []}
+    return {
+        "query": q,
+        "searched_for": xapian_q,
+        "answered_by": None,
+        "tried": tried,
+        "reranked": False,
+        "results": [],
+    }
