@@ -79,6 +79,27 @@ spec:
         prometheus.io/port: "8000"
         prometheus.io/path: "/metrics"
     spec:
+      # Both replicas sat on the Pi, because nothing moves a running pod and
+      # both were scheduled before m1-node existed. Two copies of the api on
+      # one machine are two copies of the same outage.
+      #
+      # ScheduleAnyway, not DoNotSchedule: m1-node is a VM on a laptop with
+      # FileVault, so it is gone after every restart until someone types a
+      # password. A hard constraint would leave the second replica Pending
+      # for as long as that takes, which is worse than both replicas sharing
+      # the Pi - exactly the state this is trying to improve on.
+      #
+      # This is not high availability. Postgres, Redis, Traefik and the
+      # control plane are all on the Pi, so losing the Pi still takes the
+      # whole lab down, and the surviving replica with it. What it buys is
+      # the idle node doing some work, and one replica surviving a drain,
+      # a kubelet restart, or an eviction on the other node.
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels: { app: api }
       containers:
         - name: api
           image: ghcr.io/josephvelasquez48/homelab-api:7bd672626aaa
