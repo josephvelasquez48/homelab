@@ -68,7 +68,18 @@ spec:
   replicas: 2
   strategy:
     type: RollingUpdate
-    rollingUpdate: { maxUnavailable: 0, maxSurge: 1 }
+    # Remove an old pod before starting its replacement, not after. With
+    # one api pod allowed per node and two nodes, a surged third pod has
+    # nowhere to go: maxSurge 1 with maxUnavailable 0 deadlocked the first
+    # rollout after the anti-affinity below went in. The new pod waited for
+    # a node with no api pod, and the old pod on that node waited for the
+    # new one to be ready - old pods match the anti-affinity too.
+    #
+    # The cost is one replica serving while each replacement starts. Never
+    # zero: maxUnavailable 1 of 2 keeps one running. When m1-node is away
+    # and only one pod runs, a rollout cannot remove it, so it stalls with
+    # that pod still serving.
+    rollingUpdate: { maxUnavailable: 1, maxSurge: 0 }
   selector:
     matchLabels: { app: api }
   template:
@@ -93,8 +104,8 @@ spec:
       # The cost is explicit: while m1-node is away - after every restart,
       # until someone types the FileVault password - the second replica has
       # nowhere to go and stays Pending, so the api runs as one replica on
-      # the Pi. A rolling update in that state stalls rather than breaking,
-      # because maxUnavailable is 0 and the old pod keeps serving.
+      # the Pi.
+      # A rolling update in that state stalls; see the strategy above.
       #
       # This is not high availability either way. Postgres, Redis, Traefik
       # and the control plane are all on the Pi, so losing the Pi takes the
