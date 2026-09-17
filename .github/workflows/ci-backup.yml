@@ -10,13 +10,18 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python: ["3.9", "3.14"]
     steps:
       - uses: actions/checkout@v6
-      # Python 3.9 because that is /usr/bin/python3 on the Mac, where these
-      # scripts run. The timestamp bug these tests cover only exists on 3.9;
-      # a newer interpreter would pass them against the broken code.
+      # 3.14 is Homebrew's Python on the Mac, which the LaunchAgents run.
+      # 3.9 is Apple's /usr/bin/python3, which they used to run and which a
+      # manual run may still use; the timestamp bug these tests cover only
+      # exists there, so a newer interpreter alone would pass them against
+      # the broken code.
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.9"
+          python-version: ${{ matrix.python }}
       - run: pip install pytest
       - run: python -m pytest -v backup/tests

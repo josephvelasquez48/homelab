@@ -82,11 +82,11 @@ Mac account, which also has the password and recovery key.
 ### Run and inspect (on the Mac)
 
 ```sh
-/usr/bin/python3 ~/.config/homelab-backup/mac-backup.py
+/opt/homebrew/bin/python3 ~/.config/homelab-backup/mac-backup.py
 export RESTIC_REPOSITORY="$HOME/Backups/homelab/repository"
 export RESTIC_PASSWORD_FILE="$HOME/.config/homelab-backup/password"
 /opt/homebrew/bin/restic snapshots
-/usr/bin/python3 ~/.config/homelab-backup/verify-mac.py
+/opt/homebrew/bin/python3 ~/.config/homelab-backup/verify-mac.py
 ```
 
 The last command repeats PostgreSQL, Redis, Grafana, AdGuard and SQLite
@@ -176,6 +176,34 @@ failure was invisible in the place anyone would look: `backup.log` still
 ended with "Backup and full repository integrity check succeeded", because
 a run that dies at the interpreter never writes anything. Only
 `launchctl print` showed the real exit code.
+
+It happened again on 2026-09-16, which is what made the cause clear.
+Xcode had updated itself from the App Store at 17:43 the day before, and
+every Xcode update revokes the license acceptance until someone runs
+`sudo xcodebuild -license` again. The Mac's developer directory pointed at
+Xcode.app - an app that had never been opened - so Apple's `python3`,
+`git` and compiler shims all stopped with it. The nightly backup and the
+hourly reporter both exited 69. The reporter failing the same way is why
+this time the alert that fired was `HomelabBackupReporterStale`, followed
+by `HomelabBackupStale` once the newest snapshot passed 26 hours.
+
+Both LaunchAgents now run Homebrew's Python (`/opt/homebrew/bin/python3`),
+which has no license gate. restic already came from Homebrew, so no new
+kind of dependency was added. To reinstall them over existing agents:
+
+```sh
+/opt/homebrew/bin/python3 install-schedule.py --replace
+/opt/homebrew/bin/python3 install-metrics-schedule.py --replace
+```
+
+That removes the backups' exposure. The prompt itself keeps coming back for
+anything else that goes through Apple's shims, like `git`, as long as the
+developer directory is Xcode.app. Pointing it at the Command Line Tools,
+which are installed and have no per-update license gate, ends that:
+
+```sh
+sudo xcode-select --switch /Library/Developer/CommandLineTools
+```
 
 `publish-backup-metrics.py` runs hourly on the Mac under its own
 LaunchAgent, `local.homelab.backup-metrics`, and publishes six gauges into

@@ -24,8 +24,10 @@ import time
 
 # restic writes Go's RFC3339Nano, which drops trailing zeros from the
 # fraction, so a timestamp can carry anywhere from one to nine digits after
-# the seconds. Python 3.9's fromisoformat - the Mac's /usr/bin/python3 -
-# accepts exactly three or six. 2026-09-12T03:00:14.69541-07:00 has five.
+# the seconds. Python 3.9's fromisoformat - /usr/bin/python3 on the Mac,
+# which ran this until 2026-09-16 - accepts exactly three or six.
+# 2026-09-12T03:00:14.69541-07:00 has five. The agents now use Homebrew's
+# newer Python, but this stays correct on 3.9 in case it runs there again.
 _RESTIC_TIME = re.compile(r"^(.*T\d\d:\d\d:\d\d)(?:\.(\d+))?(Z|[+-]\d\d:\d\d)$")
 
 
