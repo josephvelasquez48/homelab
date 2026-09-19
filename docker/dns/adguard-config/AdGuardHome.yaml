@@ -121,6 +121,8 @@ user_rules:
   - '@@||wf.com^'
   - '@@||eum-appdynamics.com^'
   - '@@||securepubads.g.doubleclick.net^'
+  - '@@||api.permutive.app^'
+  - '@@||s-video.innovid.com^'
 dhcp:
   enabled: false
   interface_name: ""
