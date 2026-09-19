@@ -123,6 +123,8 @@ user_rules:
   - '@@||securepubads.g.doubleclick.net^'
   - '@@||api.permutive.app^'
   - '@@||s-video.innovid.com^'
+  - '@@||pagead2.googlesyndication.com^'
+  - '@@||ravm.tv^'
 dhcp:
   enabled: false
   interface_name: ""
