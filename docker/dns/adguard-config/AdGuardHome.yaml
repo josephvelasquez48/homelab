@@ -120,6 +120,7 @@ whitelist_filters: []
 user_rules:
   - '@@||wf.com^'
   - '@@||eum-appdynamics.com^'
+  - '@@||telegraph.prd.api.discomax.com^'
 dhcp:
   enabled: false
   interface_name: ""
