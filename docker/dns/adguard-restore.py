@@ -60,7 +60,14 @@ subprocess.run(
      "sudo sh -c " + shlex.quote(remote_script)],
     input=rendered, text=True, check=True)
 
+# AdGuard takes a few seconds to load its filter lists after starting, and
+# a single lookup made the moment compose returns lands in that gap. It
+# reported "NOTHING" on 2026-09-18 while DNS was fine three seconds later,
+# which is the wrong thing to be told about the house's only resolver.
 check = subprocess.run(
-    ["ssh", "-o", "BatchMode=yes", PI, "dig @192.168.1.253 apple.com +short +time=5"],
+    ["ssh", "-o", "BatchMode=yes", PI,
+     "for i in 1 2 3 4 5 6 7 8 9 10; do"
+     " a=$(dig @192.168.1.253 apple.com +short +time=2 +tries=1 | tail -1);"
+     " [ -n \"$a\" ] && { echo \"$a after ${i} attempt(s)\"; exit 0; }; sleep 2; done"],
     capture_output=True, text=True).stdout.strip()
-print("resolution after restart: %s" % (check or "NOTHING - check the Pi"))
+print("resolution after restart: %s" % (check or "NOTHING after 20s - check the Pi"))

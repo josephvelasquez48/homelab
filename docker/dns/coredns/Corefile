@@ -51,6 +51,35 @@ home:53 {
 # 900 - so every device re-resolved everything roughly thirty times more
 # often than it needed to. That multiplied the loop above rather than
 # causing it, but it is why the network felt slow even between bursts.
+# The two Rokus skip AdGuard and resolve straight from the public resolvers.
+#
+# Free, ad-supported TV apps stop playing when their ad breaks cannot load.
+# ViX showed it step by step on 2026-09-18: each ad service unblocked
+# (Google's ad server, permutive, innovid, Roku's ravm.tv, pagead2) let it
+# get a little further before failing on the next. Unblocking those in
+# AdGuard lets the same ads through for every device in the house, and
+# AdGuard cannot scope a rule to one device: every lookup reaches it from
+# this CoreDNS, so it sees them all as 127.0.0.1. The split has to happen
+# here, where the client's address is still known.
+#
+# By address, so the Rokus need DHCP reservations on the router to keep
+# them. Without one, a Roku that gets a new lease is quietly back behind
+# AdGuard - and a different device that inherits one of these addresses
+# silently loses its ad blocking.
+#
+# view blocks must come before the default block for the same zone, which
+# is the one with no view. *.home and the private reverse zones are their
+# own server blocks above, so the Rokus still get those.
+.:53 {
+    view rokus {
+        expr incidr(client_ip(), '192.168.1.27/32') || incidr(client_ip(), '192.168.1.190/32')
+    }
+    forward . 1.1.1.1 8.8.8.8
+    cache 3600
+    log
+    errors
+}
+
 .:53 {
     forward . 127.0.0.1:5335
     cache 3600
