@@ -120,6 +120,7 @@ whitelist_filters: []
 user_rules:
   - '@@||wf.com^'
   - '@@||eum-appdynamics.com^'
+  - '@@||securepubads.g.doubleclick.net^'
 dhcp:
   enabled: false
   interface_name: ""
