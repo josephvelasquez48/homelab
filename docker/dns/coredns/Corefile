@@ -39,6 +39,42 @@ home:53 {
     errors
 }
 
+# The Fire TV skips AdGuard and resolves straight from the public resolvers.
+#
+# HBO Max on its ad-supported plan will not play with ad blocking on. On
+# 2026-09-19 the Fire TV was taken out of filtering for fifteen minutes as a
+# test, and Max played - it reached gcp.amer-free.prd.media.max.com and
+# streamed. Of the 126 names it used in that window, 40 are on AdGuard's
+# blocklist, nearly all video-ad serving and verification (Google's ad
+# network, The Trade Desk, DoubleVerify, Integral Ad Science, Innovid,
+# SpringServe, Tremor, Index Exchange). When filtering came back mid-stream
+# those were the names it failed on. Allowing forty ad networks in AdGuard
+# would bring their ads back to every device in the house, and AdGuard
+# cannot scope a rule to one device: every lookup reaches it from this
+# CoreDNS, so it sees 127.0.0.1 for all of them. The split has to happen
+# here, where the client's address is still known.
+#
+# The same arrangement was tried for the Rokus and ViX, and reverted: ViX
+# still failed with nothing blocked, so blocking was not its problem. Max is
+# the opposite case, shown by the test rather than assumed.
+#
+# By address, so the Fire TV needs a DHCP reservation on the router to keep
+# 192.168.1.69. Without one, a new lease quietly puts it back behind
+# AdGuard - and whatever device inherits the address loses its ad blocking.
+#
+# A view block has to come before the default block for the same zone, the
+# one with no view. *.home and the private reverse zones are their own
+# server blocks above, so the Fire TV still gets those.
+.:53 {
+    view firetv {
+        expr incidr(client_ip(), '192.168.1.69/32')
+    }
+    forward . 1.1.1.1 8.8.8.8
+    cache 3600
+    log
+    errors
+}
+
 # Everything else: hand off to AdGuard Home (127.0.0.1:5335, same host,
 # network_mode: host) for ad/tracker filtering + its own upstream
 # forwarding, instead of forwarding to a public resolver directly. The
