@@ -36,6 +36,7 @@ Config: %APPDATA%\\phone-bridge\\agent.json
 
     {"url": "https://phone.home:8443", "token": "<PHONE_AGENT_TOKEN from the Pi>"}
 """
+import ctypes
 import faulthandler
 import json
 import logging
@@ -64,9 +65,16 @@ CONFIG_DIR = Path(os.environ["APPDATA"]) / "phone-bridge"
 PROFILE_DIR = Path(os.environ["LOCALAPPDATA"]) / "phone-bridge" / "webview"
 CA_FILE = Path(__file__).resolve().parents[3] / "certificates" / "homelab-ca.crt"
 POLL_SECONDS = 1.0
-# 127.0.0.1 only: how a second copy (the desktop shortcut) tells the
-# running agent to open its window, and how it knows one is running.
-SHOW_PORT = 51871
+# Whether an agent is already running: a named mutex, which only this agent
+# ever creates. (A fixed TCP port used to double as this check, but it sat in
+# Windows' ephemeral range - any program's outgoing connection could be given
+# it, and then every start took that for a running agent and quit.)
+INSTANCE_MUTEX = "Local\phone-bridge-agent"
+ERROR_ALREADY_EXISTS = 183
+# How a second copy (the desktop shortcut) tells the running agent to open
+# its window: the running agent listens on 127.0.0.1 on a port Windows picks
+# and writes the number here.
+SHOW_PORT_FILE = CONFIG_DIR / "show-port"
 
 # JS run in the popup by the hotkeys: click the first of these buttons that
 # is actually visible (its row may be hidden), and say which one it was.
@@ -481,24 +489,38 @@ def allow_audio_without_a_click() -> None:
     edgechromium.EdgeChrome.__init__ = init
 
 
+def already_running() -> bool:
+    """Take the instance mutex; True if another agent holds it.
+
+    The handle is never closed - Windows releases it when this process exits,
+    however it exits.
+    """
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel32.CreateMutexW.restype = ctypes.c_void_p
+    if not kernel32.CreateMutexW(None, False, INSTANCE_MUTEX):
+        raise ctypes.WinError(ctypes.get_last_error())
+    return ctypes.get_last_error() == ERROR_ALREADY_EXISTS
+
+
 def ask_running_agent_to_show() -> bool:
     try:
-        with socket.create_connection(("127.0.0.1", SHOW_PORT), timeout=2) as s:
+        port = int(SHOW_PORT_FILE.read_text())
+        with socket.create_connection(("127.0.0.1", port), timeout=2) as s:
             s.sendall(b"show")
         return True
-    except OSError:
+    except (OSError, ValueError):
         return False
 
 
 def main() -> None:
-    try:
-        server = socket.create_server(("127.0.0.1", SHOW_PORT))
-    except OSError:
-        # One is running already: hand over (the desktop shortcut) or leave
-        # (a duplicate start at login).
-        if "--show" in sys.argv:
-            ask_running_agent_to_show()
+    if already_running():
+        # Hand over (the desktop shortcut) or leave (a duplicate start at login).
+        if "--show" in sys.argv and not ask_running_agent_to_show():
+            log.error("an agent is running but didn't answer the request to open its window")
         return
+    server = socket.create_server(("127.0.0.1", 0))
+    CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+    SHOW_PORT_FILE.write_text(str(server.getsockname()[1]))
     config = json.loads((CONFIG_DIR / "agent.json").read_text())
     pi = Pi(config)
     x, y = corner()
