@@ -42,7 +42,7 @@ CONFIG_DIR = Path(os.environ["APPDATA"]) / "phone-bridge"
 PROFILE_DIR = Path(os.environ["LOCALAPPDATA"]) / "phone-bridge" / "webview"
 CA_FILE = Path(__file__).resolve().parents[3] / "certificates" / "homelab-ca.crt"
 POLL_SECONDS = 1.0
-WIDTH, HEIGHT = 360, 340
+WIDTH, HEIGHT = 360, 400  # room for the call card plus the volume slider
 
 CONFIG_DIR.mkdir(parents=True, exist_ok=True)
 logging.basicConfig(
