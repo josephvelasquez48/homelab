@@ -88,21 +88,43 @@ def poll(pi: Pi, updates: queue.Queue) -> None:
             time.sleep(min(30, POLL_SECONDS * failures))
 
 
+# Ringtone: a marimba-style rising arpeggio (E5 G#5 B5 E6) played twice,
+# then a pause - the same pattern the phone page plays (app.js RINGTONE).
+# Not the 440+480 Hz US ringback tone this used to be, which is what a
+# *caller* hears and made an incoming call sound like an outgoing one.
+RINGTONE_NOTES = [659.25, 830.61, 987.77, 1318.51]
+NOTE_SECONDS = 0.13
+CYCLE_SECONDS = 2.6
+
+
+def marimba(freq: float, t: float) -> float:
+    """One struck note: fundamental plus the bar's ~4x overtone, fast attack, exponential decay."""
+    attack = min(1.0, t / 0.004)
+    return attack * (math.sin(2 * math.pi * freq * t) * math.exp(-t * 7)
+                     + 0.35 * math.sin(2 * math.pi * freq * 3.9 * t) * math.exp(-t * 22))
+
+
 def ring_wav() -> str:
-    """US-style ring (440+480 Hz, 1 s on, 2 s off) as a WAV winsound can loop."""
-    path = Path(tempfile.gettempdir()) / "phone-bridge-ring.wav"
+    """One ringtone cycle as a WAV winsound can loop."""
+    path = Path(tempfile.gettempdir()) / "phone-bridge-ringtone-v2.wav"
     if path.exists():
         return str(path)
-    rate = 16000
-    frames = bytearray()
-    for n in range(rate * 3):
-        v = 0.12 * (math.sin(2 * math.pi * 440 * n / rate) + math.sin(2 * math.pi * 480 * n / rate)) if n < rate else 0.0
-        frames += struct.pack("<h", int(v * 32767))
+    rate = 22050
+    samples = [0.0] * int(rate * CYCLE_SECONDS)
+    starts = [(i + rep * (len(RINGTONE_NOTES) + 1)) * NOTE_SECONDS for rep in range(2) for i in range(len(RINGTONE_NOTES))]
+    for n, start in enumerate(starts):
+        freq = RINGTONE_NOTES[n % len(RINGTONE_NOTES)]
+        first = int(start * rate)
+        for k in range(int(0.9 * rate)):
+            if first + k < len(samples):
+                samples[first + k] += marimba(freq, k / rate)
+    peak = max(abs(v) for v in samples) or 1.0
+    frames = b"".join(struct.pack("<h", int(v / peak * 0.5 * 32767)) for v in samples)
     with wave.open(str(path), "wb") as w:
         w.setnchannels(1)
         w.setsampwidth(2)
         w.setframerate(rate)
-        w.writeframes(bytes(frames))
+        w.writeframes(frames)
     return str(path)
 
 

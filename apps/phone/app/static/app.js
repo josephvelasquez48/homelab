@@ -110,21 +110,36 @@ function drawMeter() {
   requestAnimationFrame(drawMeter);
 }
 
+// Ringtone: a marimba-style rising arpeggio (E5 G#5 B5 E6) twice, then a
+// pause - the same pattern as the desktop ring agent (phone_agent.pyw).
+// Not the 440+480 Hz ringback it used to be, which is what a caller hears.
+const RINGTONE = { notes: [659.25, 830.61, 987.77, 1318.51], note: 0.13, cycle: 2.6 };
+
+function strike(ctx, freq, t) {
+  // Fundamental plus the bar's ~4x overtone, each with its own decay.
+  for (const [mult, level, decay] of [[1, 0.12, 0.9], [3.9, 0.04, 0.25]]) {
+    const o = ctx.createOscillator(); const g = ctx.createGain();
+    o.frequency.value = freq * mult;
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(level, t + 0.004);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + decay);
+    o.connect(g).connect(ctx.destination);
+    o.start(t); o.stop(t + decay + 0.05);
+  }
+}
+
 function startRinging() {
   if (ringer || !audio) return;
-  // Two-tone ring, 1 s on / 2 s off, built from oscillators so there's no file to load.
   const { ctx } = audio;
   const ring = () => {
-    const t = ctx.currentTime;
-    for (const f of [440, 480]) {
-      const o = ctx.createOscillator(); const g = ctx.createGain();
-      o.frequency.value = f; g.gain.value = 0.08;
-      o.connect(g).connect(ctx.destination);
-      o.start(t); o.stop(t + 1);
+    const t0 = ctx.currentTime + 0.05;
+    const n = RINGTONE.notes.length;
+    for (let rep = 0; rep < 2; rep++) {
+      RINGTONE.notes.forEach((f, i) => strike(ctx, f, t0 + (i + rep * (n + 1)) * RINGTONE.note));
     }
   };
   ring();
-  ringer = setInterval(ring, 3000);
+  ringer = setInterval(ring, RINGTONE.cycle * 1000);
 }
 
 function stopRinging() {
