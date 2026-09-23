@@ -18,7 +18,11 @@ def render(values: dict[str, float], counters: dict[tuple[str, str], int], help_
     lines = []
     for name, value in values.items():
         kind = "counter" if name.endswith("_total") else "gauge"
-        lines += [f"# HELP {name} {help_text.get(name, name)}", f"# TYPE {name} {kind}", f"{name} {value:g}"]
+        # repr, not :g - :g keeps 6 significant digits, which turned the
+        # update timestamp into 1.79013e+09 (~54 min "stale") and tripped
+        # PhoneBridgeDown on a healthy bridge.
+        text = repr(float(value)) if isinstance(value, float) else str(value)
+        lines += [f"# HELP {name} {help_text.get(name, name)}", f"# TYPE {name} {kind}", f"{name} {text}"]
     name = "phone_calls_total"
     lines += [f"# HELP {name} Finished calls by direction and outcome, from the call history", f"# TYPE {name} counter"]
     for (direction, outcome), n in sorted(counters.items()):
