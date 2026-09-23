@@ -5,6 +5,9 @@ const $ = (id) => document.getElementById(id);
 // just the call card. It tries to close itself once the call is over;
 // Firefox only honours that for windows a script opened.
 const POPUP = location.pathname === "/popup";
+// ?agent=1: embedded in the desktop ring agent's own window, which shows
+// and hides itself - so no self-closing, and no browser notifications.
+const AGENT = new URLSearchParams(location.search).has("agent");
 if (POPUP) document.body.classList.add("popup");
 let popupHadCall = false;
 let popupCloseTimer = null;
@@ -30,7 +33,7 @@ function connect(delay = 500) {
       return;
     }
     const msg = JSON.parse(e.data);
-    if (msg.type === "state") { render(msg); autoAnswer(); }
+    if (msg.type === "state") render(msg);
     if (msg.type === "error") showError(msg.message);
   };
   ws.onclose = (e) => {
@@ -89,7 +92,7 @@ async function enableAudio() {
     limiter.release.value = 0.15;
     player.connect(gain).connect(limiter).connect(ctx.destination);
     audio = { ctx, capture, player, gain, stream, analyser };
-    if ("Notification" in window && Notification.permission === "default") Notification.requestPermission();
+    if (!AGENT && "Notification" in window && Notification.permission === "default") Notification.requestPermission();
     send({ action: "audio-ready" });
     drawMeter();
     render(state);
@@ -183,7 +186,7 @@ function render(s) {
       popupHadCall = true;
       clearTimeout(popupCloseTimer);
       popupCloseTimer = null;
-    } else if (!popupCloseTimer) {
+    } else if (!popupCloseTimer && !AGENT) {
       popupCloseTimer = setTimeout(() => window.close(), popupHadCall ? 1500 : 4000);
     }
     $("popup-idle").hidden = !!call;
@@ -278,27 +281,6 @@ for (const [padId, onKey] of [
     b.textContent = k;
     b.onclick = () => onKey(k);
     $(padId).appendChild(b);
-  }
-}
-
-// Opened by the ring agent's Answer button: turn on PC audio and answer
-// without another click. Firefox only allows that without a click if this
-// site may use the mic (remembered) and autoplay audio; if it can't, the
-// normal Answer button is still there.
-const AUTO_ANSWER = new URLSearchParams(location.search).has("answer");
-let autoAnswered = false;
-
-async function autoAnswer() {
-  if (!AUTO_ANSWER || autoAnswered) return;
-  const call = currentCall();
-  if (!call || !(call.state === "incoming" || call.state === "waiting")) return;
-  autoAnswered = true;
-  history.replaceState(null, "", location.pathname);
-  const ok = await enableAudio();
-  if (ok && audio.ctx.state === "running") {
-    send({ action: "answer", call: call.path });
-  } else {
-    showError("Click Answer to start the call on this PC.");
   }
 }
 

@@ -1,18 +1,22 @@
-"""Desktop ring agent: a small always-on-top popup when the iPhone rings.
+"""Desktop ring agent: take the whole call in a small always-on-top window.
 
-Runs in the background on the Windows desktop (pythonw, started at login
-from the Startup folder - see docs/phone.md). A worker thread asks the Pi
-once a second whether a call is ringing. On a new ringing call - unless a
-browser page already has PC audio on, in which case that page rings by
-itself - it rings through the PC speakers and shows a popup with the
-caller and Answer / Decline.
+Runs in the background on the Windows desktop (pythonw from its own venv,
+started at login from the Startup folder - see docs/phone.md). A worker
+thread asks the Pi once a second whether a call is ringing. On a new
+ringing call - unless a browser page already has PC audio on, in which
+case that page rings by itself - it rings through the PC speakers and
+shows its window: the phone page's compact /popup view, embedded with
+pywebview on WebView2 (Windows' built-in web engine; no browser window
+opens). Answer, Decline, Mute, Keypad and Hang up all happen in there,
+and the page holds the mic and speakers, so the call gets the web
+engine's echo cancellation. The window hides itself when the call is
+over, and is blanked while hidden so it doesn't count as an open page.
 
-Decline hangs up straight from here. Answer opens the phone page in
-Firefox with ?answer=1: the browser has to be the one to answer, because
-it's what holds the mic and speakers, and the Pi only takes the call's
-audio once a page with audio on is connected.
+There's no login step: when the embedded page comes up on the login
+form, the agent signs it in with its token (POST /api/agent/session from
+inside the page) and reloads. The session lives in the agent's own
+WebView2 profile under %LOCALAPPDATA%.
 
-Standard library only (tkinter ships with python.org Windows builds).
 Config: %APPDATA%\\phone-bridge\\agent.json
 
     {"url": "https://phone.home:8443", "token": "<PHONE_AGENT_TOKEN from the Pi>"}
@@ -21,27 +25,24 @@ import json
 import logging
 import math
 import os
-import queue
 import ssl
 import struct
-import subprocess
 import tempfile
 import threading
 import time
-import tkinter as tk
 import urllib.error
 import urllib.request
 import wave
 import winsound
 from pathlib import Path
 
+import webview
+
 CONFIG_DIR = Path(os.environ["APPDATA"]) / "phone-bridge"
+PROFILE_DIR = Path(os.environ["LOCALAPPDATA"]) / "phone-bridge" / "webview"
 CA_FILE = Path(__file__).resolve().parents[3] / "certificates" / "homelab-ca.crt"
-FIREFOX_PATHS = [
-    Path(os.environ.get("ProgramFiles", r"C:\Program Files")) / "Mozilla Firefox/firefox.exe",
-    Path(os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)")) / "Mozilla Firefox/firefox.exe",
-]
 POLL_SECONDS = 1.0
+WIDTH, HEIGHT = 360, 340
 
 CONFIG_DIR.mkdir(parents=True, exist_ok=True)
 logging.basicConfig(
@@ -58,34 +59,12 @@ class Pi:
         self.token = config["token"]
         self.context = ssl.create_default_context(cafile=str(Path(config.get("cafile", CA_FILE))))
 
-    def _request(self, path: str, method: str = "GET"):
+    def status(self) -> dict:
         req = urllib.request.Request(
-            f"{self.url}{path}", method=method, headers={"Authorization": f"Bearer {self.token}"}
+            f"{self.url}/api/agent/ringing", headers={"Authorization": f"Bearer {self.token}"}
         )
         with urllib.request.urlopen(req, context=self.context, timeout=5) as r:
             return json.load(r)
-
-    def ringing(self) -> dict:
-        return self._request("/api/agent/ringing")
-
-    def decline(self) -> None:
-        self._request("/api/agent/decline", method="POST")
-
-
-def poll(pi: Pi, updates: queue.Queue) -> None:
-    """Worker thread: push the Pi's ringing status to the UI thread."""
-    failures = 0
-    while True:
-        try:
-            updates.put(pi.ringing())
-            failures = 0
-            time.sleep(POLL_SECONDS)
-        except (urllib.error.URLError, OSError, ValueError) as e:
-            failures += 1
-            if failures in (1, 10) or failures % 300 == 0:
-                log.warning("can't reach the Pi (%s failures): %s", failures, e)
-            updates.put({"ringing": None, "audioPages": 0})
-            time.sleep(min(30, POLL_SECONDS * failures))
 
 
 # Ringtone: a marimba-style rising arpeggio (E5 G#5 B5 E6) played twice,
@@ -128,52 +107,96 @@ def ring_wav() -> str:
     return str(path)
 
 
-def open_in_firefox(url: str) -> None:
-    firefox = next((p for p in FIREFOX_PATHS if p.exists()), None)
-    if firefox is None:
-        os.startfile(url)
-        return
-    subprocess.Popen([str(firefox), "--new-window", url])
+def corner() -> tuple[int, int]:
+    """Bottom-right, above the taskbar, like a notification."""
+    try:
+        screen = webview.screens[0]
+        return screen.width - WIDTH - 24, screen.height - HEIGHT - 72
+    except Exception:
+        return 100, 100
 
 
 class Agent:
-    BG, FG, MUTED = "#1b1e24", "#e8eaee", "#9aa1ad"
-
-    def __init__(self, pi: Pi):
+    def __init__(self, pi: Pi, window: webview.Window):
         self.pi = pi
-        self.root = tk.Tk()
-        self.root.withdraw()
-        self.updates: queue.Queue = queue.Queue()
-        self.popup: tk.Toplevel | None = None
-        self.popup_call: str | None = None
+        self.window = window
+        self.showing = False
         self.dismissed: set[str] = set()
         self.ringing = False
+        self._permissions_hooked = False
+        window.events.loaded += self.hook_permissions
+        window.events.loaded += self.sign_in
+        window.events.closing += self.on_closing
 
-    def run(self) -> None:
-        threading.Thread(target=poll, args=(self.pi, self.updates), daemon=True).start()
-        self.root.after(200, self.drain)
-        self.root.mainloop()
+    # -- WebView2 wiring ------------------------------------------------------
 
-    def drain(self) -> None:
-        status = None
-        while not self.updates.empty():
-            status = self.updates.get_nowait()
-        if status is not None:
-            self.apply(status)
-        self.root.after(200, self.drain)
+    def hook_permissions(self) -> None:
+        """Grant the phone page the microphone - nothing else, no other site.
 
-    def apply(self, status: dict) -> None:
+        pywebview 6.2.1 doesn't handle CoreWebView2.PermissionRequested, so
+        without this the embedded page would prompt (or be refused) every
+        time Answer asks for the mic.
+        """
+        if self._permissions_hooked:
+            return
+        from Microsoft.Web.WebView2.Core import CoreWebView2PermissionKind, CoreWebView2PermissionState
+
+        def on_request(sender, args):
+            same_site = str(args.Uri).startswith(self.pi.url + "/")
+            if same_site and args.PermissionKind == CoreWebView2PermissionKind.Microphone:
+                args.State = CoreWebView2PermissionState.Allow
+            else:
+                args.State = CoreWebView2PermissionState.Deny
+
+        self.window.native.browser.webview.CoreWebView2.PermissionRequested += on_request
+        self._permissions_hooked = True
+
+    def sign_in(self) -> None:
+        """If the page came up on the login form, sign in with the token and reload.
+
+        A same-origin fetch from the page itself, so the SameSite=Strict
+        session cookie is set in this window's profile and sent on the
+        reload. The token goes through evaluate_js, never a URL.
+        """
+        if not self.showing:
+            return
+        script = (
+            "(() => { if (!document.querySelector('form[action=\"/login\"]')) return;"
+            " fetch('/api/agent/session', {method: 'POST', headers: {Authorization: %s}})"
+            ".then(r => { if (r.ok) location.reload(); }); })()"
+        ) % json.dumps(f"Bearer {self.pi.token}")
+        self.window.evaluate_js(script)
+
+    def on_closing(self) -> bool:
+        # The window is reused for every call, so closing it only hides it.
+        # A ringing call is silenced (not declined); a call in progress keeps
+        # the window, since hiding it would leave no way to hang up.
+        threading.Thread(target=self._close_requested, daemon=True).start()
+        return False
+
+    def _close_requested(self) -> None:
+        status = self._status()
         call = status.get("ringing")
-        show = bool(call) and status.get("audioPages", 0) == 0 and call["path"] not in self.dismissed
-        if show and self.popup_call != call["path"]:
-            log.info("ringing: %s", call.get("name") or call.get("number") or "unknown")
-            self.show(call)
-        elif not show and self.popup is not None:
-            # Answered elsewhere, declined, missed, or a page turned audio on.
-            self.close()
-        if not call:
-            self.dismissed.clear()
-        self.set_ringing(show)
+        if call:
+            self.dismissed.add(call["path"])
+            self.hide()
+        elif not status.get("inCall"):
+            self.hide()
+
+    # -- show / hide ------------------------------------------------------------
+
+    def show(self) -> None:
+        self.showing = True
+        self.window.load_url(f"{self.pi.url}/popup?agent=1")
+        self.window.show()
+
+    def hide(self) -> None:
+        self.set_ringing(False)
+        self.showing = False
+        self.window.hide()
+        # Blank it: a hidden page still holding the mic would count as an
+        # open audio page, and the Pi would keep taking calls' audio for it.
+        self.window.load_url("about:blank")
 
     def set_ringing(self, on: bool) -> None:
         if on and not self.ringing:
@@ -182,65 +205,62 @@ class Agent:
             winsound.PlaySound(None, 0)
         self.ringing = on
 
-    def show(self, call: dict) -> None:
-        self.close()
-        self.popup_call = call["path"]
-        w = self.popup = tk.Toplevel(self.root, bg=self.BG, padx=16, pady=14)
-        w.title("Incoming call")
-        w.resizable(False, False)
-        w.attributes("-topmost", True)
-        w.protocol("WM_DELETE_WINDOW", lambda: self.dismiss(call["path"]))
+    # -- polling ------------------------------------------------------------------
 
-        tk.Label(w, text="Incoming call", bg=self.BG, fg=self.MUTED, font=("Segoe UI", 10)).pack(anchor="w")
-        who = call.get("name") or call.get("number") or "Unknown caller"
-        tk.Label(w, text=who, bg=self.BG, fg=self.FG, font=("Segoe UI Semibold", 16)).pack(anchor="w", pady=(2, 12))
-        row = tk.Frame(w, bg=self.BG)
-        row.pack(fill="x")
-        style = {"fg": "white", "bd": 0, "font": ("Segoe UI Semibold", 11), "padx": 18, "pady": 7, "cursor": "hand2"}
-        tk.Button(row, text="Answer", bg="#15803d", activebackground="#166534", command=self.answer, **style).pack(side="left", expand=True, fill="x", padx=(0, 6))
-        tk.Button(row, text="Decline", bg="#c2362b", activebackground="#991b1b", command=self.decline, **style).pack(side="left", expand=True, fill="x")
-
-        # Bottom-right, above the taskbar, like a notification.
-        w.update_idletasks()
-        x = w.winfo_screenwidth() - w.winfo_reqwidth() - 24
-        y = w.winfo_screenheight() - w.winfo_reqheight() - 90
-        w.geometry(f"+{x}+{y}")
-        w.lift()
-        w.focus_force()
-
-    def close(self) -> None:
-        if self.popup is not None:
-            self.popup.destroy()
-        self.popup = None
-        self.popup_call = None
-
-    def dismiss(self, path: str) -> None:
-        # Closing the popup silences it without declining the call.
-        self.dismissed.add(path)
-        self.close()
-        self.set_ringing(False)
-
-    def answer(self) -> None:
-        path = self.popup_call
-        self.dismiss(path)
-        open_in_firefox(f"{self.pi.url}/popup?answer=1")
-
-    def decline(self) -> None:
-        self.dismiss(self.popup_call)
-        threading.Thread(target=self._decline, daemon=True).start()
-
-    def _decline(self) -> None:
+    def _status(self) -> dict:
         try:
-            self.pi.decline()
-        except (urllib.error.URLError, OSError) as e:
-            log.warning("decline failed: %s", e)
+            return self.pi.status()
+        except (urllib.error.URLError, OSError, ValueError) as e:
+            log.warning("can't reach the Pi: %s", e)
+            return {}
+
+    def run(self) -> None:
+        log.info("watching %s", self.pi.url)
+        failures = 0
+        while True:
+            status = self._status()
+            failures = failures + 1 if not status else 0
+            try:
+                self.apply(status)
+            except Exception:
+                log.exception("update failed")
+            time.sleep(min(30, POLL_SECONDS * max(1, failures)))
+
+    def apply(self, status: dict) -> None:
+        call = status.get("ringing")
+        if not status.get("inCall"):
+            self.dismissed.clear()
+        wanted = bool(call) and call["path"] not in self.dismissed
+        if wanted and not self.showing and status.get("audioPages", 0) == 0:
+            log.info("ringing: %s", call.get("name") or call.get("number") or "unknown")
+            self.show()
+        # Once answered here, this window's page is the audio page, so the
+        # call is "ours" while inCall and audioPages hold. Answered on the
+        # phone instead, nobody turned audio on - nothing left to show.
+        still_needed = wanted or (status.get("inCall") and status.get("audioPages", 0) > 0)
+        if self.showing and not still_needed:
+            self.hide()
+        self.set_ringing(self.showing and wanted)
 
 
 def main() -> None:
     config = json.loads((CONFIG_DIR / "agent.json").read_text())
     pi = Pi(config)
-    log.info("watching %s", pi.url)
-    Agent(pi).run()
+    x, y = corner()
+    window = webview.create_window(
+        "Phone",
+        url="about:blank",
+        width=WIDTH,
+        height=HEIGHT,
+        x=x,
+        y=y,
+        on_top=True,
+        hidden=True,
+        background_color="#111317",
+    )
+    agent = Agent(pi, window)
+    PROFILE_DIR.mkdir(parents=True, exist_ok=True)
+    webview.start(agent.run, private_mode=False, storage_path=str(PROFILE_DIR))
 
 
 if __name__ == "__main__":

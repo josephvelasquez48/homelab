@@ -140,19 +140,32 @@ stays there.
 
 ## The ring agent
 
-`apps/phone/agent/phone_agent.pyw`, on the desktop. Polls
-`/api/agent/ringing` once a second with a bearer token
-(`PHONE_AGENT_TOKEN`); on a new ringing call, if no page has PC audio on,
-it plays a ring and shows a small always-on-top popup. The token can read
-ringing status and decline a *ringing* call - nothing else. It can't
-answer, dial, or end a call in progress.
+`apps/phone/agent/phone_agent.pyw`, on the desktop, in its own venv with
+pywebview. Polls `/api/agent/ringing` once a second with a bearer token
+(`PHONE_AGENT_TOKEN`). On a new ringing call, if no page has PC audio on,
+it plays the ringtone and shows a small always-on-top window, bottom
+right: the page's compact `/popup?agent=1` view embedded in WebView2
+(Windows' built-in web engine - no browser window opens). The whole call
+happens there: Answer/Decline, then Mute, Keypad and Hang up. The page
+holds the mic and speakers, so it gets the web engine's echo
+cancellation, which is why this embeds a web view rather than doing
+audio natively.
 
-Answer opens `https://phone.home:8443/popup?answer=1` in Firefox rather
-than answering from the agent: the browser holds the mic and speakers,
-and the Pi only accepts the call's audio once such a page is connected.
-Firefox only lets the page start audio without a click if the site has
-a remembered mic permission and autoplay allowed; otherwise the page asks
-for one click on Answer.
+- **No login step.** If the embedded page comes up on the login form,
+  the agent signs it in: a same-origin `fetch` to `/api/agent/session`
+  with the token, run inside the page via `evaluate_js`, then a reload.
+  The token never goes in a URL, and the cookie lands in the agent's
+  own WebView2 profile (`%LOCALAPPDATA%\phone-bridge\webview`). That
+  makes the token equivalent to the password; it lives only in the
+  desktop user's `%APPDATA%`.
+- **Mic permission.** pywebview 6.2.1 doesn't handle WebView2's
+  `PermissionRequested`, so the agent does: microphone for
+  `phone.home`, deny everything else.
+- **Hiding.** The window hides when the call is over, or when it was
+  answered on the phone instead, and is blanked while hidden so it
+  doesn't count as an open audio page. Closing it silences a ringing
+  call without declining; during a call it stays, since hiding it would
+  leave no way to hang up.
 
 ## Setup
 

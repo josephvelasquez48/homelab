@@ -25,9 +25,10 @@ STATIC = Path(__file__).parent / "static"
 PASSWORD = os.environ.get("PHONE_PASSWORD", "")
 # A per-start random key is fine: a restart only means logging in again.
 SESSION_SECRET = os.environ.get("PHONE_SESSION_SECRET") or secrets.token_hex(32)
-# For the desktop ring agent (agent/phone_agent.pyw). It can see whether a
-# call is ringing and decline it - nothing else. Answering happens in the
-# browser, which still needs the normal login.
+# For the desktop ring agent (agent/phone_agent.pyw): polling whether a
+# call is ringing, and signing its embedded window in (/api/agent/session)
+# so the popup has no login step. That makes it equivalent to the
+# password - it lives only in the desktop user's %APPDATA%.
 AGENT_TOKEN = os.environ.get("PHONE_AGENT_TOKEN", "")
 
 hub = Hub()
@@ -88,21 +89,20 @@ async def agent_ringing():
     call = ringing_call()
     return {
         "ringing": call.__dict__ if call else None,
+        # Any call not yet over - the agent keeps its window up for a call
+        # answered in it, and hides it once there's nothing left.
+        "inCall": any(c.state != "disconnected" for c in hub.tel.state.calls),
         # A page with PC audio on already rings by itself; the agent stays quiet.
         "audioPages": len(hub.audio_clients),
     }
 
 
-@app.post("/api/agent/decline", dependencies=[Depends(require_agent)])
-async def agent_decline():
-    # Only ever the ringing call: the token can turn a call away, not end
-    # one that's in progress.
-    call = ringing_call()
-    if call is None:
-        raise HTTPException(status_code=409, detail="nothing ringing")
-    error = await hub.command(None, {"action": "hangup", "call": call.path})
-    if error:
-        raise HTTPException(status_code=502, detail=error)
+@app.post("/api/agent/session", dependencies=[Depends(require_agent)])
+async def agent_session(request: Request):
+    # The ring agent's embedded window signs itself in with its token, so
+    # there's no login step in the popup. Called with fetch() from the page
+    # the agent loaded, so the cookie lands in that window's own profile.
+    request.session["authenticated"] = True
     return {"ok": True}
 
 

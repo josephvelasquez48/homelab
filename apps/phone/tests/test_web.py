@@ -8,6 +8,7 @@ import app.main as main
 @pytest.fixture
 def client(monkeypatch):
     monkeypatch.setattr(main, "PASSWORD", "correct horse")
+    monkeypatch.setattr(main, "AGENT_TOKEN", "agent-token")
 
     async def no_hub():
         pass
@@ -62,3 +63,21 @@ def test_static_allowlist(client):
     assert client.get("/static/app.js").status_code == 200
     r = client.get("/static/../main.py", follow_redirects=False)
     assert r.status_code in (303, 404)
+
+
+def test_agent_session_needs_the_token(client):
+    assert client.post("/api/agent/session").status_code == 401
+    assert client.post("/api/agent/session", headers={"Authorization": "Bearer nope"}).status_code == 401
+    assert 'action="/login"' in client.get("/popup").text
+
+
+def test_agent_session_signs_the_page_in(client):
+    r = client.post("/api/agent/session", headers={"Authorization": "Bearer agent-token"})
+    assert r.status_code == 200
+    assert "samesite=strict" in r.headers["set-cookie"].lower()
+    assert 'id="call-card"' in client.get("/popup").text
+
+
+def test_no_agent_token_configured_means_no_agent_session(client, monkeypatch):
+    monkeypatch.setattr(main, "AGENT_TOKEN", "")
+    assert client.post("/api/agent/session", headers={"Authorization": "Bearer "}).status_code == 401
