@@ -16,7 +16,11 @@ from fastapi import Depends, FastAPI, Form, Header, HTTPException, Request, WebS
 from fastapi.responses import FileResponse, RedirectResponse
 from starlette.middleware.sessions import SessionMiddleware
 
+from app.contacts import Contacts
+from app.history import CallLog
 from app.hub import Hub
+from app.messages import Messages
+from app.reconnect import Reconnector
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
 log = logging.getLogger("phone")
@@ -31,7 +35,17 @@ SESSION_SECRET = os.environ.get("PHONE_SESSION_SECRET") or secrets.token_hex(32)
 # password - it lives only in the desktop user's %APPDATA%.
 AGENT_TOKEN = os.environ.get("PHONE_AGENT_TOKEN", "")
 
+DATA = Path(os.environ.get("PHONE_DATA", Path.home() / ".local/share/phone-bridge"))
+CONFIG = Path.home() / ".config/phone-bridge"
+
 hub = Hub()
+if os.environ.get("PHONE_EXTRAS", "1") == "1":
+    # Off in tests (conftest) - these reach for Bluetooth, disk and D-Bus.
+    hub.contacts = Contacts(CONFIG / "contacts.json")
+    hub.messages = Messages()
+    hub.history = CallLog(DATA / "calls.db")
+    hub.reconnector = Reconnector(lambda: hub.tel.state.connected)
+    hub.write_metrics = True
 
 
 @asynccontextmanager
@@ -95,8 +109,12 @@ async def agent_ringing():
         # can be moved to the PC at any point.
         "call": live.__dict__ if live else None,
         "inCall": live is not None,
+        "connected": hub.tel.state.connected,  # for the tray icon
         # A page with PC audio on already rings by itself; the agent stays quiet.
         "audioPages": len(hub.audio_clients),
+        # For desktop notifications: the agent remembers which it has shown.
+        "missed": hub.history.last_missed() if hub.history else None,
+        "texts": list(hub.messages.recent)[:5] if hub.messages else [],
     }
 
 

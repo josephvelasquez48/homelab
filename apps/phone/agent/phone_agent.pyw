@@ -14,6 +14,12 @@ engine's echo cancellation. For a call on the iPhone it offers "Move
 call audio to this PC". The window hides itself when the call is over,
 and is blanked while hidden so it doesn't count as an open page.
 
+It also keeps a tray icon (iPhone connected / on a call / not connected,
+a menu to open the page or pause popups, and notifications for missed
+calls and new texts) and system-wide hotkeys: Ctrl+Alt+A answers (or
+moves a call's audio to the PC), Ctrl+Alt+H declines or hangs up,
+Ctrl+Alt+M mutes. See tray.py and hotkeys.py.
+
 There's no login step: when the embedded page comes up on the login
 form, the agent signs it in with its token (POST /api/agent/session from
 inside the page) and reloads. The session lives in the agent's own
@@ -27,6 +33,7 @@ import json
 import logging
 import math
 import os
+import subprocess
 import ssl
 import struct
 import tempfile
@@ -40,10 +47,24 @@ from pathlib import Path
 
 import webview
 
+import hotkeys
+from tray import AMBER, GREEN, GREY, Tray
+
 CONFIG_DIR = Path(os.environ["APPDATA"]) / "phone-bridge"
 PROFILE_DIR = Path(os.environ["LOCALAPPDATA"]) / "phone-bridge" / "webview"
 CA_FILE = Path(__file__).resolve().parents[3] / "certificates" / "homelab-ca.crt"
 POLL_SECONDS = 1.0
+FIREFOX = Path(os.environ.get("ProgramFiles", r"C:\Program Files")) / "Mozilla Firefox" / "firefox.exe"
+
+# JS run in the popup by the hotkeys: click the first of these buttons that
+# is actually visible (its row may be hidden), and say which one it was.
+CLICK_FIRST_VISIBLE = """(() => {
+  for (const id of %s) {
+    const b = document.getElementById(id);
+    if (b && !b.closest('[hidden]')) { b.click(); return id; }
+  }
+  return null;
+})()"""
 WIDTH, HEIGHT = 360, 400  # room for the call card plus the volume slider
 
 CONFIG_DIR.mkdir(parents=True, exist_ok=True)
@@ -126,6 +147,14 @@ class Agent:
         self.dismissed: set[str] = set()
         self.ringing = False
         self._permissions_hooked = False
+        self.paused = False
+        self.quitting = False
+        self.status_text = "Starting..."
+        self.tray = Tray(self)
+        # Notification bookkeeping: None until the first poll, so what
+        # already happened before the agent started isn't announced.
+        self._seen_missed: int | None = None
+        self._seen_texts: set[str] | None = None
         window.events.loaded += self.hook_permissions
         window.events.loaded += self.sign_in
         window.events.closing += self.on_closing
@@ -180,6 +209,8 @@ class Agent:
         self.window.evaluate_js(script)
 
     def on_closing(self) -> bool:
+        if self.quitting:
+            return True
         # The window is reused for every call, so closing it only hides it.
         # A ringing call is silenced (not declined); a call in progress keeps
         # the window, since hiding it would leave no way to hang up.
@@ -250,6 +281,8 @@ class Agent:
             time.sleep(min(30, POLL_SECONDS * max(1, failures)))
 
     def apply(self, status: dict) -> None:
+        self.update_tray(status)
+        self.notify_new(status)
         # Shown for every call - ringing, answered on the iPhone, or dialed
         # from it - so its audio can be moved to the PC at any point, until
         # the call ends or the window is closed for that call.
@@ -263,12 +296,115 @@ class Agent:
             if self.showing:
                 self.hide()
             return
+        if self.paused and not self.showing:
+            return
         if not self.showing:
             log.info("%s call: %s", call.get("state"), call.get("name") or call.get("number") or "unknown")
             self.show()
         # Ring while it rings - unless a page with PC audio on is open, which
         # rings by itself.
         self.set_ringing(bool(status.get("ringing")) and status.get("audioPages", 0) == 0)
+
+
+    # -- tray, notifications, hotkeys ---------------------------------------------
+
+    def update_tray(self, status: dict) -> None:
+        call = status.get("call")
+        if not status:
+            color, text = GREY, "Can't reach the Pi"
+        elif call:
+            who = call.get("name") or call.get("number") or "unknown"
+            color, text = AMBER, ("Ringing: " if status.get("ringing") else "On a call: ") + who
+        elif status.get("connected"):
+            color, text = GREEN, "iPhone connected"
+        else:
+            color, text = GREY, "iPhone not connected"
+        self.status_text = text + (" (popups paused)" if self.paused else "")
+        self.tray.update(color, "Phone - " + self.status_text)
+
+    def notify_new(self, status: dict) -> None:
+        if not status:
+            return
+        missed = status.get("missed")
+        texts = status.get("texts") or []
+        text_keys = {f"{t['id']}@{t['received']}" for t in texts}
+        if self._seen_texts is None:  # first poll: remember, don't announce
+            self._seen_missed = missed["id"] if missed else 0
+            self._seen_texts = text_keys
+            return
+        if missed and missed["id"] != self._seen_missed:
+            self._seen_missed = missed["id"]
+            who = missed.get("name") or missed.get("number") or "Unknown caller"
+            self.tray.notify("Missed call", who)
+        for t in texts:
+            key = f"{t['id']}@{t['received']}"
+            if key not in self._seen_texts:
+                self._seen_texts.add(key)
+                self.tray.notify(t.get("name") or t.get("from") or "New text", t.get("text") or "")
+
+    def open_page(self) -> None:
+        if FIREFOX.exists():
+            subprocess.Popen([str(FIREFOX), "--new-window", self.pi.url])
+        else:
+            os.startfile(self.pi.url)
+
+    def toggle_pause(self) -> None:
+        self.paused = not self.paused
+        log.info("popups %s", "paused" if self.paused else "resumed")
+        if self.paused and self.showing and not self._holds_call_audio():
+            self.hide()
+
+    def quit(self) -> None:
+        log.info("quitting")
+        self.quitting = True
+        self.set_ringing(False)
+        self.tray.stop()
+        self.window.destroy()
+
+    def _press(self, *button_ids: str) -> None:
+        """Hotkey action: bring up the popup for the live call and click a button in it."""
+        call = self._status().get("call")
+        if not call:
+            return
+        self.dismissed.discard(call["path"])
+        if not self.showing:
+            self.show()
+        script = CLICK_FIRST_VISIBLE % json.dumps(list(button_ids))
+        for _ in range(30):  # the page may still be loading or signing in
+            try:
+                if self.window.evaluate_js(script):
+                    return
+            except Exception:
+                pass
+            time.sleep(0.3)
+        log.warning("hotkey found none of %s to press", button_ids)
+
+    def start_hotkeys(self) -> None:
+        actions = {
+            "answer (Ctrl+Alt+A)": lambda: self._press("answer", "to-pc"),
+            "hang up (Ctrl+Alt+H)": lambda: self._press("decline", "hangup"),
+            "mute (Ctrl+Alt+M)": lambda: self._press("mute"),
+        }
+        hotkeys.listen({name: (*keys, actions[name]) for name, keys in hotkeys.CALL_HOTKEYS.items()})
+
+
+def allow_audio_without_a_click() -> None:
+    """Let the popup start audio from a hotkey, not only from a mouse click.
+
+    Chromium's autoplay policy keeps an AudioContext suspended until a
+    user gesture, and a hotkey isn't one to the page. pywebview offers no
+    way to add WebView2 browser arguments, so extend the ones it sets once
+    it has built them. Only this agent's embedded window is affected.
+    """
+    from webview.platforms import edgechromium
+
+    original = edgechromium.EdgeChrome.__init__
+
+    def init(self, *args, **kwargs):
+        original(self, *args, **kwargs)
+        self.webview.CreationProperties.AdditionalBrowserArguments += " --autoplay-policy=no-user-gesture-required"
+
+    edgechromium.EdgeChrome.__init__ = init
 
 
 def main() -> None:
@@ -287,6 +423,9 @@ def main() -> None:
         background_color="#111317",
     )
     agent = Agent(pi, window)
+    agent.tray.start()
+    agent.start_hotkeys()
+    allow_audio_without_a_click()
     PROFILE_DIR.mkdir(parents=True, exist_ok=True)
     webview.start(agent.run, private_mode=False, storage_path=str(PROFILE_DIR))
 

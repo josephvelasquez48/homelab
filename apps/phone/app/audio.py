@@ -14,6 +14,7 @@ the caller to themselves; and pw-record, when its target is missing,
 silently falls back to recording the default sink - silence that looks
 exactly like a broken call. See docs/phone.md.
 """
+import array
 import asyncio
 import json
 import logging
@@ -39,6 +40,12 @@ async def _run(*args: str) -> str:
     if proc.returncode:
         raise RuntimeError(f"{args[0]} failed: {err.decode().strip()}")
     return out.decode()
+
+
+def peak(pcm: bytes) -> int:
+    """Largest absolute sample in s16le PCM (20 ms frames: cheap enough per chunk)."""
+    samples = array.array("h", pcm[: len(pcm) // 2 * 2])
+    return max((abs(v) for v in samples), default=0)
 
 
 def find_bluez_nodes(dump: list) -> dict[str, int]:
@@ -79,6 +86,16 @@ class AudioBridge:
     def __init__(self):
         self.rx: asyncio.subprocess.Process | None = None
         self.tx: asyncio.subprocess.Process | None = None
+        # Loudest sample each way since take_peaks(), for the metrics: a
+        # bridged call whose tx stays ~0 is the "they can't hear me" case
+        # (a sleeping or wrong mic), rx ~0 the "I can't hear them" one.
+        self.rx_peak = 0
+        self.tx_peak = 0
+
+    def take_peaks(self) -> tuple[int, int]:
+        peaks = (self.rx_peak, self.tx_peak)
+        self.rx_peak = self.tx_peak = 0
+        return peaks
 
     @property
     def running(self) -> bool:
@@ -135,15 +152,18 @@ class AudioBridge:
         if not self.rx:
             return b""
         try:
-            return await self.rx.stdout.readexactly(CHUNK_BYTES)
+            chunk = await self.rx.stdout.readexactly(CHUNK_BYTES)
         except (asyncio.IncompleteReadError, ConnectionResetError):
             return b""
+        self.rx_peak = max(self.rx_peak, peak(chunk))
+        return chunk
 
     def write(self, pcm: bytes) -> None:
         if not self.tx or self.tx.stdin.is_closing():
             return
         if self.tx.stdin.transport.get_write_buffer_size() > MAX_TX_BACKLOG:
             return
+        self.tx_peak = max(self.tx_peak, peak(pcm))
         self.tx.stdin.write(pcm)
 
     async def stop(self) -> None:

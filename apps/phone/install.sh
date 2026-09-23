@@ -37,6 +37,18 @@ if ! grep -q '^PHONE_AGENT_TOKEN=' "$CONF/env"; then
   echo "Ring agent token: $(grep '^PHONE_AGENT_TOKEN=' "$CONF/env" | cut -d= -f2-)"
 fi
 
+# Contacts and text notifications talk to the phone over OBEX.
+dpkg -s bluez-obexd >/dev/null 2>&1 || sudo apt-get install -y bluez-obexd
+
+# "Send call audio to iPhone" drops the audio link with an HCI command,
+# which needs root: a root-owned script, and sudo for exactly that script.
+sudo install -o root -g root -m 755 "$APP_DIR/release-sco.sh" /usr/local/sbin/phone-bridge-release-sco
+sudoers_tmp="$(mktemp)"
+echo "$USER ALL=(root) NOPASSWD: /usr/local/sbin/phone-bridge-release-sco" > "$sudoers_tmp"
+sudo visudo -cf "$sudoers_tmp" >/dev/null
+sudo install -o root -g root -m 440 "$sudoers_tmp" /etc/sudoers.d/phone-bridge
+rm -f "$sudoers_tmp"
+
 [[ -x "$VENV/bin/python" ]] || python3 -m venv "$VENV"
 "$VENV/bin/pip" install --quiet --upgrade "$APP_DIR"
 
