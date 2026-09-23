@@ -4,24 +4,42 @@
 const WIRE_RATE = 16000;
 const FRAME = 320;
 
-// Mic -> Pi. Box-average decimation: crude, but the far end of this is an
-// 8 kHz CVSD phone line, so anything past 4 kHz is thrown away regardless.
+// Mic -> Pi. The call is wideband (mSBC, 16 kHz), so band-limit to 7 kHz
+// with a windowed-sinc low-pass before decimating: a plain box average
+// rolls off the top of the band and folds everything above 8 kHz back
+// into it. The filter only runs at output samples (16k x 63 taps/s).
+const TAPS = 63;
 class Capture extends AudioWorkletProcessor {
   constructor() {
     super();
     this.ratio = sampleRate / WIRE_RATE;
-    this.pos = 0; this.acc = 0; this.count = 0;
+    const fc = 7000 / sampleRate;
+    this.h = new Float32Array(TAPS);
+    let sum = 0;
+    for (let i = 0; i < TAPS; i++) {
+      const m = i - (TAPS - 1) / 2;
+      const sinc = m === 0 ? 2 * fc : Math.sin(2 * Math.PI * fc * m) / (Math.PI * m);
+      const blackman = 0.42 - 0.5 * Math.cos((2 * Math.PI * i) / (TAPS - 1)) + 0.08 * Math.cos((4 * Math.PI * i) / (TAPS - 1));
+      this.h[i] = sinc * blackman;
+      sum += this.h[i];
+    }
+    for (let i = 0; i < TAPS; i++) this.h[i] /= sum;
+    this.hist = new Float32Array(TAPS); this.hpos = 0;
+    this.pos = 0;
     this.buf = new Int16Array(FRAME); this.n = 0;
   }
   process(inputs) {
     const ch = inputs[0] && inputs[0][0];
     if (!ch) return true;
     for (let i = 0; i < ch.length; i++) {
-      this.acc += ch[i]; this.count++; this.pos += 1;
+      this.hist[this.hpos] = ch[i];
+      this.hpos = (this.hpos + 1) % TAPS;
+      this.pos += 1;
       if (this.pos >= this.ratio) {
         this.pos -= this.ratio;
-        const v = Math.max(-1, Math.min(1, this.acc / this.count));
-        this.acc = 0; this.count = 0;
+        let acc = 0;
+        for (let k = 0, j = this.hpos; k < TAPS; k++, j = (j + 1) % TAPS) acc += this.h[k] * this.hist[j];
+        const v = Math.max(-1, Math.min(1, acc));
         this.buf[this.n++] = v * 32767;
         if (this.n === FRAME) {
           this.port.postMessage(this.buf.buffer, [this.buf.buffer]);

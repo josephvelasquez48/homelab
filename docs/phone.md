@@ -56,13 +56,22 @@ never installed.
 Each of these made a working call look broken, and each is now pinned in
 `apps/phone/wireplumber/51-phone-bridge.conf` or the bridge code.
 
-1. **Wideband voice decoded to silence.** The phone negotiated mSBC
-   (16 kHz). PipeWire logged `spa.bluez5.source.sco: decode failed: -3`
-   for every frame and the kernel logged `Unexpected continuation frame`:
-   the Pi 5's Bluetooth sits behind a UART and mSBC frames arrive split
-   across HCI packets. Fixed with `bluez5.enable-msbc = false` - CVSD,
-   8 kHz, ordinary phone-line quality. After the change: codec 1 (CVSD)
-   and zero decode failures during a call.
+1. **A wrong diagnosis: wideband voice blamed for a silent call.** The
+   first call negotiated mSBC (16 kHz) and measured as near-silence
+   (peaks 4-28 of 32767). The journal had `spa.bluez5.source.sco: decode
+   failed: -3` and the kernel `Unexpected continuation frame`, and that
+   was read as "the Pi 5's UART Bluetooth mangles every mSBC frame". mSBC
+   was forced off in favour of CVSD (8 kHz). But the decode error
+   appeared twice in the whole call, not per frame; the silence was the
+   stream volume (bug 3), found later. Calls on CVSD sounded muffled both
+   ways next to an HD cell call. Re-tested with mSBC on after the volume
+   fix: 400 of 400 SCO packets in a 3 s capture were intact mSBC frames
+   (H2 header in sequence + 0xAD sync, exactly 60 bytes apart), zero
+   decode failures in 25 minutes, and it sounded clearer. mSBC is back
+   on, explicitly, in `51-phone-bridge.conf`.
+
+   The lesson is the same one as bug 3: count before concluding. "Decode
+   failed" in the log was true, and irrelevant.
 
 2. **The caller heard themselves.** WirePlumber's default policy linked
    the call's incoming stream into the Pi's only sink (Dummy Output) and
@@ -169,10 +178,10 @@ microphone (remembered) and autoplay.
 
 ## Limits
 
-- Narrowband (8 kHz) audio, because of bug 1: both ends sound muffled
-  next to an HD-voice cell call. Confirmed on a live call. A USB
-  Bluetooth dongle with SCO over USB (e.g. RTL8761B) would likely get
-  wideband (mSBC) back.
+- Wideband (mSBC, 16 kHz) is verified in the phone-to-Pi direction by
+  packet capture and by ear. Pi-to-phone is judged by ear only: these
+  Broadcom controllers have no SCO flow control over UART, which is
+  where outgoing audio would break (choppy/robotic) if it's going to.
 - One phone. If two ever pair, the first gateway on the bus wins.
 - Echo: the page asks the browser for echo cancellation, but a headset
   is still the reliable way to keep speaker audio out of the mic.
