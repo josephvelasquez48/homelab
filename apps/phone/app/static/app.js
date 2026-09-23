@@ -156,6 +156,7 @@ function render(s) {
     ? "PC audio off - calls stay on the iPhone"
     : s.bridged ? "Call audio is on this PC" : "PC audio ready";
   if (s.audioError) showError(`Audio: ${s.audioError}`);
+  if (s.settings) $("keep-phone").checked = !!s.settings.keepPhoneAnswered;
 
   const call = s.calls.find((c) => c.state !== "disconnected");
   $("call-card").hidden = !call;
@@ -216,6 +217,8 @@ function currentCall() {
 }
 
 $("enable-audio").onclick = enableAudio;
+// Stored on the Pi, so it holds for every browser and across restarts.
+$("keep-phone").onchange = (e) => send({ action: "set-keep-phone", value: e.target.checked });
 // Remembered per browser; storage can be unavailable (private window),
 // in which case the slider just starts at its default.
 try {

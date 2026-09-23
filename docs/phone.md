@@ -126,6 +126,18 @@ the iPhone until a browser can actually play it. A page that's merely
 open doesn't count; it has to have clicked "Enable PC mic & speakers"
 (or answered).
 
+### "Calls I answer on the iPhone stay on the iPhone"
+
+A switch on the page, stored on the Pi (`~/.config/phone-bridge/settings.json`)
+so it holds for every browser and across restarts. With it on,
+`RejectSCO` stays set even while a page has audio on, except for a call
+the PC claimed: answered, dialed, or moved with "Move call audio to this
+PC". The claim is taken, and `RejectSCO` lifted, *before* the command
+goes to the phone - otherwise the audio link the phone opens in response
+would be refused. It ends when the calls it covered are over, and a dial
+that fails outright drops it, so the next call answered on the handset
+stays there.
+
 ## The ring agent
 
 `apps/phone/agent/phone_agent.pyw`, on the desktop. Polls

@@ -13,6 +13,8 @@ doesn't count as somewhere to send a call - see set_reject_sco().
 import asyncio
 import json
 import logging
+import os
+from pathlib import Path
 
 from fastapi import WebSocket
 
@@ -23,11 +25,46 @@ log = logging.getLogger("phone.hub")
 
 POLL_SECONDS = 0.5
 
+SETTINGS_PATH = Path(os.environ.get("PHONE_SETTINGS", Path.home() / ".config/phone-bridge/settings.json"))
+DEFAULT_SETTINGS = {
+    # Calls answered on the iPhone keep their audio on the iPhone; the Pi
+    # only takes a call's audio when the PC answered, dialed or pulled it.
+    "keepPhoneAnswered": False,
+}
+# Page actions that mean "this call belongs on the PC".
+PC_ACTIONS = ("answer", "dial", "audio-to-pc")
+
+
+def load_settings(path: Path) -> dict:
+    try:
+        saved = json.loads(path.read_text())
+    except (OSError, ValueError):
+        saved = {}
+    return {k: type(v)(saved.get(k, v)) for k, v in DEFAULT_SETTINGS.items()}
+
+
+def save_settings(path: Path, settings: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(".tmp")
+    tmp.write_text(json.dumps(settings))
+    tmp.replace(path)
+
 
 class Hub:
-    def __init__(self, telephony: Telephony | None = None, bridge: AudioBridge | None = None):
+    def __init__(
+        self,
+        telephony: Telephony | None = None,
+        bridge: AudioBridge | None = None,
+        settings_path: Path = SETTINGS_PATH,
+    ):
         self.tel = telephony or Telephony()
         self.bridge = bridge or AudioBridge()
+        self.settings_path = settings_path
+        self.settings = load_settings(settings_path)
+        # Set by a PC action (answer/dial/move audio), cleared when the
+        # calls it covered are all over. Only matters with keepPhoneAnswered.
+        self._pc_claimed = False
+        self._had_calls = False
         self.clients: list[WebSocket] = []
         self.audio_clients: list[WebSocket] = []
         self._last_state: dict | None = None
@@ -46,7 +83,13 @@ class Hub:
         state = self.tel.state.to_json()
         state["bridged"] = self.bridge.running
         state["audioError"] = self._audio_error
+        state["settings"] = dict(self.settings)
         return state
+
+    def _want_reject_sco(self) -> bool:
+        if not self.audio_clients:
+            return True
+        return self.settings["keepPhoneAnswered"] and not self._pc_claimed
 
     async def run(self) -> None:
         await self.tel.connect()
@@ -64,7 +107,11 @@ class Hub:
     async def _tick(self) -> None:
         state = await self.tel.refresh()
 
-        want_reject = not self.audio_clients
+        if self._had_calls and not state.calls:
+            self._pc_claimed = False
+        self._had_calls = bool(state.calls)
+
+        want_reject = self._want_reject_sco()
         if state.gateway and self._reject_sco != (state.gateway, want_reject):
             await self.tel.set_reject_sco(want_reject)
             self._reject_sco = (state.gateway, want_reject)
@@ -123,8 +170,16 @@ class Hub:
     async def command(self, ws: WebSocket, msg: dict) -> str | None:
         """Run one page action; returns an error message for the page, if any."""
         action = msg.get("action")
+        if action in PC_ACTIONS and not self._pc_claimed:
+            # Lift RejectSCO *before* telling the phone, or the audio link
+            # it opens in response gets refused.
+            self._pc_claimed = True
+            await self.tick()
         try:
-            if action == "audio-ready":
+            if action == "set-keep-phone":
+                self.settings["keepPhoneAnswered"] = bool(msg.get("value"))
+                save_settings(self.settings_path, self.settings)
+            elif action == "audio-ready":
                 if ws in self.audio_clients:
                     self.audio_clients.remove(ws)
                 self.audio_clients.append(ws)
@@ -141,6 +196,11 @@ class Hub:
             else:
                 return "unknown action"
         except TelephonyError as e:
+            if action in PC_ACTIONS and not self.tel.state.calls:
+                # A dial that never became a call mustn't leave the claim
+                # set, or the next call answered on the phone comes here.
+                self._pc_claimed = False
+                await self.tick()
             return str(e)
         await self.tick()
         return None
