@@ -68,6 +68,5 @@ h2 { font-size: 14px; font-weight: 600; margin: 0 0 8px; color: var(--muted); te
 .list .who div:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .list .meta { color: var(--muted); font-size: 13px; }
 .list .missed { color: var(--bad); }
-.list .text { color: var(--muted); font-size: 13px; overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
 #contacts-card { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-body.popup #recent-card, body.popup #texts-card, body.popup #contacts-card { display: none !important; }
+body.popup #recent-card, body.popup #contacts-card { display: none !important; }

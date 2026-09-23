@@ -16,7 +16,7 @@ and is blanked while hidden so it doesn't count as an open page.
 
 It also keeps a tray icon (iPhone connected / on a call / not connected,
 a menu to open the page or pause popups, and notifications for missed
-calls and new texts) and system-wide hotkeys: Ctrl+Alt+A answers (or
+calls) and system-wide hotkeys: Ctrl+Alt+A answers (or
 moves a call's audio to the PC), Ctrl+Alt+H declines or hangs up,
 Ctrl+Alt+M mutes. See tray.py and hotkeys.py.
 
@@ -151,10 +151,9 @@ class Agent:
         self.quitting = False
         self.status_text = "Starting..."
         self.tray = Tray(self)
-        # Notification bookkeeping: None until the first poll, so what
-        # already happened before the agent started isn't announced.
+        # None until the first poll, so a call missed before the agent
+        # started isn't announced.
         self._seen_missed: int | None = None
-        self._seen_texts: set[str] | None = None
         window.events.loaded += self.hook_permissions
         window.events.loaded += self.sign_in
         window.events.closing += self.on_closing
@@ -326,21 +325,12 @@ class Agent:
         if not status:
             return
         missed = status.get("missed")
-        texts = status.get("texts") or []
-        text_keys = {f"{t['id']}@{t['received']}" for t in texts}
-        if self._seen_texts is None:  # first poll: remember, don't announce
+        if self._seen_missed is None:  # first poll: remember, don't announce
             self._seen_missed = missed["id"] if missed else 0
-            self._seen_texts = text_keys
             return
         if missed and missed["id"] != self._seen_missed:
             self._seen_missed = missed["id"]
-            who = missed.get("name") or missed.get("number") or "Unknown caller"
-            self.tray.notify("Missed call", who)
-        for t in texts:
-            key = f"{t['id']}@{t['received']}"
-            if key not in self._seen_texts:
-                self._seen_texts.add(key)
-                self.tray.notify(t.get("name") or t.get("from") or "New text", t.get("text") or "")
+            self.tray.notify("Missed call", missed.get("name") or missed.get("number") or "Unknown caller")
 
     def open_page(self) -> None:
         if FIREFOX.exists():

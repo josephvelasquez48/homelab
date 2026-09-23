@@ -1,11 +1,10 @@
 """Minimal client for BlueZ's OBEX daemon (org.bluez.obex, session bus).
 
-OBEX carries the two car-kit services the iPhone offers besides calls:
-PBAP (its phonebook, apps/phone/app/contacts.py) and MAP (its messages,
-apps/phone/app/messages.py). obexd comes from the bluez-obexd package
-and is D-Bus-activated on first use. The iPhone only answers them once
-"Sync Contacts" / "Show Notifications" are on for this device in its
-Bluetooth settings; until then PBAP reports an empty phonebook.
+Used for the iPhone's phonebook over PBAP (apps/phone/app/contacts.py).
+obexd comes from the bluez-obexd package and is D-Bus-activated on first
+use; obex-override.conf limits it to its client side. The iPhone reports
+an empty phonebook until "Sync Contacts" is on for this device in its
+Bluetooth settings.
 """
 import asyncio
 

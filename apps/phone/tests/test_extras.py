@@ -3,7 +3,6 @@ from dbus_fast import Variant
 
 from app.contacts import number_key, parse_vcards
 from app.history import CallLog
-from app.messages import new_messages
 from app.metrics import render
 from app.reconnect import HFP_AG_UUID, reconnect_candidates
 from app.telephony import Call
@@ -72,18 +71,6 @@ def test_parse_vcards():
 def test_number_key_matches_formats():
     assert number_key("+1 (760) 555-0123") == number_key("7605550123") == number_key("1-760-555-0123")
     assert number_key("") == ""
-
-
-# -- messages ---------------------------------------------------------------------
-
-
-def test_new_messages_skips_seen():
-    listing = {
-        "/org/bluez/obex/client/session1/message1": {"SenderAddress": Variant("s", "+17605550123"), "Subject": Variant("s", "hey")},
-        "/org/bluez/obex/client/session1/message2": {"Sender": Variant("s", "Mom"), "Subject": Variant("s", "call me")},
-    }
-    [msg] = new_messages(listing, {"/org/bluez/obex/client/session1/message1"})
-    assert msg["id"] == "message2" and msg["text"] == "call me" and msg["from"] == "Mom"
 
 
 # -- reconnect ---------------------------------------------------------------------

@@ -189,9 +189,6 @@ state: the slow ones run in their own loop.
   this runs on the host, and Postgres admits only the backend
   namespace. Missed = incoming and never active. The page lists recent
   calls with call-back buttons.
-- **Texts** (`app/messages.py`): Bluetooth MAP, polled every 20 s for
-  messages that arrive while connected. iOS only offers MAP with **Show
-  Notifications** on, and never history, so this is a notifier.
 - **Send call audio to iPhone**: PipeWire's API can pull audio onto the
   Pi but not release it, so `release-sco.sh` sends an HCI Disconnect for
   the (e)SCO link. It needs root: installed root-owned as
@@ -209,8 +206,7 @@ state: the slow ones run in their own loop.
   phone being away - it leaves the house with its owner.
 - **Tray icon and hotkeys** (`agent/tray.py`, `agent/hotkeys.py`): the
   icon shows connected / on a call / not connected, opens the page,
-  pauses popups, and raises notifications for missed calls and new
-  texts. Ctrl+Alt+A answers (or moves audio to the PC), Ctrl+Alt+H
+  pauses popups, and raises a notification for missed calls. Ctrl+Alt+A answers (or moves audio to the PC), Ctrl+Alt+H
   declines or hangs up, Ctrl+Alt+M mutes - by clicking the popup's own
   buttons. A hotkey isn't a user gesture to the page, so the agent adds
   `--autoplay-policy=no-user-gesture-required` to its own WebView2 only.

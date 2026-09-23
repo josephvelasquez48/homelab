@@ -19,8 +19,6 @@ from starlette.middleware.sessions import SessionMiddleware
 from app.contacts import Contacts
 from app.history import CallLog
 from app.hub import Hub
-from app.messages import Messages
-from app.mns import MnsServer
 from app.reconnect import Reconnector
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
@@ -43,10 +41,8 @@ hub = Hub()
 if os.environ.get("PHONE_EXTRAS", "1") == "1":
     # Off in tests (conftest) - these reach for Bluetooth, disk and D-Bus.
     hub.contacts = Contacts(CONFIG / "contacts.json")
-    hub.messages = Messages()
     hub.history = CallLog(DATA / "calls.db")
     hub.reconnector = Reconnector(lambda: hub.tel.state.connected)
-    hub.mns = MnsServer(hub.poll_messages_soon)
     hub.write_metrics = True
 
 
@@ -114,9 +110,8 @@ async def agent_ringing():
         "connected": hub.tel.state.connected,  # for the tray icon
         # A page with PC audio on already rings by itself; the agent stays quiet.
         "audioPages": len(hub.audio_clients),
-        # For desktop notifications: the agent remembers which it has shown.
+        # For the missed-call notification: the agent remembers which it has shown.
         "missed": hub.history.last_missed() if hub.history else None,
-        "texts": list(hub.messages.recent)[:5] if hub.messages else [],
     }
 
 

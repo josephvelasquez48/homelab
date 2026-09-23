@@ -12,7 +12,7 @@ doesn't count as somewhere to send a call - see set_reject_sco().
 
 The slower work - phonebook pulls, the text-message inbox, metrics - runs
 in a separate loop (extras_loop) so a seconds-long Bluetooth transfer
-never holds up call state. Contacts, messages, history and the
+never holds up call state. Contacts, history and the
 reconnector are optional, so tests build a Hub without any of them.
 """
 import asyncio
@@ -27,7 +27,6 @@ from app import metrics
 from app.audio import AudioBridge
 from app.contacts import Contacts
 from app.history import CallLog
-from app.messages import Messages
 from app.reconnect import Reconnector
 from app.telephony import Call, Telephony, TelephonyError
 
@@ -72,19 +71,15 @@ class Hub:
         bridge: AudioBridge | None = None,
         settings_path: Path = SETTINGS_PATH,
         contacts: Contacts | None = None,
-        messages: Messages | None = None,
         history: CallLog | None = None,
         reconnector: Reconnector | None = None,
         write_metrics: bool = False,
-        mns=None,
     ):
         self.tel = telephony or Telephony()
         self.contacts = contacts
-        self.messages = messages
         self.history = history
         self.reconnector = reconnector
         self.write_metrics = write_metrics
-        self.mns = mns  # app.mns.MnsServer: lets iOS accept the message connection
         self._was_connected = False
         # Set by "send audio to the iPhone": keep refusing the audio link
         # until the call ends or the PC asks for it back.
@@ -123,12 +118,10 @@ class Hub:
         return state
 
     def extras(self) -> dict:
-        """Call history, recent texts and contact-sync status, sent to pages as their own message."""
+        """Call history and contact-sync status, sent to pages as their own message."""
         return {
             "type": "extras",
             "history": self.history.recent() if self.history else [],
-            "texts": list(self.messages.recent)[:10] if self.messages else [],
-            "textsError": self.messages.error if self.messages else None,
             "contacts": len(self.contacts.names) if self.contacts else 0,
             "contactsError": self.contacts.error if self.contacts else None,
         }
@@ -151,8 +144,6 @@ class Hub:
         asyncio.create_task(self.extras_loop())
         if self.reconnector:
             asyncio.create_task(self.reconnector.run())
-        if self.mns:
-            asyncio.create_task(self.mns.run())
         while True:
             try:
                 await self.tick()
@@ -216,11 +207,6 @@ class Hub:
             before = (len(self.contacts.names), self.contacts.error)
             await self.contacts.try_refresh(state.address)
             changed |= before != (len(self.contacts.names), self.contacts.error)
-        if state.connected and self.messages:
-            before = self.messages.error
-            changed |= bool(await self.messages.poll(state.address, self.name_for)) or before != self.messages.error
-        elif self.messages and self.messages.session:
-            await self.messages.close()
         if changed:
             await self.broadcast_extras()
         if self.write_metrics:
@@ -246,12 +232,6 @@ class Hub:
             metrics.write(values, self.history.counts() if self.history else {})
         except OSError as e:
             log.warning("metrics not written: %s", e)
-
-    def poll_messages_soon(self) -> None:
-        """The phone pushed a NewMessage event (MNS): check the inbox now, not in 20 s."""
-        if self.messages:
-            self.messages.last_poll = 0
-            asyncio.create_task(self._extras())
 
     async def release_audio(self) -> None:
         """Send a call's audio back to the iPhone (see release-sco.sh)."""

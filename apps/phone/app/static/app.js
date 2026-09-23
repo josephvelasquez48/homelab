@@ -375,7 +375,7 @@ setInterval(() => {
 
 // ---- controls -------------------------------------------------------------------
 
-// ---- history, texts, contacts --------------------------------------------------
+// ---- history, contacts --------------------------------------------------
 
 function when(ts) {
   const d = new Date(ts * 1000);
@@ -421,16 +421,6 @@ function renderExtras(x) {
     return li(who, back);
   }));
   $("recent-empty").hidden = x.history.length > 0;
-
-  $("texts").replaceChildren(...x.texts.map((m) => {
-    const who = document.createElement("div");
-    who.className = "who";
-    who.append(div(m.name || m.from || "Unknown"), div(m.text || "(no preview)", "text"), div(when(m.received), "meta"));
-    return li(who);
-  }));
-  $("texts-note").textContent = x.textsError
-    ? "Texts unavailable - turn on Show Notifications for joe in the iPhone's Bluetooth settings."
-    : x.texts.length ? "" : "New texts show here while the iPhone is connected.";
 
   $("contacts-status").textContent = x.contactsError
     ? x.contactsError
