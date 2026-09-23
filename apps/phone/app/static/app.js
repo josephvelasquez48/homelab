@@ -95,7 +95,12 @@ async function startAudio() {
   if (audio) {
     // Started without a click (auto-answer), Firefox leaves the context
     // suspended; any later click must resume it or the call stays silent.
-    if (audio.ctx.state !== "running") await audio.ctx.resume().catch(() => {});
+    if (audio.ctx.state !== "running") {
+      await audio.ctx.resume().catch(() => {});
+      // Don't wait for the statechange event: the caller's next message
+      // (answer/dial) must reach the Pi after "audio ready", not before.
+      announceAudio();
+    }
     return true;
   }
   try {
@@ -427,8 +432,13 @@ function renderExtras(x) {
     : x.contacts ? `${x.contacts} contact numbers synced from the iPhone` : "No contacts synced yet";
 }
 
+// Dial from this page: say "audio ready" before the dial, so the Pi lifts
+// RejectSCO before the phone opens the call's audio link. The other order
+// left an outgoing call's audio on the iPhone (seen live: connected, never
+// bridged) - Answer and "Move call audio" already did it this way.
 async function dialNumber(number) {
   if (!(await enableAudio())) return;
+  announceAudio();
   send({ action: "dial", number });
 }
 
@@ -485,11 +495,9 @@ $("mute").onclick = (e) => {
 };
 $("show-keypad").onclick = () => { $("tone-pad").hidden = !$("tone-pad").hidden; };
 
-$("dial").onclick = async () => {
+$("dial").onclick = () => {
   const number = $("number").value.trim();
-  if (!number) return;
-  if (!(await enableAudio())) return;
-  send({ action: "dial", number });
+  if (number) dialNumber(number);
 };
 $("number").addEventListener("keydown", (e) => { if (e.key === "Enter") $("dial").click(); });
 
