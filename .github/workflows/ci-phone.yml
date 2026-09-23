@@ -1,0 +1,37 @@
+name: Phone bridge CI
+
+# Test only: the phone bridge isn't an image. It runs on the Pi's host as a
+# systemd user service (it needs the Bluetooth radio and the user's
+# PipeWire session) and is installed with apps/phone/install.sh - see
+# docs/phone.md.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "apps/phone/**"
+      - ".github/workflows/ci-phone.yml"
+  pull_request:
+    paths:
+      - "apps/phone/**"
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/phone
+    steps:
+      - uses: actions/checkout@v6
+      - uses: astral-sh/setup-uv@v9.0.0
+      - run: uv sync
+      - run: uv run pytest -v
+      - name: Check phone page JavaScript syntax
+        run: |
+          node --check app/static/app.js
+          node --check app/static/worklets.js
+      - name: Check the ring agent compiles
+        # Windows-only at runtime (winsound), so only a syntax check here.
+        run: python3 -m py_compile agent/phone_agent.pyw

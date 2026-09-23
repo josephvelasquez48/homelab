@@ -10,3 +10,7 @@
 192.168.1.253 prometheus.home
 192.168.1.253 chat.home
 192.168.1.253 wikipedia.home
+# Not behind Traefik: the phone bridge runs on the Pi's host (it needs the
+# Bluetooth radio), serving its own TLS on :8443 - https://phone.home:8443.
+# See docs/phone.md.
+192.168.1.253 phone.home

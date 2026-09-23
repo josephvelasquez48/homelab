@@ -171,6 +171,11 @@ Windows desktop left the cluster to be a GPU host only - which retired
 the whole class of WSL2 mirrored-networking failures, both Scheduled
 Task workarounds, and the `linux/amd64` half of every image build - see
 [docs/node-migration.md](docs/node-migration.md).
+Phone bridge - the Pi as the iPhone's Bluetooth hands-free unit, so
+calls are answered on the desktop with its mic and speakers. A host
+service, not K3s (it needs the Bluetooth radio), with four bugs found on
+live calls that each made a working call look silent or echo - see
+[docs/phone.md](docs/phone.md).
 
 ## Repo structure
 
@@ -187,6 +192,7 @@ homelab/
 ├── load-testing/          # k6 scripts - see docs/load-testing.md
 ├── failure-testing/        # Fault-injection scripts - see docs/failure-testing.md
 ├── apps/dashboard/          # Status UI + GPU release trigger, runs in-cluster - see docs/dashboard.md
+├── apps/phone/              # iPhone calls on the desktop via the Pi's Bluetooth, host service - see docs/phone.md
 ├── backup/                 # Encrypted backup + restore-rehearsal tooling - see docs/backups.md
 ├── scripts/                # Small host utilities (e.g. the deployed-auth verifier)
 ├── diagrams/               # Architecture diagram

@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Phone</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <main>
+    <h1>
+      Phone
+      <form method="post" action="/logout"><button class="small" type="submit">Log out</button></form>
+    </h1>
+
+    <div class="card">
+      <div class="status"><span class="dot" id="phone-dot"></span><span id="phone-status">Connecting…</span></div>
+      <div class="status" style="margin-top:6px"><span class="dot" id="audio-dot"></span><span id="audio-status">PC audio off</span></div>
+      <div class="row" id="audio-setup"><button class="primary" id="enable-audio">Enable PC mic &amp; speakers</button></div>
+      <label class="vol" id="vol-row" hidden>Volume <input type="range" id="volume" min="0" max="3" step="0.05" value="1"></label>
+    </div>
+
+    <div class="card" id="call-card" hidden>
+      <div class="sub" id="call-state"></div>
+      <div class="caller" id="call-who"></div>
+      <div class="sub" id="call-timer"></div>
+      <div class="meter" id="meter-row" hidden><div id="meter"></div></div>
+      <div class="row" id="incoming-actions">
+        <button class="good" id="answer">Answer</button>
+        <button class="bad" id="decline">Decline</button>
+      </div>
+      <div class="row" id="active-actions">
+        <button id="mute" aria-pressed="false">Mute</button>
+        <button id="show-keypad">Keypad</button>
+        <button class="bad" id="hangup">Hang up</button>
+      </div>
+      <div class="row" id="to-pc-row" hidden><button class="primary" id="to-pc">Move call audio to this PC</button></div>
+      <div class="keypad" id="tone-pad" hidden></div>
+    </div>
+
+    <div class="card sub" id="popup-idle" hidden>No call right now. You can close this tab.</div>
+
+    <div class="card" id="dial-card">
+      <input type="tel" id="number" placeholder="Number" autocomplete="off">
+      <div class="keypad" id="dial-pad"></div>
+      <div class="row"><button class="good" id="dial">Call</button></div>
+    </div>
+
+    <div class="error" id="error"></div>
+  </main>
+  <script src="/static/app.js"></script>
+</body>
+</html>
