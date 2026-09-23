@@ -10,6 +10,7 @@ The agN number is not stable across reconnects, so it is rediscovered on
 every poll rather than cached.
 """
 import re
+import time
 from dataclasses import dataclass, field
 
 from dbus_fast import BusType, Message, MessageType, Variant
@@ -100,6 +101,40 @@ def parse_calls(calls: dict) -> list[Call]:
     return parsed
 
 
+# A "waiting" call with no other call beside it can't really be call
+# waiting - past this many seconds it's a leftover the phone never cleared.
+STALE_WAITING_SECONDS = 45
+
+
+def drop_phantom_calls(calls: list[Call], waiting_since: dict[str, float], now: float) -> list[Call]:
+    """Remove the phone's duplicate and stuck "waiting" calls.
+
+    Seen live: one incoming call from a contact showed up as two call
+    objects at the same instant - call1 "incoming" and call2 "waiting",
+    same number. call1 was answered and ended; call2 stayed "waiting"
+    until Bluetooth reconnected, so the page kept offering an Answer that
+    couldn't work (on its own a waiting call can't be answered) and the
+    UI never left the call. So: a waiting call with the number of another
+    live call is that call reported twice, and a waiting call alone for
+    longer than STALE_WAITING_SECONDS is stale. `waiting_since` is the
+    caller's memory of when each waiting call was first seen.
+    """
+    for path in list(waiting_since):
+        if not any(c.path == path and c.state == "waiting" for c in calls):
+            del waiting_since[path]
+    kept = []
+    for call in calls:
+        if call.state == "waiting":
+            first = waiting_since.setdefault(call.path, now)
+            others = [c for c in calls if c.path != call.path and c.state != "disconnected"]
+            if call.number and any(c.number == call.number for c in others):
+                continue
+            if not others and now - first > STALE_WAITING_SECONDS:
+                continue
+        kept.append(call)
+    return kept
+
+
 def valid_number(number: str) -> bool:
     return bool(_NUMBER.match(number))
 
@@ -112,6 +147,7 @@ class Telephony:
     def __init__(self):
         self.bus: MessageBus | None = None
         self.state = PhoneState()
+        self._waiting_since: dict[str, float] = {}
 
     async def connect(self) -> None:
         self.bus = await MessageBus(bus_type=BusType.SESSION).connect()
@@ -146,6 +182,7 @@ class Telephony:
         # One phone is paired; if more ever are, the first one wins.
         path, address, transport = gateways[0]
         calls = parse_calls((await self._call(path, MANAGER_IFACE, "GetCalls"))[0])
+        calls = drop_phantom_calls(calls, self._waiting_since, time.time())
         self.state = PhoneState(True, path, address, transport, calls)
         return self.state
 
@@ -162,7 +199,14 @@ class Telephony:
         return path
 
     async def answer(self, path: str) -> None:
-        await self._call(self._known_call(path), CALL_IFACE, "Answer")
+        known = self._known_call(path)
+        call = next(c for c in self.state.calls if c.path == known)
+        if call.state == "waiting":
+            # A waiting call can't take a plain Answer (ATA); "hold and
+            # answer" (AT+CHLD=2) accepts it, holding any active call.
+            await self._call(self._gateway(), MANAGER_IFACE, "HoldAndAnswer")
+        else:
+            await self._call(path, CALL_IFACE, "Answer")
 
     async def hangup(self, path: str) -> None:
         await self._call(self._known_call(path), CALL_IFACE, "Hangup")

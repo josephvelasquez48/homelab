@@ -311,7 +311,7 @@ function render(s) {
   if (s.audioError) showError(`Audio: ${s.audioError}`);
   if (s.settings) $("keep-phone").checked = !!s.settings.keepPhoneAnswered;
 
-  const call = s.calls.find((c) => c.state !== "disconnected");
+  const call = pickCall(s.calls);
   $("call-card").hidden = !call;
   $("dial-card").hidden = !!call || POPUP;
   if (POPUP) {
@@ -432,8 +432,17 @@ async function dialNumber(number) {
   send({ action: "dial", number });
 }
 
+// The call the card is about. A ringing one comes first, so a call waiting
+// behind an active call can be answered (or declined) from the card.
+const CARD_ORDER = ["incoming", "waiting", "dialing", "alerting", "active", "held"];
+function pickCall(calls) {
+  return calls
+    .filter((c) => c.state !== "disconnected")
+    .sort((a, b) => CARD_ORDER.indexOf(a.state) - CARD_ORDER.indexOf(b.state))[0];
+}
+
 function currentCall() {
-  return state && state.calls.find((c) => c.state !== "disconnected");
+  return state && pickCall(state.calls);
 }
 
 $("enable-audio").onclick = enableAudio;

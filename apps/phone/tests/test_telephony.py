@@ -1,6 +1,6 @@
 from dbus_fast import Variant
 
-from app.telephony import PhoneState, parse_calls, parse_gateways, valid_number, valid_tones
+from app.telephony import Call, PhoneState, drop_phantom_calls, parse_calls, parse_gateways, valid_number, valid_tones
 
 # Shapes as returned live on 2026-09-22 by WirePlumber 0.5.8 / PipeWire 1.4.2.
 OBJECTS = {
@@ -60,3 +60,30 @@ def test_number_validation():
 def test_tone_validation():
     assert valid_tones("1#")
     assert not valid_tones("+1")
+
+
+
+def call(path, state, number="+17605550123"):
+    return Call(path, state, number, "")
+
+
+def test_duplicate_waiting_call_is_dropped():
+    # Live: one call from a contact arrived as call1 "incoming" + call2 "waiting".
+    seen = {}
+    calls = [call("/ag1/call1", "incoming"), call("/ag1/call2", "waiting")]
+    assert [c.path for c in drop_phantom_calls(calls, seen, now=100)] == ["/ag1/call1"]
+
+
+def test_real_call_waiting_is_kept():
+    seen = {}
+    calls = [call("/ag1/call1", "active"), call("/ag1/call2", "waiting", number="+15555550199")]
+    assert len(drop_phantom_calls(calls, seen, now=100)) == 2
+
+
+def test_lone_waiting_call_goes_stale():
+    seen = {}
+    lone = [call("/ag1/call2", "waiting")]
+    assert drop_phantom_calls(lone, seen, now=100) == lone  # could still be real at first
+    assert drop_phantom_calls(lone, seen, now=130) == lone
+    assert drop_phantom_calls(lone, seen, now=146) == []  # 46 s alone: leftover
+    assert drop_phantom_calls([], seen, now=150) == [] and seen == {}  # forgotten once gone
