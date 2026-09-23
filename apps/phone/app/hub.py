@@ -69,7 +69,7 @@ class Hub:
             await self.tel.set_reject_sco(want_reject)
             self._reject_sco = (state.gateway, want_reject)
 
-        if state.transport == "active" and self.audio_clients and not self.bridge.running:
+        if state.audio_on_pi and self.audio_clients and not self.bridge.running:
             try:
                 await self.bridge.start()
                 self._audio_error = None
@@ -79,7 +79,7 @@ class Hub:
                 # instead of just a silent call.
                 self._audio_error = str(e)
                 log.warning("bridge start failed: %s", e)
-        elif state.transport != "active" and self.bridge.running:
+        elif not state.audio_on_pi and self.bridge.running:
             await self.bridge.stop()
 
         await self.broadcast_state()

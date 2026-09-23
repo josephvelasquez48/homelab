@@ -56,13 +56,22 @@ never installed.
 Each of these made a working call look broken, and each is now pinned in
 `apps/phone/wireplumber/51-phone-bridge.conf` or the bridge code.
 
-1. **Wideband voice decoded to silence.** The phone negotiated mSBC
-   (16 kHz). PipeWire logged `spa.bluez5.source.sco: decode failed: -3`
-   for every frame and the kernel logged `Unexpected continuation frame`:
-   the Pi 5's Bluetooth sits behind a UART and mSBC frames arrive split
-   across HCI packets. Fixed with `bluez5.enable-msbc = false` - CVSD,
-   8 kHz, ordinary phone-line quality. After the change: codec 1 (CVSD)
-   and zero decode failures during a call.
+1. **A wrong diagnosis: wideband voice blamed for a silent call.** The
+   first call negotiated mSBC (16 kHz) and measured as near-silence
+   (peaks 4-28 of 32767). The journal had `spa.bluez5.source.sco: decode
+   failed: -3` and the kernel `Unexpected continuation frame`, and that
+   was read as "the Pi 5's UART Bluetooth mangles every mSBC frame". mSBC
+   was forced off in favour of CVSD (8 kHz). But the decode error
+   appeared twice in the whole call, not per frame; the silence was the
+   stream volume (bug 3), found later. Calls on CVSD sounded muffled both
+   ways next to an HD cell call. Re-tested with mSBC on after the volume
+   fix: 400 of 400 SCO packets in a 3 s capture were intact mSBC frames
+   (H2 header in sequence + 0xAD sync, exactly 60 bytes apart), zero
+   decode failures in 25 minutes, and it sounded clearer. mSBC is back
+   on, explicitly, in `51-phone-bridge.conf`.
+
+   The lesson is the same one as bug 3: count before concluding. "Decode
+   failed" in the log was true, and irrelevant.
 
 2. **The caller heard themselves.** WirePlumber's default policy linked
    the call's incoming stream into the Pi's only sink (Dummy Output) and
@@ -79,12 +88,28 @@ Each of these made a working call look broken, and each is now pinned in
    volume over HFP and restored by WirePlumber. Fixed with
    `bluez5.enable-hw-volume = false`, and the bridge sets both streams to
    1.0 when a call starts. Volume is the page's slider now.
+   The first version of that fix didn't work, and a later call showed
+   why: the node has two volumes. `wpctl set-volume` sets
+   `channelVolumes` (it read back 1.00), but the 0.019 was the node's
+   master `volume` prop, untouched. The bridge now sets both
+   (`pw-cli set-param <id> Props '{ volume: 1.0 }'`); PipeWire's output
+   then matched raw `btmon` packet levels on the same call (~1000 peak
+   both).
 
 4. **A missing target records silence without error.** `pw-record
    --target X` with X absent falls back to the default sink's monitor and
    happily records nothing. The bridge starts both `pw-cat`s with
    `--target 0` and fails loudly (shown on the page) if the phone's
    streams or ports aren't there.
+
+5. **A call's audio sat on the Pi and went nowhere.** The bridge only
+   started once the transport read `active`, but with autoconnect off
+   (bug 2) nothing consumes the phone's streams until the bridge does,
+   so the transport stayed `pending` forever - while `btmon` showed ~260
+   SCO packets/s arriving. Neither side of the call heard anything, and
+   pressing "Move call audio to this PC" again returned
+   `org.pipewire.Telephony.Error.InvalidState`. `pending` now counts as
+   the audio being on the Pi.
 
 Checked and ruled out on the way: the Broadcom controller's SCO routing
 (`hcitool cmd 0x3f 0x1d` reads back routing `01`, over HCI, not the PCM
@@ -153,8 +178,10 @@ microphone (remembered) and autoplay.
 
 ## Limits
 
-- Narrowband (8 kHz) audio, because of bug 1. A USB Bluetooth dongle
-  with SCO over USB would likely get wideband back.
+- Wideband (mSBC, 16 kHz) is verified in the phone-to-Pi direction by
+  packet capture and by ear. Pi-to-phone is judged by ear only: these
+  Broadcom controllers have no SCO flow control over UART, which is
+  where outgoing audio would break (choppy/robotic) if it's going to.
 - One phone. If two ever pair, the first gateway on the bus wins.
 - Echo: the page asks the browser for echo cancellation, but a headset
   is still the reliable way to keep speaker audio out of the mic.

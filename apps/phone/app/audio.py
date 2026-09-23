@@ -105,10 +105,13 @@ class AudioBridge:
         if not phone_in or not phone_out:
             raise RuntimeError("call audio is not on the Pi")
         # With bluez5.enable-hw-volume off the phone can no longer push its
-        # own volume here, but WirePlumber still restores whatever it saved
-        # last time - which on the first live test was 0.019 (-34 dB).
+        # own volume here, but the incoming stream still came up at 0.019
+        # (-34 dB) on every call. That's the node's master "volume" prop;
+        # `wpctl set-volume` only sets channelVolumes, and reported 1.00
+        # while the call stayed near-silent. Set both.
         for node_id in nodes.values():
             await _run("wpctl", "set-volume", str(node_id), "1.0")
+            await _run("pw-cli", "set-param", str(node_id), "Props", "{ volume: 1.0 }")
 
         fmt = ["--raw", "--rate", str(RATE), "--channels", "1", "--format", "s16", "--target", "0"]
         self.rx = await asyncio.create_subprocess_exec(

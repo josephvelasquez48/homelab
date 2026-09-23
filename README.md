@@ -173,7 +173,7 @@ Task workarounds, and the `linux/amd64` half of every image build - see
 [docs/node-migration.md](docs/node-migration.md).
 Phone bridge - the Pi as the iPhone's Bluetooth hands-free unit, so
 calls are answered on the desktop with its mic and speakers. A host
-service, not K3s (it needs the Bluetooth radio), with four bugs found on
+service, not K3s (it needs the Bluetooth radio), with the bugs found on
 live calls that each made a working call look silent or echo - see
 [docs/phone.md](docs/phone.md).
 
