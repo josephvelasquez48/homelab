@@ -81,7 +81,16 @@ function showError(text) {
 
 // ---- audio ------------------------------------------------------------------
 
-async function enableAudio() {
+// One start at a time: render() calls this on every state message while a
+// call rings, and a second concurrent start would open a second
+// AudioContext and mic stream.
+let enabling = null;
+function enableAudio() {
+  if (!enabling) enabling = startAudio().finally(() => { enabling = null; });
+  return enabling;
+}
+
+async function startAudio() {
   if (audio) {
     // Started without a click (auto-answer), Firefox leaves the context
     // suspended; any later click must resume it or the call stays silent.
@@ -133,7 +142,13 @@ async function enableAudio() {
 // Tell the Pi this page can take a call's audio - only once it's actually
 // running. A context Firefox's autoplay policy left suspended can't play
 // anything, and the Pi would otherwise send a call's audio to it.
+// In the ring agent's window the mic opens while the call is still
+// ringing (see render), but the page only announces itself once Answer
+// was clicked there - otherwise answering on the iPhone would pull the
+// call's audio to the PC.
+let answeredHere = false;
 function announceAudio() {
+  if (AGENT && !answeredHere) return;
   if (audio && audio.ctx.state === "running") send({ action: "audio-ready" });
 }
 
@@ -243,7 +258,8 @@ function strike(ctx, freq, t) {
 }
 
 function startRinging() {
-  if (ringer || !audio) return;
+  // The agent rings its own window; the page would only double it.
+  if (ringer || !audio || AGENT) return;
   const { ctx } = audio;
   const ring = () => {
     const t0 = ctx.currentTime + 0.05;
@@ -325,6 +341,10 @@ function render(s) {
   $("to-pc-row").hidden = !(call.state === "active" && !s.audioOnPi && audio);
 
   if (ringing) {
+    // Wake the mic while it rings: the Samson on this desktop sleeps when
+    // idle, and opening it is what wakes it. Opened at Answer, it wasn't
+    // there in time and the call went out on the default (silent) mic.
+    if (AGENT && !audio) enableAudio();
     startRinging();
     document.title = `Incoming: ${call.name || call.number || "call"}`;
     const wasRinging = prev && prev.calls.some((c) => c.path === call.path && c.state === call.state);
@@ -370,7 +390,9 @@ $("volume").oninput = (e) => {
 $("answer").onclick = async () => {
   // Answering from here should bring the audio here too, so make sure the
   // PC side is ready before the phone moves the call over.
+  answeredHere = true;
   if (!(await enableAudio())) return;
+  announceAudio();
   send({ action: "answer", call: currentCall().path });
 };
 $("decline").onclick = () => send({ action: "hangup", call: currentCall().path });
