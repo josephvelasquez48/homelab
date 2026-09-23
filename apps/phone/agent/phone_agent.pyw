@@ -36,6 +36,7 @@ Config: %APPDATA%\\phone-bridge\\agent.json
 
     {"url": "https://phone.home:8443", "token": "<PHONE_AGENT_TOKEN from the Pi>"}
 """
+import faulthandler
 import json
 import logging
 import math
@@ -43,6 +44,7 @@ import os
 import socket
 import ssl
 import struct
+import subprocess
 import sys
 import tempfile
 import threading
@@ -85,6 +87,18 @@ logging.basicConfig(
     format="%(asctime)s %(levelname)s %(message)s",
 )
 log = logging.getLogger("phone-agent")
+
+# pythonw has no console: sys.stderr is None, so a crash message - an
+# uncaught exception in a thread, a warning, a fatal error - went nowhere,
+# and the agent once vanished (tray icon and all) without a line in its
+# log. Send all of it to the log file instead.
+_crash_log = open(CONFIG_DIR / "agent.log", "a", buffering=1, encoding="utf-8")
+sys.stderr = _crash_log
+faulthandler.enable(_crash_log)  # hard crashes (native code) dump a traceback too
+threading.excepthook = lambda args: log.error(
+    "uncaught in thread %s", args.thread.name if args.thread else "?",
+    exc_info=(args.exc_type, args.exc_value, args.exc_traceback),
+)
 
 
 class Pi:
@@ -509,7 +523,37 @@ def main() -> None:
     webview.start(agent.run, private_mode=False, storage_path=str(PROFILE_DIR))
 
 
+def supervise() -> None:
+    """Run the agent as a child process and restart it if it dies.
+
+    The agent can die in ways Python can't catch - WebView2 and pythonnet
+    are native code - and it's what makes calls reach the PC, so it runs
+    under this small loop. A clean exit (Quit in the tray, or a duplicate
+    that found one already running) ends the loop too; a crash restarts it
+    after a short, growing pause, and five crashes within ten minutes stop
+    it rather than loop forever.
+    """
+    crashes: list[float] = []
+    while True:
+        started = time.time()
+        code = subprocess.call([sys.executable, __file__, "--child", *sys.argv[1:]])
+        if code == 0:
+            return
+        now = time.time()
+        crashes = [t for t in crashes if now - t < 600] + [now]
+        log.error("agent exited with code %s after %.0f s", code, now - started)
+        if len(crashes) >= 5:
+            log.error("5 crashes in 10 minutes - not restarting; see the tracebacks above")
+            return
+        time.sleep(min(60, 5 * len(crashes)))
+        # A restart isn't a new request to open the window.
+        sys.argv = [a for a in sys.argv if a != "--show"]
+
+
 if __name__ == "__main__":
+    if "--child" not in sys.argv:
+        supervise()
+        sys.exit(0)
     try:
         main()
     except Exception:
