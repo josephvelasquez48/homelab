@@ -30,6 +30,9 @@
     - { port: "22", proto: tcp, comment: "SSH - LAN only" }
     - { port: "53", proto: any, comment: "DNS - LAN only" }
     - { port: "3000", proto: tcp, comment: "AdGuard Home UI - LAN only" }
+    # Phone bridge (apps/phone): a host process like AdGuard's UI, not a
+    # K3s Service, so unlike Traefik's ports this ufw rule does apply.
+    - { port: "8443", proto: tcp, comment: "Phone bridge - LAN only" }
     - { port: "6443", proto: tcp, comment: "K3s API - LAN only" }
     - { port: "8472", proto: udp, comment: "K3s Flannel VXLAN - LAN only" }
     - { port: "10250", proto: tcp, comment: "K3s kubelet - LAN only" }

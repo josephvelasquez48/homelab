@@ -1,0 +1,21 @@
+# systemd *user* unit (~/.config/systemd/user/), installed by install.sh.
+# A user unit because the service talks to the user's PipeWire session and
+# session bus; linger keeps that session up without anyone logged in.
+[Unit]
+Description=Phone bridge - iPhone calls on the desktop via the Pi's Bluetooth
+After=pipewire.service wireplumber.service
+Wants=wireplumber.service
+
+[Service]
+EnvironmentFile=%h/.config/phone-bridge/env
+ExecStart=%h/.local/share/phone-bridge/venv/bin/uvicorn app.main:app \
+    --app-dir ${APP_DIR} \
+    --host 0.0.0.0 --port 8443 \
+    --ssl-certfile %h/.config/phone-bridge/tls.crt \
+    --ssl-keyfile %h/.config/phone-bridge/tls.key \
+    --no-access-log
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=default.target

@@ -1,0 +1,55 @@
+:root {
+  --bg: #f4f5f7; --card: #ffffff; --text: #16181d; --muted: #646a76;
+  --line: #dde0e6; --accent: #2563eb; --good: #15803d; --bad: #c2362b;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #111317; --card: #1b1e24; --text: #e8eaee; --muted: #9aa1ad;
+    --line: #2c3039; --accent: #5b8def; --good: #34a560; --bad: #e0574a;
+  }
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--bg); color: var(--text);
+  font: 15px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+main { max-width: 420px; margin: 0 auto; padding: 24px 16px; }
+h1 { font-size: 18px; margin: 0 0 16px; display: flex; justify-content: space-between; align-items: center; }
+.card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 16px; margin-bottom: 12px; }
+.status { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 14px; }
+.dot { width: 9px; height: 9px; border-radius: 50%; background: var(--muted); flex: none; }
+.dot.on { background: var(--good); }
+.dot.off { background: var(--bad); }
+.caller { font-size: 22px; font-weight: 600; margin: 4px 0 2px; word-break: break-all; }
+.sub { color: var(--muted); font-size: 14px; }
+.row { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+button {
+  font: inherit; border: 1px solid var(--line); background: var(--card); color: var(--text);
+  border-radius: 10px; padding: 10px 14px; cursor: pointer; flex: 1; min-width: 0;
+}
+button:hover { border-color: var(--accent); }
+button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+button.good { background: var(--good); border-color: var(--good); color: #fff; }
+button.bad { background: var(--bad); border-color: var(--bad); color: #fff; }
+button.small { flex: none; padding: 6px 10px; font-size: 13px; }
+button[aria-pressed="true"] { background: var(--text); color: var(--bg); }
+input[type="tel"], input[type="password"] {
+  width: 100%; font: inherit; font-size: 18px; padding: 10px 12px; border-radius: 10px;
+  border: 1px solid var(--line); background: var(--bg); color: var(--text);
+}
+.keypad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-top: 10px; }
+.keypad button { padding: 12px 0; font-size: 18px; }
+.ringing { animation: ring 1s ease-in-out infinite; border-color: var(--good); }
+@keyframes ring { 50% { box-shadow: 0 0 0 4px color-mix(in srgb, var(--good) 35%, transparent); } }
+.error { color: var(--bad); font-size: 14px; min-height: 20px; margin-top: 8px; }
+.meter { height: 4px; background: var(--line); border-radius: 2px; overflow: hidden; margin-top: 10px; }
+.meter > div { height: 100%; width: 0; background: var(--good); transition: width 80ms linear; }
+label.vol { display: flex; align-items: center; gap: 8px; margin-top: 12px; color: var(--muted); font-size: 14px; }
+label.vol input { flex: 1; }
+[hidden] { display: none !important; }
+
+/* Compact window opened by the desktop ring agent. */
+body.popup main { padding: 10px; }
+body.popup h1 { display: none; }
+body.popup .card { margin-bottom: 8px; padding: 12px; }
+body.popup #audio-setup, body.popup #vol-row { display: none !important; }
