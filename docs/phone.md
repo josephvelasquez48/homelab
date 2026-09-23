@@ -183,6 +183,9 @@ Desktop:
 powershell -ExecutionPolicy Bypass -File apps\phone\agent\install-agent.ps1 -Token <PHONE_AGENT_TOKEN>
 ```
 
+It also puts a **Phone** shortcut on the desktop that opens the page in
+Firefox.
+
 Firefox, once: trust the homelab root if it doesn't already (Firefox has
 its own certificate store - [https.md](https.md)), log in at
 `https://phone.home:8443`, and in the site's permissions allow the
