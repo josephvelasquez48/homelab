@@ -13,7 +13,30 @@ let popupHadCall = false;
 let popupCloseTimer = null;
 let ws = null;
 let state = null;
-let audio = null; // { ctx, capture, player, gain, stream, analyser }
+let audio = null; // { ctx, capture, player, gain, stream, mic, analyser }
+
+const MIC_OPTIONS = { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 };
+
+// Which mic to use. Saved on the Pi as the device's *label* - Firefox and
+// the ring agent's window give the same device different IDs, but the
+// same label - so both use it, whatever Windows' default is (on this
+// desktop that default is a silent Oculus virtual mic).
+async function micConstraints(label) {
+  if (label) {
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    const match = devices.find((d) => d.kind === "audioinput" && d.label === label);
+    if (match) return { ...MIC_OPTIONS, deviceId: { exact: match.deviceId } };
+  }
+  return MIC_OPTIONS;
+}
+
+let appliedMic = null; // the saved label this page last acted on
+let gotFirstState;
+const firstState = new Promise((resolve) => { gotFirstState = resolve; });
+
+function savedMic() {
+  return (state && state.settings && state.settings.micLabel) || "";
+}
 let muted = false;
 let callStartedAt = {};
 let ringer = null;
@@ -33,7 +56,7 @@ function connect(delay = 500) {
       return;
     }
     const msg = JSON.parse(e.data);
-    if (msg.type === "state") render(msg);
+    if (msg.type === "state") { render(msg); gotFirstState(); }
     if (msg.type === "error") showError(msg.message);
   };
   ws.onclose = (e) => {
@@ -66,9 +89,7 @@ async function enableAudio() {
     const ctx = new AudioContext();
     ctx.resume().catch(() => {});
     await ctx.audioWorklet.addModule("/static/worklets.js");
-    const stream = await navigator.mediaDevices.getUserMedia({
-      audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 },
-    });
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: await micConstraints(savedMic()) });
     const mic = ctx.createMediaStreamSource(stream);
     const capture = new AudioWorkletNode(ctx, "capture");
     const analyser = ctx.createAnalyser();
@@ -91,7 +112,9 @@ async function enableAudio() {
     limiter.attack.value = 0.003;
     limiter.release.value = 0.15;
     player.connect(gain).connect(limiter).connect(ctx.destination);
-    audio = { ctx, capture, player, gain, stream, analyser };
+    audio = { ctx, capture, player, gain, stream, mic, analyser };
+    appliedMic = savedMic();
+    listMics();
     ctx.onstatechange = () => { announceAudio(); render(state); };
     if (!AGENT && "Notification" in window && Notification.permission === "default") Notification.requestPermission();
     announceAudio();
@@ -111,13 +134,52 @@ function announceAudio() {
   if (audio && audio.ctx.state === "running") send({ action: "audio-ready" });
 }
 
+// Swap the mic under a running page, mid-call included: new stream in,
+// old one stopped. The capture worklet doesn't notice.
+async function switchMic(label, { save = true } = {}) {
+  appliedMic = label;
+  if (save) send({ action: "set-mic", value: label });
+  if (!audio) return;
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: await micConstraints(label) });
+    const mic = audio.ctx.createMediaStreamSource(stream);
+    mic.connect(audio.capture);
+    mic.connect(audio.analyser);
+    audio.mic.disconnect();
+    audio.stream.getTracks().forEach((t) => t.stop());
+    Object.assign(audio, { stream, mic });
+  } catch (err) {
+    showError(`Couldn't switch mic: ${err.message}`);
+  }
+  listMics();
+}
+
+// Labels are only visible once the page has mic permission, so this runs
+// after audio is on (and again when a device is plugged in or removed).
+async function listMics() {
+  if (!audio) return;
+  const inUse = audio.stream.getAudioTracks()[0]?.label || "";
+  const mics = (await navigator.mediaDevices.enumerateDevices()).filter((d) => d.kind === "audioinput" && d.label);
+  const select = $("mic");
+  select.replaceChildren(...mics.map((d) => {
+    const o = document.createElement("option");
+    o.textContent = d.label;
+    o.value = d.label;
+    o.selected = d.label === inUse;
+    return o;
+  }));
+}
+navigator.mediaDevices?.addEventListener?.("devicechange", listMics);
+
 function drawMeter() {
   if (!audio) return;
   const data = new Uint8Array(audio.analyser.fftSize);
   audio.analyser.getByteTimeDomainData(data);
   let peak = 0;
   for (const v of data) peak = Math.max(peak, Math.abs(v - 128));
-  $("meter").style.width = `${muted ? 0 : Math.min(100, (peak / 128) * 300)}%`;
+  const width = `${muted ? 0 : Math.min(100, (peak / 128) * 300)}%`;
+  $("meter").style.width = width;
+  $("mic-meter").style.width = width;
   requestAnimationFrame(drawMeter);
 }
 
@@ -181,6 +243,13 @@ function render(s) {
   $("audio-setup").hidden = audioRunning;
   $("enable-audio").textContent = audio ? "Turn on speakers" : "Enable PC mic & speakers";
   $("vol-row").hidden = !audio;
+  $("mic-row").hidden = !audio;
+  // Another page (or the other browser) picked a different mic: follow it.
+  // Once per label, so a mic that doesn't exist here can't loop.
+  if (audio && savedMic() && savedMic() !== appliedMic) {
+    appliedMic = savedMic();
+    if (audio.stream.getAudioTracks()[0]?.label !== appliedMic) switchMic(appliedMic, { save: false });
+  }
   $("audio-dot").className = `dot ${audio ? (s.bridged ? "on" : "") : "off"}`;
   $("audio-status").textContent = !audio
     ? "PC audio off - calls stay on the iPhone"
@@ -249,6 +318,7 @@ function currentCall() {
 $("enable-audio").onclick = enableAudio;
 // Stored on the Pi, so it holds for every browser and across restarts.
 $("keep-phone").onchange = (e) => send({ action: "set-keep-phone", value: e.target.checked });
+$("mic").onchange = (e) => switchMic(e.target.value);
 // Remembered per browser; storage can be unavailable (private window),
 // in which case the slider just starts at its default.
 try {
@@ -304,7 +374,9 @@ async function autoEnableAudio() {
   if (AGENT || !navigator.permissions) return;
   try {
     const mic = await navigator.permissions.query({ name: "microphone" });
-    if (mic.state === "granted") await enableAudio();
+    // Wait for the Pi's first state message: it carries the saved mic, and
+    // starting before it would open Windows' default one instead.
+    if (mic.state === "granted") { await firstState; await enableAudio(); }
   } catch {
     // Browser can't query mic permission: keep the button.
   }

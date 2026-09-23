@@ -30,6 +30,9 @@ DEFAULT_SETTINGS = {
     # Calls answered on the iPhone keep their audio on the iPhone; the Pi
     # only takes a call's audio when the PC answered, dialed or pulled it.
     "keepPhoneAnswered": False,
+    # Label of the mic pages should use; "" means the browser's default.
+    # A label, not a device ID: IDs differ per browser profile.
+    "micLabel": "",
 }
 # Page actions that mean "this call belongs on the PC".
 PC_ACTIONS = ("answer", "dial", "audio-to-pc")
@@ -178,6 +181,9 @@ class Hub:
         try:
             if action == "set-keep-phone":
                 self.settings["keepPhoneAnswered"] = bool(msg.get("value"))
+                save_settings(self.settings_path, self.settings)
+            elif action == "set-mic":
+                self.settings["micLabel"] = str(msg.get("value", ""))[:200]
                 save_settings(self.settings_path, self.settings)
             elif action == "audio-ready":
                 if ws in self.audio_clients:

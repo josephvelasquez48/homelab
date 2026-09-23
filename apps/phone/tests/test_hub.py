@@ -186,3 +186,16 @@ async def test_failed_dial_drops_the_claim(tmp_path):
     await hub.command(page, {"action": "set-keep-phone", "value": True})
     assert await hub.command(page, {"action": "dial", "number": "bad"}) == "invalid number"
     assert tel.reject_sco[-1] is True
+
+
+@pytest.mark.asyncio
+async def test_mic_choice_is_saved_and_shared(tmp_path):
+    hub, _ = make(settings_path=tmp_path / "s.json")
+    page = FakeSocket()
+    await hub.add(page)
+    await hub.command(page, {"action": "set-mic", "value": "Mic/Inst (Samson G-Track Pro)"})
+    assert hub.snapshot()["settings"]["micLabel"] == "Mic/Inst (Samson G-Track Pro)"
+    assert load_settings(tmp_path / "s.json")["micLabel"] == "Mic/Inst (Samson G-Track Pro)"
+    # An older settings file without the key still loads.
+    (tmp_path / "old.json").write_text('{"keepPhoneAnswered": true}')
+    assert load_settings(tmp_path / "old.json") == {"keepPhoneAnswered": True, "micLabel": ""}
