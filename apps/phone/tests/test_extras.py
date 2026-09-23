@@ -151,5 +151,4 @@ async def test_audio_to_phone_holds_the_link_off_until_pc_asks(tmp_path, monkeyp
 
 def test_metrics_keep_full_timestamp_precision():
     text = render({"phone_bridge_last_update_timestamp_seconds": 1790133259.25}, {}, {})
-    assert "phone_bridge_last_update_timestamp_seconds 1790133259.25
-" in text
+    assert "phone_bridge_last_update_timestamp_seconds 1790133259.25\n" in text
