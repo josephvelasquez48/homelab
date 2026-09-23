@@ -18,7 +18,7 @@ iPhone ──Bluetooth HFP──► Pi: PipeWire/WirePlumber (hands-free role)
                            Firefox on the desktop: https://phone.home:8443
                                ▲
                            ring agent (desktop, pythonw) - polls "is it ringing?",
-                           shows an always-on-top Answer/Decline popup
+                           shows an always-on-top call window (the page, embedded in WebView2)
 ```
 
 ## Why a host service, not K3s
