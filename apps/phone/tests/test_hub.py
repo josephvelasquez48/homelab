@@ -1,6 +1,9 @@
+import tempfile
+from pathlib import Path
+
 import pytest
 
-from app.hub import Hub
+from app.hub import Hub, load_settings
 from app.telephony import Call, PhoneState, TelephonyError
 
 
@@ -19,7 +22,13 @@ class FakeTelephony:
     async def answer(self, path):
         if path not in {c.path for c in self.state.calls}:
             raise TelephonyError("no such call")
-        self.answered.append(path)
+        # Record RejectSCO as it stood when the phone was told to answer.
+        self.answered.append((path, self.reject_sco[-1] if self.reject_sco else None))
+
+    async def dial(self, number):
+        self.dialed_with_reject = self.reject_sco[-1] if self.reject_sco else None
+        if number == "bad":
+            raise TelephonyError("invalid number")
 
 
 class FakeBridge:
@@ -49,9 +58,11 @@ class FakeSocket:
         self.sent.append(text)
 
 
-def make(transport="idle", calls=()):
+def make(transport="idle", calls=(), settings_path=None):
     tel = FakeTelephony(PhoneState(True, "/ag1", "A0", transport, list(calls)))
-    return Hub(tel, FakeBridge()), tel
+    # Never the real ~/.config/phone-bridge/settings.json.
+    path = settings_path or Path(tempfile.mkdtemp()) / "settings.json"
+    return Hub(tel, FakeBridge(), settings_path=path), tel
 
 
 @pytest.mark.asyncio
@@ -96,7 +107,7 @@ async def test_unknown_call_path_is_refused():
     page = FakeSocket()
     assert await hub.command(page, {"action": "answer", "call": "/org/freedesktop/Anything"}) == "no such call"
     assert await hub.command(page, {"action": "answer", "call": "/ag1/call1"}) is None
-    assert tel.answered == ["/ag1/call1"]
+    assert [path for path, _ in tel.answered] == ["/ag1/call1"]
 
 
 @pytest.mark.asyncio
@@ -116,3 +127,75 @@ async def test_bridge_starts_on_pending_link():
     await hub.command(page, {"action": "audio-ready"})
     assert hub.bridge.running
     assert hub.snapshot()["audioOnPi"]
+
+
+RINGING = Call("/ag1/call1", "incoming", "+15555550123", "")
+
+
+async def audio_page(hub):
+    page = FakeSocket()
+    await hub.add(page)
+    await hub.command(page, {"action": "audio-ready"})
+    return page
+
+
+@pytest.mark.asyncio
+async def test_keep_phone_rejects_audio_even_with_a_page_open(tmp_path):
+    hub, tel = make(calls=[RINGING], settings_path=tmp_path / "s.json")
+    page = await audio_page(hub)
+    assert tel.reject_sco[-1] is False  # default: an audio page takes calls
+
+    await hub.command(page, {"action": "set-keep-phone", "value": True})
+    assert tel.reject_sco[-1] is True
+    assert hub.snapshot()["settings"]["keepPhoneAnswered"] is True
+    assert load_settings(tmp_path / "s.json")["keepPhoneAnswered"] is True  # survives restart
+
+
+@pytest.mark.asyncio
+async def test_answering_on_pc_lifts_reject_before_the_phone_answers(tmp_path):
+    hub, tel = make(calls=[RINGING], settings_path=tmp_path / "s.json")
+    page = await audio_page(hub)
+    await hub.command(page, {"action": "set-keep-phone", "value": True})
+
+    await hub.command(page, {"action": "answer", "call": "/ag1/call1"})
+    assert tel.answered == [("/ag1/call1", False)]
+
+    # Call over: the claim ends, and the next call answered on the phone stays there.
+    tel.state.calls = []
+    await hub.tick()
+    assert tel.reject_sco[-1] is True
+
+
+@pytest.mark.asyncio
+async def test_dial_from_pc_claims_the_call(tmp_path):
+    hub, tel = make(settings_path=tmp_path / "s.json")
+    page = await audio_page(hub)
+    await hub.command(page, {"action": "set-keep-phone", "value": True})
+    await hub.command(page, {"action": "dial", "number": "5555550123"})
+    assert tel.dialed_with_reject is False
+    # The call appears after dialing and the claim holds for it.
+    tel.state.calls = [Call("/ag1/call2", "dialing", "5555550123", "")]
+    await hub.tick()
+    assert tel.reject_sco[-1] is False
+
+
+@pytest.mark.asyncio
+async def test_failed_dial_drops_the_claim(tmp_path):
+    hub, tel = make(settings_path=tmp_path / "s.json")
+    page = await audio_page(hub)
+    await hub.command(page, {"action": "set-keep-phone", "value": True})
+    assert await hub.command(page, {"action": "dial", "number": "bad"}) == "invalid number"
+    assert tel.reject_sco[-1] is True
+
+
+@pytest.mark.asyncio
+async def test_mic_choice_is_saved_and_shared(tmp_path):
+    hub, _ = make(settings_path=tmp_path / "s.json")
+    page = FakeSocket()
+    await hub.add(page)
+    await hub.command(page, {"action": "set-mic", "value": "Mic/Inst (Samson G-Track Pro)"})
+    assert hub.snapshot()["settings"]["micLabel"] == "Mic/Inst (Samson G-Track Pro)"
+    assert load_settings(tmp_path / "s.json")["micLabel"] == "Mic/Inst (Samson G-Track Pro)"
+    # An older settings file without the key still loads.
+    (tmp_path / "old.json").write_text('{"keepPhoneAnswered": true}')
+    assert load_settings(tmp_path / "old.json") == {"keepPhoneAnswered": True, "micLabel": ""}

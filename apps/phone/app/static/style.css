@@ -46,10 +46,16 @@ input[type="tel"], input[type="password"] {
 .meter > div { height: 100%; width: 0; background: var(--good); transition: width 80ms linear; }
 label.vol { display: flex; align-items: center; gap: 8px; margin-top: 12px; color: var(--muted); font-size: 14px; }
 label.vol input { flex: 1; }
+label.vol select {
+  flex: 1; min-width: 0; font: inherit; font-size: 14px; padding: 6px 8px; border-radius: 8px;
+  border: 1px solid var(--line); background: var(--bg); color: var(--text);
+}
+label.toggle { display: flex; align-items: center; gap: 8px; margin-top: 12px; color: var(--muted); font-size: 14px; cursor: pointer; }
 [hidden] { display: none !important; }
 
 /* Compact window opened by the desktop ring agent. */
 body.popup main { padding: 10px; }
 body.popup h1 { display: none; }
 body.popup .card { margin-bottom: 8px; padding: 12px; }
-body.popup #audio-setup, body.popup #vol-row { display: none !important; }
+body.popup #audio-setup, body.popup #keep-phone-row, body.popup #mic-row { display: none !important; }
+.mic-warning { border-color: var(--bad); color: var(--bad); font-size: 14px; }

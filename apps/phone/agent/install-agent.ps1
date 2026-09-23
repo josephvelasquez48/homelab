@@ -2,9 +2,11 @@
 #
 #   powershell -ExecutionPolicy Bypass -File apps\phone\agent\install-agent.ps1 -Token <PHONE_AGENT_TOKEN>
 #
-# Writes %APPDATA%\phone-bridge\agent.json, adds a Startup-folder shortcut
-# that runs the agent with pythonw (no console window) at login, and
-# starts it now. Re-running updates the token and restarts the agent.
+# Creates the agent's own venv (%LOCALAPPDATA%\phone-bridge\agent-venv)
+# with pywebview, writes %APPDATA%\phone-bridge\agent.json, adds a
+# Startup-folder shortcut that runs the agent with the venv's pythonw (no
+# console window) at login, and starts it now. Re-running updates the
+# token and pywebview and restarts the agent.
 param(
     [Parameter(Mandatory = $true)][string]$Token,
     [string]$Url = "https://phone.home:8443"
@@ -12,12 +14,17 @@ param(
 $ErrorActionPreference = "Stop"
 
 $agent = Join-Path $PSScriptRoot "phone_agent.pyw"
-$pythonw = (Get-Command pythonw.exe -ErrorAction SilentlyContinue).Source
-if (-not $pythonw) {
-    $python = (Get-Command python.exe).Source
-    $pythonw = Join-Path (Split-Path $python) "pythonw.exe"
+
+# Its own venv, so pywebview (and pythonnet under it) never touch the
+# user's main Python install.
+$venv = Join-Path $env:LOCALAPPDATA "phone-bridge\agent-venv"
+if (-not (Test-Path (Join-Path $venv "Scripts\python.exe"))) {
+    python -m venv $venv
+    if ($LASTEXITCODE) { throw "couldn't create $venv" }
 }
-if (-not (Test-Path $pythonw)) { throw "pythonw.exe not found next to python.exe" }
+& (Join-Path $venv "Scripts\python.exe") -m pip install --quiet --disable-pip-version-check --upgrade "pywebview>=6.2"
+if ($LASTEXITCODE) { throw "pip install pywebview failed" }
+$pythonw = Join-Path $venv "Scripts\pythonw.exe"
 
 $configDir = Join-Path $env:APPDATA "phone-bridge"
 New-Item -ItemType Directory -Force $configDir | Out-Null
@@ -29,10 +36,30 @@ $link = $shell.CreateShortcut((Join-Path $startup "Phone ring agent.lnk"))
 $link.TargetPath = $pythonw
 $link.Arguments = "`"$agent`""
 $link.WorkingDirectory = $PSScriptRoot
-$link.Description = "Pops up incoming iPhone calls from the Pi phone bridge"
+$link.Description = "Takes incoming iPhone calls in a popup, via the Pi phone bridge"
 $link.Save()
 
-# Restart: stop any agent already running from this script path.
+# Desktop shortcut to the full phone page (dialing, settings) in Firefox.
+# GetFolderPath follows OneDrive redirection.
+$firefox = @(
+    (Join-Path $env:ProgramFiles "Mozilla Firefox\firefox.exe"),
+    (Join-Path ${env:ProgramFiles(x86)} "Mozilla Firefox\firefox.exe")
+) | Where-Object { $_ -and (Test-Path $_) } | Select-Object -First 1
+$desktop = [Environment]::GetFolderPath("Desktop")
+$page = $shell.CreateShortcut((Join-Path $desktop "Phone.lnk"))
+if ($firefox) {
+    $page.TargetPath = $firefox
+    $page.Arguments = "--new-window $Url"
+    $page.IconLocation = "$firefox,0"
+} else {
+    # No Firefox: hand the URL to the default browser.
+    $page.TargetPath = Join-Path $env:WINDIR "explorer.exe"
+    $page.Arguments = $Url
+}
+$page.Description = "iPhone calls on this PC"
+$page.Save()
+
+# Restart: stop any agent already running, from any Python.
 Get-CimInstance Win32_Process -Filter "Name = 'pythonw.exe'" |
     Where-Object { $_.CommandLine -like "*phone_agent.pyw*" } |
     ForEach-Object { Stop-Process -Id $_.ProcessId -Force }
