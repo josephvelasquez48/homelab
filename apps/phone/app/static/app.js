@@ -21,10 +21,14 @@ const MIC_OPTIONS = { echoCancellation: true, noiseSuppression: true, autoGainCo
 // the ring agent's window give the same device different IDs, but the
 // same label - so both use it, whatever Windows' default is (on this
 // desktop that default is a silent Oculus virtual mic).
+// Chromium (the agent's WebView2) appends a USB "(vid:pid)" to device
+// labels and Firefox doesn't, so compare without it.
+const micName = (label) => (label || "").replace(/\s*\([0-9a-f]{4}:[0-9a-f]{4}\)$/i, "");
+
 async function micConstraints(label) {
   if (label) {
     const devices = await navigator.mediaDevices.enumerateDevices();
-    const match = devices.find((d) => d.kind === "audioinput" && d.label === label);
+    const match = devices.find((d) => d.kind === "audioinput" && micName(d.label) === micName(label));
     if (match) return { ...MIC_OPTIONS, deviceId: { exact: match.deviceId } };
   }
   return MIC_OPTIONS;
@@ -158,14 +162,17 @@ async function switchMic(label, { save = true } = {}) {
 // after audio is on (and again when a device is plugged in or removed).
 async function listMics() {
   if (!audio) return;
-  const inUse = audio.stream.getAudioTracks()[0]?.label || "";
-  const mics = (await navigator.mediaDevices.enumerateDevices()).filter((d) => d.kind === "audioinput" && d.label);
+  const inUse = micName(audio.stream.getAudioTracks()[0]?.label);
+  // Chromium also lists "default"/"communications" aliases of real devices.
+  const mics = (await navigator.mediaDevices.enumerateDevices()).filter(
+    (d) => d.kind === "audioinput" && d.label && d.deviceId !== "default" && d.deviceId !== "communications",
+  );
   const select = $("mic");
   select.replaceChildren(...mics.map((d) => {
     const o = document.createElement("option");
-    o.textContent = d.label;
-    o.value = d.label;
-    o.selected = d.label === inUse;
+    o.textContent = micName(d.label);
+    o.value = micName(d.label);
+    o.selected = micName(d.label) === inUse;
     return o;
   }));
 }
@@ -248,7 +255,7 @@ function render(s) {
   // Once per label, so a mic that doesn't exist here can't loop.
   if (audio && savedMic() && savedMic() !== appliedMic) {
     appliedMic = savedMic();
-    if (audio.stream.getAudioTracks()[0]?.label !== appliedMic) switchMic(appliedMic, { save: false });
+    if (micName(audio.stream.getAudioTracks()[0]?.label) !== micName(appliedMic)) switchMic(appliedMic, { save: false });
   }
   $("audio-dot").className = `dot ${audio ? (s.bridged ? "on" : "") : "off"}`;
   $("audio-status").textContent = !audio
