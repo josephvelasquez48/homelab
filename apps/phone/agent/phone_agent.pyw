@@ -139,6 +139,16 @@ class Agent:
         """
         if self._permissions_hooked:
             return
+        # pywebview fires `loaded` on a worker thread, and WebView2 throws
+        # "CoreWebView2 can only be accessed from the UI thread" - so hop
+        # onto the form's thread first.
+        from System import Action
+
+        self.window.native.Invoke(Action(self._hook_permissions_on_ui_thread))
+
+    def _hook_permissions_on_ui_thread(self) -> None:
+        if self._permissions_hooked:
+            return
         from Microsoft.Web.WebView2.Core import CoreWebView2PermissionKind, CoreWebView2PermissionState
 
         def on_request(sender, args):

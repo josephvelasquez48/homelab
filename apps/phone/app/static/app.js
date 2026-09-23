@@ -25,7 +25,7 @@ function connect(delay = 500) {
   ws.binaryType = "arraybuffer";
   ws.onopen = () => {
     delay = 500;
-    if (audio) send({ action: "audio-ready" });
+    announceAudio();
   };
   ws.onmessage = (e) => {
     if (typeof e.data !== "string") {
@@ -92,8 +92,9 @@ async function enableAudio() {
     limiter.release.value = 0.15;
     player.connect(gain).connect(limiter).connect(ctx.destination);
     audio = { ctx, capture, player, gain, stream, analyser };
+    ctx.onstatechange = () => { announceAudio(); render(state); };
     if (!AGENT && "Notification" in window && Notification.permission === "default") Notification.requestPermission();
-    send({ action: "audio-ready" });
+    announceAudio();
     drawMeter();
     render(state);
     return true;
@@ -101,6 +102,13 @@ async function enableAudio() {
     showError(`Couldn't start PC audio: ${err.message}`);
     return false;
   }
+}
+
+// Tell the Pi this page can take a call's audio - only once it's actually
+// running. A context Firefox's autoplay policy left suspended can't play
+// anything, and the Pi would otherwise send a call's audio to it.
+function announceAudio() {
+  if (audio && audio.ctx.state === "running") send({ action: "audio-ready" });
 }
 
 function drawMeter() {
@@ -167,7 +175,11 @@ function render(s) {
     ? "iPhone connected"
     : "iPhone not connected - check Bluetooth on the phone";
 
-  $("audio-setup").hidden = !!audio;
+  // Shown until audio is actually running: an auto-enabled context that
+  // Firefox's autoplay policy left suspended still needs one click.
+  const audioRunning = !!audio && audio.ctx.state === "running";
+  $("audio-setup").hidden = audioRunning;
+  $("enable-audio").textContent = audio ? "Turn on speakers" : "Enable PC mic & speakers";
   $("vol-row").hidden = !audio;
   $("audio-dot").className = `dot ${audio ? (s.bridged ? "on" : "") : "off"}`;
   $("audio-status").textContent = !audio
@@ -284,4 +296,19 @@ for (const [padId, onKey] of [
   }
 }
 
+// Turn audio on without the button when the mic is already granted for
+// good - a remembered permission, not a one-off. Only checked, never
+// requested, so opening the page can't pop a permission prompt. (The ring
+// agent's window turns audio on when Answer is clicked instead.)
+async function autoEnableAudio() {
+  if (AGENT || !navigator.permissions) return;
+  try {
+    const mic = await navigator.permissions.query({ name: "microphone" });
+    if (mic.state === "granted") await enableAudio();
+  } catch {
+    // Browser can't query mic permission: keep the button.
+  }
+}
+
 connect();
+autoEnableAudio();
