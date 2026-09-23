@@ -32,6 +32,26 @@ $link.WorkingDirectory = $PSScriptRoot
 $link.Description = "Pops up incoming iPhone calls from the Pi phone bridge"
 $link.Save()
 
+# Desktop shortcut to the phone page, in Firefox (the browser the ring
+# agent's Answer button opens). GetFolderPath follows OneDrive redirection.
+$firefox = @(
+    (Join-Path $env:ProgramFiles "Mozilla Firefox\firefox.exe"),
+    (Join-Path ${env:ProgramFiles(x86)} "Mozilla Firefox\firefox.exe")
+) | Where-Object { $_ -and (Test-Path $_) } | Select-Object -First 1
+$desktop = [Environment]::GetFolderPath("Desktop")
+$page = $shell.CreateShortcut((Join-Path $desktop "Phone.lnk"))
+if ($firefox) {
+    $page.TargetPath = $firefox
+    $page.Arguments = "--new-window $Url"
+    $page.IconLocation = "$firefox,0"
+} else {
+    # No Firefox: hand the URL to the default browser.
+    $page.TargetPath = Join-Path $env:WINDIR "explorer.exe"
+    $page.Arguments = $Url
+}
+$page.Description = "iPhone calls on this PC"
+$page.Save()
+
 # Restart: stop any agent already running from this script path.
 Get-CimInstance Win32_Process -Filter "Name = 'pythonw.exe'" |
     Where-Object { $_.CommandLine -like "*phone_agent.pyw*" } |
