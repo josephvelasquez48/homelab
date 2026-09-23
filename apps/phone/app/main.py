@@ -87,11 +87,14 @@ def ringing_call():
 @app.get("/api/agent/ringing", dependencies=[Depends(require_agent)])
 async def agent_ringing():
     call = ringing_call()
+    live = next((c for c in hub.tel.state.calls if c.state != "disconnected"), None)
     return {
         "ringing": call.__dict__ if call else None,
-        # Any call not yet over - the agent keeps its window up for a call
-        # answered in it, and hides it once there's nothing left.
-        "inCall": any(c.state != "disconnected" for c in hub.tel.state.calls),
+        # The call the agent's window is for: it shows for every call -
+        # ringing, answered on the iPhone, or dialed from it - so its audio
+        # can be moved to the PC at any point.
+        "call": live.__dict__ if live else None,
+        "inCall": live is not None,
         # A page with PC audio on already rings by itself; the agent stays quiet.
         "audioPages": len(hub.audio_clients),
     }

@@ -2,15 +2,17 @@
 
 Runs in the background on the Windows desktop (pythonw from its own venv,
 started at login from the Startup folder - see docs/phone.md). A worker
-thread asks the Pi once a second whether a call is ringing. On a new
-ringing call - unless a browser page already has PC audio on, in which
-case that page rings by itself - it rings through the PC speakers and
-shows its window: the phone page's compact /popup view, embedded with
+thread asks the Pi once a second about calls. For every
+call - incoming, answered on the iPhone, or dialed from it - it shows
+its window (and rings through the PC speakers while the call rings,
+unless a browser page with PC audio on is open to ring instead): the
+phone page's compact /popup view, embedded with
 pywebview on WebView2 (Windows' built-in web engine; no browser window
 opens). Answer, Decline, Mute, Keypad and Hang up all happen in there,
 and the page holds the mic and speakers, so the call gets the web
-engine's echo cancellation. The window hides itself when the call is
-over, and is blanked while hidden so it doesn't count as an open page.
+engine's echo cancellation. For a call on the iPhone it offers "Move
+call audio to this PC". The window hides itself when the call is over,
+and is blanked while hidden so it doesn't count as an open page.
 
 There's no login step: when the embedded page comes up on the login
 form, the agent signs it in with its token (POST /api/agent/session from
@@ -186,12 +188,23 @@ class Agent:
 
     def _close_requested(self) -> None:
         status = self._status()
-        call = status.get("ringing")
-        if call:
+        call = status.get("call")
+        if not call:
+            self.hide()
+        elif not self._holds_call_audio():
+            # Ringing, or a call whose audio is on the iPhone (or in another
+            # page): hide for this call. It carries on regardless.
             self.dismissed.add(call["path"])
             self.hide()
-        elif not status.get("inCall"):
-            self.hide()
+        # Otherwise this window is the call's mic and speakers - closing it
+        # would leave the call silent with no way to hang up, so it stays.
+
+    def _holds_call_audio(self) -> bool:
+        """Whether this window's page answered or took over the call's audio."""
+        try:
+            return bool(self.window.evaluate_js("typeof answeredHere !== 'undefined' && answeredHere && !!audio"))
+        except Exception:
+            return False
 
     # -- show / hide ------------------------------------------------------------
 
@@ -237,20 +250,25 @@ class Agent:
             time.sleep(min(30, POLL_SECONDS * max(1, failures)))
 
     def apply(self, status: dict) -> None:
-        call = status.get("ringing")
-        if not status.get("inCall"):
+        # Shown for every call - ringing, answered on the iPhone, or dialed
+        # from it - so its audio can be moved to the PC at any point, until
+        # the call ends or the window is closed for that call.
+        call = status.get("call")
+        if not call:
             self.dismissed.clear()
-        wanted = bool(call) and call["path"] not in self.dismissed
-        if wanted and not self.showing and status.get("audioPages", 0) == 0:
-            log.info("ringing: %s", call.get("name") or call.get("number") or "unknown")
+            if self.showing:
+                self.hide()
+            return
+        if call["path"] in self.dismissed:
+            if self.showing:
+                self.hide()
+            return
+        if not self.showing:
+            log.info("%s call: %s", call.get("state"), call.get("name") or call.get("number") or "unknown")
             self.show()
-        # Once answered here, this window's page is the audio page, so the
-        # call is "ours" while inCall and audioPages hold. Answered on the
-        # phone instead, nobody turned audio on - nothing left to show.
-        still_needed = wanted or (status.get("inCall") and status.get("audioPages", 0) > 0)
-        if self.showing and not still_needed:
-            self.hide()
-        self.set_ringing(self.showing and wanted)
+        # Ring while it rings - unless a page with PC audio on is open, which
+        # rings by itself.
+        self.set_ringing(bool(status.get("ringing")) and status.get("audioPages", 0) == 0)
 
 
 def main() -> None:

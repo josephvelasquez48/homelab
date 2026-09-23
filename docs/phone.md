@@ -161,11 +161,15 @@ audio natively.
 - **Mic permission.** pywebview 6.2.1 doesn't handle WebView2's
   `PermissionRequested`, so the agent does: microphone for
   `phone.home`, deny everything else.
-- **Hiding.** The window hides when the call is over, or when it was
-  answered on the phone instead, and is blanked while hidden so it
-  doesn't count as an open audio page. Closing it silences a ringing
-  call without declining; during a call it stays, since hiding it would
-  leave no way to hang up.
+- **Every call, not just incoming.** The window shows for a ringing
+  call, one answered on the iPhone, and one dialed from it, so "Move call
+  audio to this PC" is always one click away. It hides when the call
+  ends, and is blanked while hidden so it doesn't count as an open audio
+  page. Closing it hides it for that call - unless this window is the
+  call's mic and speakers, since hiding it then would leave the call
+  silent with no way to hang up. Moving audio *back* to the phone is the
+  iPhone's own audio-route button; PipeWire's telephony API has no call
+  to release the audio link.
 
 ## Setup
 
