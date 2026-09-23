@@ -1,3 +1,5 @@
+import asyncio
+
 import pytest
 from dbus_fast import Variant
 
@@ -152,3 +154,54 @@ async def test_audio_to_phone_holds_the_link_off_until_pc_asks(tmp_path, monkeyp
 def test_metrics_keep_full_timestamp_precision():
     text = render({"phone_bridge_last_update_timestamp_seconds": 1790133259.25}, {}, {})
     assert "phone_bridge_last_update_timestamp_seconds 1790133259.25\n" in text
+
+
+class FakeBluez:
+    """Stands in for Reconnector._call: scripted Connect results, records calls."""
+
+    def __init__(self, *connect_results):
+        self.results = list(connect_results)
+        self.calls = []
+
+    async def __call__(self, path, iface, member, *args):
+        self.calls.append(member)
+        if member == "Connect":
+            result = self.results.pop(0)
+            if result == "hang":
+                await asyncio.sleep(3600)
+            if isinstance(result, Exception):
+                raise result
+        return []
+
+
+@pytest.mark.asyncio
+async def test_reconnect_clears_a_stuck_connect(monkeypatch):
+    from app import reconnect
+
+    r = reconnect.Reconnector(lambda: False)
+    r._call = FakeBluez(RuntimeError("org.bluez.Error.InProgress: In Progress"), None)
+    assert await r.attempt("/dev_phone") is False
+    assert r._call.calls == ["Connect", "Disconnect"]  # stuck state cleared
+    assert await r.attempt("/dev_phone") is True
+    assert (r.attempts, r.successes) == (2, 1)
+
+
+@pytest.mark.asyncio
+async def test_reconnect_times_out_a_hanging_connect(monkeypatch):
+    from app import reconnect
+
+    monkeypatch.setattr(reconnect, "CONNECT_TIMEOUT", 0.05)
+    r = reconnect.Reconnector(lambda: False)
+    r._call = FakeBluez("hang")
+    assert await r.attempt("/dev_phone") is False
+    assert r._call.calls == ["Connect", "Disconnect"]
+
+
+@pytest.mark.asyncio
+async def test_reconnect_out_of_range_needs_no_reset():
+    from app import reconnect
+
+    r = reconnect.Reconnector(lambda: False)
+    r._call = FakeBluez(RuntimeError("org.bluez.Error.Failed: br-connection-page-timeout"))
+    assert await r.attempt("/dev_phone") is False
+    assert r._call.calls == ["Connect"]

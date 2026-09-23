@@ -19,6 +19,7 @@ BLUEZ = "org.bluez"
 DEVICE_IFACE = "org.bluez.Device1"
 HFP_AG_UUID = "0000111f-0000-1000-8000-00805f9b34fb"
 INTERVAL_SECONDS = 30
+CONNECT_TIMEOUT = 30
 
 
 def reconnect_candidates(objects: dict) -> list[str]:
@@ -40,6 +41,7 @@ class Reconnector:
         self.attempts = 0
         self.successes = 0
         self.bus: MessageBus | None = None
+        self._last_reason: str | None = None
 
     async def _call(self, path, iface, member, signature="", body=()):
         reply = await self.bus.call(
@@ -48,6 +50,36 @@ class Reconnector:
         if reply.message_type == MessageType.ERROR:
             raise RuntimeError(f"{reply.error_name}: {reply.body[0] if reply.body else ''}")
         return reply.body
+
+    async def attempt(self, path: str) -> bool:
+        """One Connect, with a time limit; clears BlueZ's stuck state after a hang."""
+        self.attempts += 1
+        try:
+            await asyncio.wait_for(self._call(path, DEVICE_IFACE, "Connect"), CONNECT_TIMEOUT)
+        except asyncio.TimeoutError:
+            reason = "timed out"
+        except RuntimeError as e:
+            reason = str(e)
+        else:
+            self.successes += 1
+            self._last_reason = None
+            log.info("reconnected %s", path)
+            return True
+        # Every 30 s while the phone is away, so only log a new reason, or
+        # every 20th attempt as a heartbeat.
+        if reason != self._last_reason or self.attempts % 20 == 0:
+            log.info("reconnect %s failed (attempt %d): %s", path, self.attempts, reason)
+        self._last_reason = reason
+        if reason == "timed out" or "InProgress" in reason:
+            # A Connect that never finishes leaves BlueZ answering every later
+            # one with InProgress, without paging the phone at all: seen live
+            # as 23 failed attempts with nothing on the air while the phone sat
+            # in range. Disconnect clears it for the next attempt.
+            try:
+                await asyncio.wait_for(self._call(path, DEVICE_IFACE, "Disconnect"), 10)
+            except (asyncio.TimeoutError, RuntimeError) as e:
+                log.info("clearing stuck connect on %s failed: %s", path, e)
+        return False
 
     async def run(self) -> None:
         self.bus = await MessageBus(bus_type=BusType.SYSTEM).connect()
@@ -58,12 +90,6 @@ class Reconnector:
             try:
                 [objects] = await self._call("/", "org.freedesktop.DBus.ObjectManager", "GetManagedObjects")
                 for path in reconnect_candidates(objects):
-                    self.attempts += 1
-                    try:
-                        await self._call(path, DEVICE_IFACE, "Connect")
-                        self.successes += 1
-                        log.info("reconnected %s", path)
-                    except RuntimeError as e:
-                        log.debug("reconnect %s failed: %s", path, e)
+                    await self.attempt(path)
             except Exception:
                 log.exception("reconnect check failed")
