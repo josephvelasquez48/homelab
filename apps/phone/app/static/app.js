@@ -76,9 +76,18 @@ async function enableAudio() {
       if (!muted && ws && ws.readyState === WebSocket.OPEN && state && state.bridged) ws.send(e.data);
     };
     const player = new AudioWorkletNode(ctx, "player", { outputChannelCount: [2] });
+    // The phone sends call audio quiet - peaks ~1000 of 32767 on a live
+    // call, about -30 dBFS - so the default is 4x (+12 dB), with a limiter
+    // after it so a loud caller at a high setting doesn't clip.
     const gain = ctx.createGain();
     gain.gain.value = Number($("volume").value);
-    player.connect(gain).connect(ctx.destination);
+    const limiter = ctx.createDynamicsCompressor();
+    limiter.threshold.value = -3;
+    limiter.knee.value = 0;
+    limiter.ratio.value = 20;
+    limiter.attack.value = 0.003;
+    limiter.release.value = 0.15;
+    player.connect(gain).connect(limiter).connect(ctx.destination);
     audio = { ctx, capture, player, gain, stream, analyser };
     if ("Notification" in window && Notification.permission === "default") Notification.requestPermission();
     send({ action: "audio-ready" });
@@ -207,7 +216,16 @@ function currentCall() {
 }
 
 $("enable-audio").onclick = enableAudio;
-$("volume").oninput = (e) => { if (audio) audio.gain.gain.value = Number(e.target.value); };
+// Remembered per browser; storage can be unavailable (private window),
+// in which case the slider just starts at its default.
+try {
+  const saved = localStorage.getItem("phone-volume");
+  if (saved !== null) $("volume").value = saved;
+} catch {}
+$("volume").oninput = (e) => {
+  if (audio) audio.gain.gain.value = Number(e.target.value);
+  try { localStorage.setItem("phone-volume", e.target.value); } catch {}
+};
 
 $("answer").onclick = async () => {
   // Answering from here should bring the audio here too, so make sure the
