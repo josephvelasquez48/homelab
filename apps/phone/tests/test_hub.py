@@ -103,3 +103,16 @@ async def test_unknown_call_path_is_refused():
 async def test_unknown_action():
     hub, _ = make()
     assert await hub.command(FakeSocket(), {"action": "format-disk"}) == "unknown action"
+
+
+@pytest.mark.asyncio
+async def test_bridge_starts_on_pending_link():
+    # "pending" = the phone opened SCO and is sending; the link only turns
+    # "active" once the bridge consumes it. Waiting for "active" deadlocked
+    # on a live call.
+    hub, tel = make(transport="pending")
+    page = FakeSocket()
+    await hub.add(page)
+    await hub.command(page, {"action": "audio-ready"})
+    assert hub.bridge.running
+    assert hub.snapshot()["audioOnPi"]

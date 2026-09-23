@@ -79,12 +79,28 @@ Each of these made a working call look broken, and each is now pinned in
    volume over HFP and restored by WirePlumber. Fixed with
    `bluez5.enable-hw-volume = false`, and the bridge sets both streams to
    1.0 when a call starts. Volume is the page's slider now.
+   The first version of that fix didn't work, and a later call showed
+   why: the node has two volumes. `wpctl set-volume` sets
+   `channelVolumes` (it read back 1.00), but the 0.019 was the node's
+   master `volume` prop, untouched. The bridge now sets both
+   (`pw-cli set-param <id> Props '{ volume: 1.0 }'`); PipeWire's output
+   then matched raw `btmon` packet levels on the same call (~1000 peak
+   both).
 
 4. **A missing target records silence without error.** `pw-record
    --target X` with X absent falls back to the default sink's monitor and
    happily records nothing. The bridge starts both `pw-cat`s with
    `--target 0` and fails loudly (shown on the page) if the phone's
    streams or ports aren't there.
+
+5. **A call's audio sat on the Pi and went nowhere.** The bridge only
+   started once the transport read `active`, but with autoconnect off
+   (bug 2) nothing consumes the phone's streams until the bridge does,
+   so the transport stayed `pending` forever - while `btmon` showed ~260
+   SCO packets/s arriving. Neither side of the call heard anything, and
+   pressing "Move call audio to this PC" again returned
+   `org.pipewire.Telephony.Error.InvalidState`. `pending` now counts as
+   the audio being on the Pi.
 
 Checked and ruled out on the way: the Broadcom controller's SCO routing
 (`hcitool cmd 0x3f 0x1d` reads back routing `01`, over HCI, not the PCM
@@ -153,8 +169,10 @@ microphone (remembered) and autoplay.
 
 ## Limits
 
-- Narrowband (8 kHz) audio, because of bug 1. A USB Bluetooth dongle
-  with SCO over USB would likely get wideband back.
+- Narrowband (8 kHz) audio, because of bug 1: both ends sound muffled
+  next to an HD-voice cell call. Confirmed on a live call. A USB
+  Bluetooth dongle with SCO over USB (e.g. RTL8761B) would likely get
+  wideband (mSBC) back.
 - One phone. If two ever pair, the first gateway on the bus wins.
 - Echo: the page asks the browser for echo cancellation, but a headset
   is still the reliable way to keep speaker audio out of the mic.

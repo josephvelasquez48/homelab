@@ -45,13 +45,22 @@ class PhoneState:
     connected: bool = False
     gateway: str | None = None
     address: str | None = None
-    transport: str | None = None  # idle / pending / active: whether call audio is on the Pi
+    transport: str | None = None  # idle / pending / active - see audio_on_pi
+
+    @property
+    def audio_on_pi(self) -> bool:
+        # "pending" already means the phone has opened the SCO link and is
+        # sending audio: it only turns "active" once something consumes
+        # the streams. With autoconnect off (51-phone-bridge.conf), that
+        # something is the bridge - so waiting for "active" deadlocked, with
+        # a live call's audio arriving at the Pi and going nowhere.
+        return self.transport in ("pending", "active")
     calls: list[Call] = field(default_factory=list)
 
     def to_json(self) -> dict:
         return {
             "connected": self.connected,
-            "audioOnPi": self.transport == "active",
+            "audioOnPi": self.audio_on_pi,
             "calls": [c.__dict__ for c in self.calls],
         }
 
