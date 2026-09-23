@@ -39,23 +39,18 @@ $link.WorkingDirectory = $PSScriptRoot
 $link.Description = "Takes incoming iPhone calls in a popup, via the Pi phone bridge"
 $link.Save()
 
-# Desktop shortcut to the full phone page (dialing, settings) in Firefox.
-# GetFolderPath follows OneDrive redirection.
-$firefox = @(
-    (Join-Path $env:ProgramFiles "Mozilla Firefox\firefox.exe"),
-    (Join-Path ${env:ProgramFiles(x86)} "Mozilla Firefox\firefox.exe")
-) | Where-Object { $_ -and (Test-Path $_) } | Select-Object -First 1
+# Desktop shortcut: opens the agent's own phone window (the whole app - no
+# browser). If the agent is already running, the new copy just tells it to
+# open (--show); if not, it starts and opens. GetFolderPath follows OneDrive
+# redirection. The icon is the tray icon, saved as a .ico.
+$icon = Join-Path $env:LOCALAPPDATA "phone-bridge\phone.ico"
+& (Join-Path $venv "Scripts\python.exe") -c "import sys; sys.path.insert(0, r'$PSScriptRoot'); from tray import icon_image, GREEN; icon_image(GREEN).save(r'$icon', sizes=[(16,16),(32,32),(48,48),(64,64)])"
 $desktop = [Environment]::GetFolderPath("Desktop")
 $page = $shell.CreateShortcut((Join-Path $desktop "Phone.lnk"))
-if ($firefox) {
-    $page.TargetPath = $firefox
-    $page.Arguments = "--new-window $Url"
-    $page.IconLocation = "$firefox,0"
-} else {
-    # No Firefox: hand the URL to the default browser.
-    $page.TargetPath = Join-Path $env:WINDIR "explorer.exe"
-    $page.Arguments = $Url
-}
+$page.TargetPath = $pythonw
+$page.Arguments = "`"$agent`" --show"
+$page.WorkingDirectory = $PSScriptRoot
+$page.IconLocation = "$icon,0"
 $page.Description = "iPhone calls on this PC"
 $page.Save()
 

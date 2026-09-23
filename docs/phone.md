@@ -15,10 +15,11 @@ iPhone ──Bluetooth HFP──► Pi: PipeWire/WirePlumber (hands-free role)
                            phone-bridge (FastAPI, systemd user unit, :8443)
                                │  WebSocket: call state as JSON, audio as 16 kHz s16 frames
                                ▼
-                           Firefox on the desktop: https://phone.home:8443
+                           desktop agent's window (the page, embedded in WebView2):
+                           the full app from the tray / desktop shortcut, or the
+                           always-on-top popup when a call comes in
                                ▲
-                           ring agent (desktop, pythonw) - polls "is it ringing?",
-                           shows an always-on-top call window (the page, embedded in WebView2)
+                           desktop agent (pythonw) - polls the Pi about calls, tray, hotkeys
 ```
 
 ## Why a host service, not K3s
@@ -204,6 +205,13 @@ state: the slow ones run in their own loop.
   bridge down or silent, and the two silent-call cases (caller silent,
   PC mic silent) that each took a live call to find. No alert for the
   phone being away - it leaves the house with its owner.
+- **The whole app in the agent's window**: the tray's *Open phone* and
+  the desktop shortcut open the full page (dial pad, recent calls, mic,
+  settings) in the agent's WebView2 window; it stays until closed, and a
+  call brings it forward. The compact popup is still what appears for a
+  call when it isn't open. Opening it doesn't take calls' audio: the
+  window only announces audio once Answer, a dial or "Move call audio"
+  is used there, so a call answered on the iPhone stays on the iPhone.
 - **Tray icon and hotkeys** (`agent/tray.py`, `agent/hotkeys.py`): the
   icon shows connected / on a call / not connected, opens the page,
   pauses popups, and raises a notification for missed calls. Ctrl+Alt+A answers (or moves audio to the PC), Ctrl+Alt+H
@@ -240,13 +248,13 @@ Desktop:
 powershell -ExecutionPolicy Bypass -File apps\phone\agent\install-agent.ps1 -Token <PHONE_AGENT_TOKEN>
 ```
 
-It also puts a **Phone** shortcut on the desktop that opens the page in
-Firefox.
+It also puts a **Phone** shortcut on the desktop that opens the agent's
+own window as the full app (`phone_agent.pyw --show`) - no browser.
 
-Firefox, once: trust the homelab root if it doesn't already (Firefox has
-its own certificate store - [https.md](https.md)), log in at
-`https://phone.home:8443`, and in the site's permissions allow the
-microphone (remembered) and autoplay.
+No browser setup is needed: the agent's window signs itself in and is
+granted the microphone by the agent. (The page still works in a browser
+at `https://phone.home:8443` - that needs the homelab root trusted, a
+login, and the site's mic and autoplay allowed.)
 
 ## Limits
 
