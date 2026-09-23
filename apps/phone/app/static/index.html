@@ -42,6 +42,7 @@
         <button class="bad" id="hangup">Hang up</button>
       </div>
       <div class="row" id="to-pc-row" hidden><button class="primary" id="to-pc">Move call audio to this PC</button></div>
+      <div class="row" id="to-phone-row" hidden><button id="to-phone">Send call audio to iPhone</button></div>
       <div class="keypad" id="tone-pad" hidden></div>
     </div>
 
@@ -51,6 +52,17 @@
       <input type="tel" id="number" placeholder="Number" autocomplete="off">
       <div class="keypad" id="dial-pad"></div>
       <div class="row"><button class="good" id="dial">Call</button></div>
+    </div>
+
+    <div class="card" id="recent-card">
+      <h2>Recent calls</h2>
+      <ul class="list" id="recent"></ul>
+      <div class="sub" id="recent-empty">No calls yet.</div>
+    </div>
+
+    <div class="card sub" id="contacts-card">
+      <span id="contacts-status"></span>
+      <button class="small" id="refresh-contacts">Refresh contacts</button>
     </div>
 
     <div class="error" id="error"></div>

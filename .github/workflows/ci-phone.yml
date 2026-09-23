@@ -34,4 +34,4 @@ jobs:
           node --check app/static/worklets.js
       - name: Check the ring agent compiles
         # Windows-only at runtime (winsound), so only a syntax check here.
-        run: python3 -m py_compile agent/phone_agent.pyw
+        run: python3 -m py_compile agent/phone_agent.pyw agent/tray.py agent/hotkeys.py

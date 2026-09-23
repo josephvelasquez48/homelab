@@ -22,8 +22,8 @@ if (-not (Test-Path (Join-Path $venv "Scripts\python.exe"))) {
     python -m venv $venv
     if ($LASTEXITCODE) { throw "couldn't create $venv" }
 }
-& (Join-Path $venv "Scripts\python.exe") -m pip install --quiet --disable-pip-version-check --upgrade "pywebview>=6.2"
-if ($LASTEXITCODE) { throw "pip install pywebview failed" }
+& (Join-Path $venv "Scripts\python.exe") -m pip install --quiet --disable-pip-version-check --upgrade "pywebview>=6.2" "pystray>=0.19" "pillow>=10"
+if ($LASTEXITCODE) { throw "pip install of the agent's packages failed" }
 $pythonw = Join-Path $venv "Scripts\pythonw.exe"
 
 $configDir = Join-Path $env:APPDATA "phone-bridge"
@@ -59,10 +59,18 @@ if ($firefox) {
 $page.Description = "iPhone calls on this PC"
 $page.Save()
 
-# Restart: stop any agent already running, from any Python.
-Get-CimInstance Win32_Process -Filter "Name = 'pythonw.exe'" |
-    Where-Object { $_.CommandLine -like "*phone_agent.pyw*" } |
-    ForEach-Object { Stop-Process -Id $_.ProcessId -Force }
+# Restart: stop any agent already running, from any Python, and the
+# WebView2 processes it leaves behind - they hold the agent's profile, and
+# a new agent started while they're alive fails with "The requested
+# resource is in use".
+Get-CimInstance Win32_Process |
+    Where-Object { $_.CommandLine -like "*phone_agent.pyw*" -or ($_.Name -eq "msedgewebview2.exe" -and $_.CommandLine -like "*phone-bridge*") } |
+    ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+for ($i = 0; $i -lt 20; $i++) {
+    $left = @(Get-CimInstance Win32_Process -Filter "Name = 'msedgewebview2.exe'" | Where-Object { $_.CommandLine -like "*phone-bridge*" })
+    if ($left.Count -eq 0) { break }
+    Start-Sleep -Milliseconds 500
+}
 Start-Process -FilePath $pythonw -ArgumentList "`"$agent`"" -WorkingDirectory $PSScriptRoot
 
 Write-Output "Ring agent installed and running. Log: $configDir\agent.log"

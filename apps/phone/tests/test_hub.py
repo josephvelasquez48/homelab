@@ -25,6 +25,9 @@ class FakeTelephony:
         # Record RejectSCO as it stood when the phone was told to answer.
         self.answered.append((path, self.reject_sco[-1] if self.reject_sco else None))
 
+    async def activate_audio(self):
+        self.activated = True
+
     async def dial(self, number):
         self.dialed_with_reject = self.reject_sco[-1] if self.reject_sco else None
         if number == "bad":

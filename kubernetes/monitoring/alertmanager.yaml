@@ -85,6 +85,54 @@ data:
               description: >-
                 The hourly reporter on the Mac has stopped. The backup figures
                 still being displayed are stale and should not be trusted.
+  # Phone bridge (apps/phone, docs/phone.md). Its metrics come in through
+  # the Pi's node_exporter textfile collector, like the backup ones.
+  #
+  # No alert for "iPhone disconnected": the phone leaves the house with its
+  # owner, so that would page on every trip out. The Pi already retries the
+  # connection every 30 s (phone_reconnect_attempts_total).
+  phone.rules.yml: |
+    groups:
+      - name: phone
+        rules:
+          # The service writes its metrics every 15 s; stale or missing
+          # means it's down, hung, or node_exporter isn't collecting.
+          - alert: PhoneBridgeDown
+            expr: (time() - phone_bridge_last_update_timestamp_seconds) > 120 or absent(phone_bridge_last_update_timestamp_seconds)
+            for: 5m
+            labels: { severity: critical }
+            annotations:
+              summary: "Phone bridge hasn't reported in over 2 minutes"
+              description: >-
+                Calls can't reach the PC. On the Pi:
+                `systemctl --user status phone-bridge` and
+                `journalctl --user -u phone-bridge`.
+
+          # The two silent-call failures that each took a live call to find:
+          # audio bridged but nothing in it. rx ~0: the PC hears nothing
+          # (stream volume, docs/phone.md bug 3). tx ~0: the caller hears
+          # nothing - usually the PC mic asleep or the wrong one picked,
+          # though a call muted for 3 minutes looks the same.
+          - alert: PhoneCallerSilent
+            expr: max_over_time(phone_audio_rx_peak[2m]) < 50 and min_over_time(phone_bridge_running[2m]) == 1
+            for: 1m
+            labels: { severity: warning }
+            annotations:
+              summary: "Call bridged to the PC but no audio from the caller for 2+ minutes"
+              description: >-
+                The phone's side of a PC call has been silent. Check the
+                incoming stream's volume on the Pi (both `volume` and
+                `channelVolumes` - docs/phone.md bug 3).
+          - alert: PhonePcMicSilent
+            expr: max_over_time(phone_audio_tx_peak[3m]) < 50 and min_over_time(phone_bridge_running[3m]) == 1
+            for: 1m
+            labels: { severity: warning }
+            annotations:
+              summary: "Call bridged to the PC but the PC mic has sent silence for 3+ minutes"
+              description: >-
+                The caller probably can't hear you (or the call is muted).
+                Check the Mic picker on the phone page and that the Samson
+                isn't asleep (docs/phone.md, desktop setup).
 ---
 apiVersion: apps/v1
 kind: Deployment

@@ -60,6 +60,7 @@ function connect(delay = 500) {
     }
     const msg = JSON.parse(e.data);
     if (msg.type === "state") { render(msg); gotFirstState(); }
+    if (msg.type === "extras") renderExtras(msg);
     if (msg.type === "error") showError(msg.message);
   };
   ws.onclose = (e) => {
@@ -342,6 +343,9 @@ function render(s) {
   // agent's window is showing for a call answered on the phone, where PC
   // audio isn't on yet (the click turns it on).
   $("to-pc-row").hidden = !(call.state === "active" && !s.audioOnPi);
+  // Only from the page that has the call: elsewhere it would take the
+  // audio away from whoever is actually talking on the PC.
+  $("to-phone-row").hidden = !(call.state === "active" && s.bridged && audio && audio.ctx.state === "running");
 
   if (ringing) {
     // Wake the mic while it rings: the Samson on this desktop sleeps when
@@ -370,6 +374,63 @@ setInterval(() => {
 }, 500);
 
 // ---- controls -------------------------------------------------------------------
+
+// ---- history, contacts --------------------------------------------------
+
+function when(ts) {
+  const d = new Date(ts * 1000);
+  const today = new Date().toDateString() === d.toDateString();
+  return today
+    ? d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })
+    : d.toLocaleDateString([], { month: "short", day: "numeric" }) + " " + d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+}
+
+function duration(secs) {
+  if (secs == null) return "";
+  return secs < 60 ? `${secs}s` : `${Math.floor(secs / 60)}m ${secs % 60}s`;
+}
+
+function li(...children) {
+  const el = document.createElement("li");
+  el.append(...children);
+  return el;
+}
+
+function div(text, cls) {
+  const el = document.createElement("div");
+  el.textContent = text;
+  if (cls) el.className = cls;
+  return el;
+}
+
+function renderExtras(x) {
+  const arrows = { in: "↙", out: "↗", unknown: "•" };
+  $("recent").replaceChildren(...x.history.map((c) => {
+    const who = document.createElement("div");
+    who.className = "who";
+    const label = c.missed ? "Missed" : c.direction === "out" ? "Outgoing" : c.direction === "in" ? "Incoming" : "Call";
+    who.append(
+      div(c.name || c.number || "Unknown", c.missed ? "missed" : ""),
+      div(`${arrows[c.direction]} ${label} · ${when(c.started)}${c.seconds != null ? " · " + duration(c.seconds) : ""}${c.on_pc ? " · PC" : ""}`, "meta"),
+    );
+    const back = document.createElement("button");
+    back.className = "small";
+    back.textContent = "Call";
+    back.disabled = !c.number;
+    back.onclick = () => dialNumber(c.number);
+    return li(who, back);
+  }));
+  $("recent-empty").hidden = x.history.length > 0;
+
+  $("contacts-status").textContent = x.contactsError
+    ? x.contactsError
+    : x.contacts ? `${x.contacts} contact numbers synced from the iPhone` : "No contacts synced yet";
+}
+
+async function dialNumber(number) {
+  if (!(await enableAudio())) return;
+  send({ action: "dial", number });
+}
 
 function currentCall() {
   return state && state.calls.find((c) => c.state !== "disconnected");
@@ -400,6 +461,8 @@ $("answer").onclick = async () => {
 };
 $("decline").onclick = () => send({ action: "hangup", call: currentCall().path });
 $("hangup").onclick = () => send({ action: "hangup", call: currentCall().path });
+$("to-phone").onclick = () => send({ action: "audio-to-phone" });
+$("refresh-contacts").onclick = () => send({ action: "refresh-contacts" });
 $("to-pc").onclick = async () => {
   answeredHere = true; // this window now holds the call's audio
   if (!(await enableAudio())) return;

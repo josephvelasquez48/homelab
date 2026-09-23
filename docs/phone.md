@@ -171,6 +171,46 @@ audio natively.
   iPhone's own audio-route button; PipeWire's telephony API has no call
   to release the audio link.
 
+## Extras
+
+Added together after the calls themselves were solid. Each is optional
+in the hub (a test Hub has none of them) and none can hold up call
+state: the slow ones run in their own loop.
+
+- **Caller names** (`app/contacts.py`): the iPhone's phonebook over
+  Bluetooth PBAP, via BlueZ's OBEX daemon (`bluez-obexd`). Pulled on
+  connect and every 6 h into `~/.config/phone-bridge/contacts.json`,
+  names and numbers only, matched on the last ten digits. iOS returns
+  an empty phonebook until **Sync Contacts** is on for "joe" in its
+  Bluetooth settings - found by pulling it: the session opened fine and
+  reported size 0.
+- **Call history** (`app/history.py`): SQLite at
+  `~/.local/share/phone-bridge/calls.db`, not the cluster's Postgres -
+  this runs on the host, and Postgres admits only the backend
+  namespace. Missed = incoming and never active. The page lists recent
+  calls with call-back buttons.
+- **Send call audio to iPhone**: PipeWire's API can pull audio onto the
+  Pi but not release it, so `release-sco.sh` sends an HCI Disconnect for
+  the (e)SCO link. It needs root: installed root-owned as
+  `/usr/local/sbin/phone-bridge-release-sco`, with a sudoers rule for
+  exactly that path. `RejectSCO` stays on until the call ends or the PC
+  asks for the audio back.
+- **Auto-reconnect** (`app/reconnect.py`): while no phone is connected,
+  `Device1.Connect` on each paired, trusted device offering the
+  hands-free gateway profile, every 30 s.
+- **Metrics and alerts**: `phone_bridge.prom` in node_exporter's
+  textfile directory, the same route as the backup metrics, so no new
+  scrape target. Rules in `kubernetes/monitoring/alertmanager.yaml`:
+  bridge down or silent, and the two silent-call cases (caller silent,
+  PC mic silent) that each took a live call to find. No alert for the
+  phone being away - it leaves the house with its owner.
+- **Tray icon and hotkeys** (`agent/tray.py`, `agent/hotkeys.py`): the
+  icon shows connected / on a call / not connected, opens the page,
+  pauses popups, and raises a notification for missed calls. Ctrl+Alt+A answers (or moves audio to the PC), Ctrl+Alt+H
+  declines or hangs up, Ctrl+Alt+M mutes - by clicking the popup's own
+  buttons. A hotkey isn't a user gesture to the page, so the agent adds
+  `--autoplay-policy=no-user-gesture-required` to its own WebView2 only.
+
 ## Setup
 
 Pi (as joe):
