@@ -5,8 +5,9 @@ const $ = (id) => document.getElementById(id);
 // just the call card. It tries to close itself once the call is over;
 // Firefox only honours that for windows a script opened.
 const POPUP = location.pathname === "/popup";
-// ?agent=1: embedded in the desktop ring agent's own window, which shows
-// and hides itself - so no self-closing, and no browser notifications.
+// ?agent=1: embedded in the desktop agent's own window - as the compact
+// call popup (/popup) or the full app (/) - which shows and hides itself,
+// so no self-closing and no browser notifications.
 const AGENT = new URLSearchParams(location.search).has("agent");
 if (POPUP) document.body.classList.add("popup");
 let popupHadCall = false;
@@ -437,6 +438,7 @@ function renderExtras(x) {
 // left an outgoing call's audio on the iPhone (seen live: connected, never
 // bridged) - Answer and "Move call audio" already did it this way.
 async function dialNumber(number) {
+  answeredHere = true; // in the agent's window, dialing out claims the call like Answer does
   if (!(await enableAudio())) return;
   announceAudio();
   send({ action: "dial", number });

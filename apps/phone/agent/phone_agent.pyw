@@ -14,8 +14,15 @@ engine's echo cancellation. For a call on the iPhone it offers "Move
 call audio to this PC". The window hides itself when the call is over,
 and is blanked while hidden so it doesn't count as an open page.
 
+It's also the whole app, so no browser is needed: the tray's "Open
+phone" and the desktop shortcut (phone_agent.pyw --show) open the same
+window in app mode - the full page, with the dial pad, recent calls, mic
+picker and settings - which stays until closed. A second copy of the
+agent started with --show just tells the running one to open, over a
+localhost socket that also keeps the agent to a single instance.
+
 It also keeps a tray icon (iPhone connected / on a call / not connected,
-a menu to open the page or pause popups, and notifications for missed
+a menu to open the phone window or pause popups, and notifications for missed
 calls) and system-wide hotkeys: Ctrl+Alt+A answers (or
 moves a call's audio to the PC), Ctrl+Alt+H declines or hangs up,
 Ctrl+Alt+M mutes. See tray.py and hotkeys.py.
@@ -33,9 +40,10 @@ import json
 import logging
 import math
 import os
-import subprocess
+import socket
 import ssl
 import struct
+import sys
 import tempfile
 import threading
 import time
@@ -54,7 +62,9 @@ CONFIG_DIR = Path(os.environ["APPDATA"]) / "phone-bridge"
 PROFILE_DIR = Path(os.environ["LOCALAPPDATA"]) / "phone-bridge" / "webview"
 CA_FILE = Path(__file__).resolve().parents[3] / "certificates" / "homelab-ca.crt"
 POLL_SECONDS = 1.0
-FIREFOX = Path(os.environ.get("ProgramFiles", r"C:\Program Files")) / "Mozilla Firefox" / "firefox.exe"
+# 127.0.0.1 only: how a second copy (the desktop shortcut) tells the
+# running agent to open its window, and how it knows one is running.
+SHOW_PORT = 51871
 
 # JS run in the popup by the hotkeys: click the first of these buttons that
 # is actually visible (its row may be hidden), and say which one it was.
@@ -65,7 +75,8 @@ CLICK_FIRST_VISIBLE = """(() => {
   }
   return null;
 })()"""
-WIDTH, HEIGHT = 360, 400  # room for the call card plus the volume slider
+WIDTH, HEIGHT = 360, 400  # call popup: room for the call card plus the volume slider
+APP_WIDTH, APP_HEIGHT = 420, 760  # app window: the full page, scrolls if needed
 
 CONFIG_DIR.mkdir(parents=True, exist_ok=True)
 logging.basicConfig(
@@ -130,11 +141,11 @@ def ring_wav() -> str:
     return str(path)
 
 
-def corner() -> tuple[int, int]:
+def corner(width: int = WIDTH, height: int = HEIGHT) -> tuple[int, int]:
     """Bottom-right, above the taskbar, like a notification."""
     try:
         screen = webview.screens[0]
-        return screen.width - WIDTH - 24, screen.height - HEIGHT - 72
+        return max(0, screen.width - width - 24), max(0, screen.height - height - 72)
     except Exception:
         return 100, 100
 
@@ -144,6 +155,12 @@ class Agent:
         self.pi = pi
         self.window = window
         self.showing = False
+        # "call": the compact popup, shown for a call and hidden after it.
+        # "app": the full page, opened from the tray or the desktop
+        # shortcut, which stays until closed.
+        self.mode: str | None = None
+        self.call_seen: str | None = None  # the call the app window last came forward for
+        self.open_on_start = False
         self.dismissed: set[str] = set()
         self.ringing = False
         self._permissions_hooked = False
@@ -219,7 +236,11 @@ class Agent:
     def _close_requested(self) -> None:
         status = self._status()
         call = status.get("call")
-        if not call:
+        if self.mode == "app" and not self._holds_call_audio():
+            if call:
+                self.dismissed.add(call["path"])
+            self.hide()
+        elif not call:
             self.hide()
         elif not self._holds_call_audio():
             # Ringing, or a call whose audio is on the iPhone (or in another
@@ -239,13 +260,35 @@ class Agent:
     # -- show / hide ------------------------------------------------------------
 
     def show(self) -> None:
-        self.showing = True
+        """The compact call popup, bottom-right and on top."""
+        self.showing, self.mode = True, "call"
+        self.window.on_top = True
+        self.window.resize(WIDTH, HEIGHT)
+        self.window.move(*corner())
         self.window.load_url(f"{self.pi.url}/popup?agent=1")
         self.window.show()
+
+    def open_app(self) -> None:
+        """The full app: from the tray, the desktop shortcut or a --show."""
+        if self.showing and self._holds_call_audio():
+            # Mid-call through this window: reloading would cut the call's
+            # audio, so just bring it forward.
+            self.window.restore()
+            self.window.show()
+            return
+        self.showing, self.mode = True, "app"
+        self.call_seen = None
+        self.window.on_top = False
+        self.window.resize(APP_WIDTH, APP_HEIGHT)
+        self.window.move(*corner(APP_WIDTH, APP_HEIGHT))
+        self.window.load_url(f"{self.pi.url}/?agent=1")
+        self.window.show()
+        self.window.restore()
 
     def hide(self) -> None:
         self.set_ringing(False)
         self.showing = False
+        self.mode = None
         self.window.hide()
         # Blank it: a hidden page still holding the mic would count as an
         # open audio page, and the Pi would keep taking calls' audio for it.
@@ -269,6 +312,8 @@ class Agent:
 
     def run(self) -> None:
         log.info("watching %s", self.pi.url)
+        if self.open_on_start:  # started by the desktop shortcut with none running
+            self.open_app()
         failures = 0
         while True:
             status = self._status()
@@ -286,6 +331,25 @@ class Agent:
         # from it - so its audio can be moved to the PC at any point, until
         # the call ends or the window is closed for that call.
         call = status.get("call")
+        if self.mode == "app":
+            # The app window stays open with or without a call. A new call
+            # brings it forward and on top (it shows the call card itself);
+            # once the call is over it goes back to a normal window.
+            if not call:
+                self.dismissed.clear()
+                if self.call_seen:
+                    self.call_seen = None
+                    self.window.on_top = False
+                self.set_ringing(False)
+                return
+            if call["path"] != self.call_seen and call["path"] not in self.dismissed:
+                self.call_seen = call["path"]
+                log.info("%s call: %s", call.get("state"), call.get("name") or call.get("number") or "unknown")
+                self.window.restore()
+                self.window.on_top = True
+                self.window.show()
+            self.set_ringing(bool(status.get("ringing")) and status.get("audioPages", 0) == 0)
+            return
         if not call:
             self.dismissed.clear()
             if self.showing:
@@ -332,11 +396,17 @@ class Agent:
             self._seen_missed = missed["id"]
             self.tray.notify("Missed call", missed.get("name") or missed.get("number") or "Unknown caller")
 
-    def open_page(self) -> None:
-        if FIREFOX.exists():
-            subprocess.Popen([str(FIREFOX), "--new-window", self.pi.url])
-        else:
-            os.startfile(self.pi.url)
+    def listen_for_show(self, server: socket.socket) -> None:
+        """Serve "show" requests from a second copy (the desktop shortcut)."""
+
+        def run() -> None:
+            while True:
+                conn, _ = server.accept()
+                with conn:
+                    if conn.recv(16).startswith(b"show"):
+                        self.open_app()
+
+        threading.Thread(target=run, name="show", daemon=True).start()
 
     def toggle_pause(self) -> None:
         self.paused = not self.paused
@@ -397,7 +467,24 @@ def allow_audio_without_a_click() -> None:
     edgechromium.EdgeChrome.__init__ = init
 
 
+def ask_running_agent_to_show() -> bool:
+    try:
+        with socket.create_connection(("127.0.0.1", SHOW_PORT), timeout=2) as s:
+            s.sendall(b"show")
+        return True
+    except OSError:
+        return False
+
+
 def main() -> None:
+    try:
+        server = socket.create_server(("127.0.0.1", SHOW_PORT))
+    except OSError:
+        # One is running already: hand over (the desktop shortcut) or leave
+        # (a duplicate start at login).
+        if "--show" in sys.argv:
+            ask_running_agent_to_show()
+        return
     config = json.loads((CONFIG_DIR / "agent.json").read_text())
     pi = Pi(config)
     x, y = corner()
@@ -413,6 +500,8 @@ def main() -> None:
         background_color="#111317",
     )
     agent = Agent(pi, window)
+    agent.listen_for_show(server)
+    agent.open_on_start = "--show" in sys.argv
     agent.tray.start()
     agent.start_hotkeys()
     allow_audio_without_a_click()

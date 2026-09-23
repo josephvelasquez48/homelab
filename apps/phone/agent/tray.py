@@ -29,7 +29,7 @@ class Tray:
         menu = pystray.Menu(
             pystray.MenuItem(lambda item: self.agent.status_text, None, enabled=False),
             pystray.Menu.SEPARATOR,
-            pystray.MenuItem("Open phone page", lambda: self.agent.open_page()),
+            pystray.MenuItem("Open phone", lambda: self.agent.open_app(), default=True),
             pystray.MenuItem(
                 "Pause call popups", lambda: self.agent.toggle_pause(), checked=lambda item: self.agent.paused
             ),
