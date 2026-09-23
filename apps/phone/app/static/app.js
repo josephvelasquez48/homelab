@@ -338,7 +338,10 @@ function render(s) {
   $("incoming-actions").hidden = !ringing;
   $("active-actions").hidden = ringing;
   $("meter-row").hidden = !(audio && s.bridged);
-  $("to-pc-row").hidden = !(call.state === "active" && !s.audioOnPi && audio);
+  // Offered for any call whose audio is on the iPhone - including one the
+  // agent's window is showing for a call answered on the phone, where PC
+  // audio isn't on yet (the click turns it on).
+  $("to-pc-row").hidden = !(call.state === "active" && !s.audioOnPi);
 
   if (ringing) {
     // Wake the mic while it rings: the Samson on this desktop sleeps when
@@ -397,7 +400,12 @@ $("answer").onclick = async () => {
 };
 $("decline").onclick = () => send({ action: "hangup", call: currentCall().path });
 $("hangup").onclick = () => send({ action: "hangup", call: currentCall().path });
-$("to-pc").onclick = async () => { if (await enableAudio()) send({ action: "audio-to-pc" }); };
+$("to-pc").onclick = async () => {
+  answeredHere = true; // this window now holds the call's audio
+  if (!(await enableAudio())) return;
+  announceAudio(); // the Pi takes the audio only for a page that announced
+  send({ action: "audio-to-pc" });
+};
 $("mute").onclick = (e) => {
   muted = !muted;
   e.target.setAttribute("aria-pressed", String(muted));

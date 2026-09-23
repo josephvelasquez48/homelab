@@ -81,3 +81,15 @@ def test_agent_session_signs_the_page_in(client):
 def test_no_agent_token_configured_means_no_agent_session(client, monkeypatch):
     monkeypatch.setattr(main, "AGENT_TOKEN", "")
     assert client.post("/api/agent/session", headers={"Authorization": "Bearer "}).status_code == 401
+
+
+def test_agent_status_reports_the_live_call(client, monkeypatch):
+    from app.telephony import Call
+
+    auth = {"Authorization": "Bearer agent-token"}
+    monkeypatch.setattr(main.hub.tel.state, "calls", [Call("/ag1/call1", "active", "+15555550123", "")])
+    status = client.get("/api/agent/ringing", headers=auth).json()
+    assert status["ringing"] is None  # answered already, e.g. on the iPhone
+    assert status["call"]["path"] == "/ag1/call1" and status["inCall"]
+    monkeypatch.setattr(main.hub.tel.state, "calls", [])
+    assert client.get("/api/agent/ringing", headers=auth).json()["call"] is None
