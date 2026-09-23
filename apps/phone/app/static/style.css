@@ -58,3 +58,4 @@ body.popup main { padding: 10px; }
 body.popup h1 { display: none; }
 body.popup .card { margin-bottom: 8px; padding: 12px; }
 body.popup #audio-setup, body.popup #vol-row, body.popup #keep-phone-row, body.popup #mic-row { display: none !important; }
+.mic-warning { border-color: var(--bad); color: var(--bad); font-size: 14px; }

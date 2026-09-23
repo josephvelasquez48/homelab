@@ -34,7 +34,6 @@ async function micConstraints(label) {
   return MIC_OPTIONS;
 }
 
-let appliedMic = null; // the saved label this page last acted on
 let gotFirstState;
 const firstState = new Promise((resolve) => { gotFirstState = resolve; });
 
@@ -117,8 +116,8 @@ async function enableAudio() {
     limiter.release.value = 0.15;
     player.connect(gain).connect(limiter).connect(ctx.destination);
     audio = { ctx, capture, player, gain, stream, mic, analyser };
-    appliedMic = savedMic();
     listMics();
+    followSavedMic();
     ctx.onstatechange = () => { announceAudio(); render(state); };
     if (!AGENT && "Notification" in window && Notification.permission === "default") Notification.requestPermission();
     announceAudio();
@@ -141,7 +140,6 @@ function announceAudio() {
 // Swap the mic under a running page, mid-call included: new stream in,
 // old one stopped. The capture worklet doesn't notice.
 async function switchMic(label, { save = true } = {}) {
-  appliedMic = label;
   if (save) send({ action: "set-mic", value: label });
   if (!audio) return;
   try {
@@ -176,7 +174,43 @@ async function listMics() {
     return o;
   }));
 }
-navigator.mediaDevices?.addEventListener?.("devicechange", listMics);
+// Keep this page on the saved mic. The Samson on this desktop drops off
+// USB when idle and comes back later; opened while it was gone, the page
+// fell back to Windows' default (a silent Oculus virtual mic) and stayed
+// there for the whole call. Now: say so on the page, and switch to the
+// saved mic the moment it's back - on devicechange, and on a 3 s check in
+// case that event never fires.
+let following = false;
+async function followSavedMic() {
+  if (!audio || following) return;
+  following = true;
+  try {
+    const want = micName(savedMic());
+    const track = audio.stream.getAudioTracks()[0];
+    const current = micName(track?.label);
+    const live = track && track.readyState === "live";
+    let missing = false;
+    if (want && (current !== want || !live)) {
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      if (devices.some((d) => d.kind === "audioinput" && micName(d.label) === want)) {
+        await switchMic(want, { save: false });
+      } else {
+        missing = true;
+        // The mic in use vanished too: take whatever Windows offers rather
+        // than send nothing at all.
+        if (!live) await switchMic("", { save: false });
+      }
+    }
+    $("mic-warning").hidden = !missing;
+    $("mic-warning").textContent = missing
+      ? `${want} isn't connected right now (asleep or unplugged) - using ${micName(audio.stream.getAudioTracks()[0]?.label) || "the default mic"}. This switches back by itself when it's there.`
+      : "";
+  } finally {
+    following = false;
+  }
+}
+navigator.mediaDevices?.addEventListener?.("devicechange", () => { listMics(); followSavedMic(); });
+setInterval(followSavedMic, 3000);
 
 function drawMeter() {
   if (!audio) return;
@@ -251,12 +285,8 @@ function render(s) {
   $("enable-audio").textContent = audio ? "Turn on speakers" : "Enable PC mic & speakers";
   $("vol-row").hidden = !audio;
   $("mic-row").hidden = !audio;
-  // Another page (or the other browser) picked a different mic: follow it.
-  // Once per label, so a mic that doesn't exist here can't loop.
-  if (audio && savedMic() && savedMic() !== appliedMic) {
-    appliedMic = savedMic();
-    if (micName(audio.stream.getAudioTracks()[0]?.label) !== micName(appliedMic)) switchMic(appliedMic, { save: false });
-  }
+  // Another page (or the other browser) may have picked a different mic.
+  followSavedMic();
   $("audio-dot").className = `dot ${audio ? (s.bridged ? "on" : "") : "off"}`;
   $("audio-status").textContent = !audio
     ? "PC audio off - calls stay on the iPhone"
