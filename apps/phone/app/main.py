@@ -20,6 +20,7 @@ from app.contacts import Contacts
 from app.history import CallLog
 from app.hub import Hub
 from app.messages import Messages
+from app.mns import MnsServer
 from app.reconnect import Reconnector
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
@@ -45,6 +46,7 @@ if os.environ.get("PHONE_EXTRAS", "1") == "1":
     hub.messages = Messages()
     hub.history = CallLog(DATA / "calls.db")
     hub.reconnector = Reconnector(lambda: hub.tel.state.connected)
+    hub.mns = MnsServer(hub.poll_messages_soon)
     hub.write_metrics = True
 
 

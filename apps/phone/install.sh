@@ -59,6 +59,14 @@ if ! cmp -s "$APP_DIR/wireplumber/51-phone-bridge.conf" "$wp_conf"; then
   systemctl --user restart wireplumber
 fi
 
+# obexd as a client only - see obex-override.conf.
+mkdir -p "$HOME/.config/systemd/user/obex.service.d"
+if ! cmp -s "$APP_DIR/obex-override.conf" "$HOME/.config/systemd/user/obex.service.d/phone-bridge.conf"; then
+  cp "$APP_DIR/obex-override.conf" "$HOME/.config/systemd/user/obex.service.d/phone-bridge.conf"
+  systemctl --user daemon-reload
+  systemctl --user restart obex 2>/dev/null || true  # D-Bus activated; may not be running
+fi
+
 cp "$APP_DIR/phone-bridge.service" "$HOME/.config/systemd/user/phone-bridge.service"
 # Without linger the user's PipeWire session - and this service - only
 # exists while someone is logged in.
