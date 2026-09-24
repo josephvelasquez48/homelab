@@ -25,6 +25,9 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name
 log = logging.getLogger("phone")
 
 STATIC = Path(__file__).parent / "static"
+# RNNoise, vendored from @sapphi-red/web-noise-suppressor (MIT, see
+# static/rnnoise-LICENSE.txt): the mic's noise filter in the page.
+NOISE_FILTER_FILES = {"rnnoise-worklet.js", "rnnoise.wasm", "rnnoise_simd.wasm"}
 PASSWORD = os.environ.get("PHONE_PASSWORD", "")
 # A per-start random key is fine: a restart only means logging in again.
 SESSION_SECRET = os.environ.get("PHONE_SESSION_SECRET") or secrets.token_hex(32)
@@ -127,7 +130,7 @@ async def agent_session(request: Request):
 @app.get("/static/{name}")
 async def static(name: str):
     path = STATIC / name
-    if name not in {"app.js", "worklets.js", "style.css"} or not path.exists():
+    if name not in {"app.js", "worklets.js", "style.css", *NOISE_FILTER_FILES} or not path.exists():
         return RedirectResponse("/", status_code=303)
     return FileResponse(path, headers={"Cache-Control": "no-cache"})
 

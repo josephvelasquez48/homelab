@@ -40,7 +40,7 @@ class Reconnector:
         self.is_connected = is_connected  # () -> bool, from the telephony state
         self.attempts = 0
         self.successes = 0
-        self.bus: MessageBus | None = None
+        self.bus: MessageBus | None = None  # set by run()
         self._last_reason: str | None = None
 
     async def _call(self, path, iface, member, signature="", body=()):
@@ -80,6 +80,14 @@ class Reconnector:
             except (asyncio.TimeoutError, RuntimeError) as e:
                 log.info("clearing stuck connect on %s failed: %s", path, e)
         return False
+
+    async def reset_hands_free(self, address: str) -> None:
+        """Drop and reopen only the hands-free link, which makes the phone
+        announce its calls again (see Hub._check_orphan_audio)."""
+        path = "/org/bluez/hci0/dev_" + address.replace(":", "_")
+        await asyncio.wait_for(self._call(path, DEVICE_IFACE, "DisconnectProfile", "s", [HFP_AG_UUID]), 10)
+        await asyncio.sleep(3)
+        await asyncio.wait_for(self._call(path, DEVICE_IFACE, "ConnectProfile", "s", [HFP_AG_UUID]), CONNECT_TIMEOUT)
 
     async def run(self) -> None:
         self.bus = await MessageBus(bus_type=BusType.SYSTEM).connect()

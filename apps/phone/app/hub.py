@@ -19,6 +19,7 @@ import asyncio
 import json
 import logging
 import os
+import time
 from pathlib import Path
 
 from fastapi import WebSocket
@@ -47,6 +48,9 @@ DEFAULT_SETTINGS = {
 }
 # Page actions that mean "this call belongs on the PC".
 PC_ACTIONS = ("answer", "dial", "audio-to-pc")
+# How long the phone's audio link may sit on the Pi with no call before the
+# hands-free link is reset to make the phone announce its calls again.
+ORPHAN_AUDIO_SECONDS = 8
 
 
 def load_settings(path: Path) -> dict:
@@ -91,6 +95,10 @@ class Hub:
         # calls it covered are all over. Only matters with keepPhoneAnswered.
         self._pc_claimed = False
         self._had_calls = False
+        # When the audio link was first seen on the Pi with no call, and
+        # whether this stretch of it already got its one reset.
+        self._orphan_since: float | None = None
+        self._orphan_reset = False
         self.clients: list[WebSocket] = []
         self.audio_clients: list[WebSocket] = []
         self._last_state: dict | None = None
@@ -162,6 +170,7 @@ class Hub:
             self._pc_claimed = False
             self._phone_held = False
         self._had_calls = bool(state.calls)
+        self._check_orphan_audio(state)
 
         if self.history:
             named = [Call(c.path, c.state, c.number, c.name or self.name_for(c.number)) for c in state.calls]
@@ -189,6 +198,39 @@ class Hub:
             await self.bridge.stop()
 
         await self.broadcast_state()
+
+    def _check_orphan_audio(self, state) -> None:
+        """Recover a call the Pi never heard about.
+
+        When the hands-free link drops and comes back during a call, the
+        phone reopens the audio link to the Pi but PipeWire's telephony
+        doesn't pick up the call already in progress: seen live as a
+        "pending" transport and an empty GetCalls for minutes, so the pages
+        had nothing to show or answer. Dropping and reopening just the
+        hands-free profile made the phone announce the call. Once per
+        stretch of orphaned audio: an app call (FaceTime, WhatsApp) can also
+        route audio here without an HFP call, and must not reset in a loop.
+        """
+        if not (state.connected and state.audio_on_pi):
+            self._orphan_since = None
+            self._orphan_reset = False
+            return
+        if state.calls:
+            self._orphan_since = None
+            return
+        now = time.monotonic()
+        self._orphan_since = self._orphan_since or now
+        if self._orphan_reset or not self.reconnector or now - self._orphan_since < ORPHAN_AUDIO_SECONDS:
+            return
+        self._orphan_reset = True
+        log.warning("audio link on the Pi with no call for %d s - resetting the hands-free link", ORPHAN_AUDIO_SECONDS)
+        asyncio.create_task(self._reset_hands_free(state.address))
+
+    async def _reset_hands_free(self, address: str) -> None:
+        try:
+            await self.reconnector.reset_hands_free(address)
+        except Exception as e:
+            log.warning("hands-free reset failed: %s", e)
 
     async def extras_loop(self) -> None:
         while True:
@@ -311,7 +353,10 @@ class Hub:
             elif action == "tones":
                 await self.tel.send_tones(str(msg.get("tones", "")))
             elif action == "audio-to-pc":
-                await self.tel.activate_audio()
+                # Already on the Pi (the phone kept it there with no page
+                # taking it): the audio-ready before this starts the bridge.
+                if not self.tel.state.audio_on_pi:
+                    await self.tel.activate_audio()
             elif action == "audio-to-phone":
                 await self.release_audio()
             elif action == "refresh-contacts":

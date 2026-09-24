@@ -202,3 +202,58 @@ async def test_mic_choice_is_saved_and_shared(tmp_path):
     # An older settings file without the key still loads.
     (tmp_path / "old.json").write_text('{"keepPhoneAnswered": true}')
     assert load_settings(tmp_path / "old.json") == {"keepPhoneAnswered": True, "micLabel": ""}
+
+
+class FakeReconnector:
+    def __init__(self):
+        self.resets = []
+
+    async def reset_hands_free(self, address):
+        self.resets.append(address)
+
+
+@pytest.mark.asyncio
+async def test_audio_with_no_call_resets_hands_free_once(monkeypatch):
+    import asyncio
+
+    import app.hub as hub_module
+
+    monkeypatch.setattr(hub_module, "ORPHAN_AUDIO_SECONDS", 0)
+    hub, tel = make(transport="pending")
+    hub.reconnector = FakeReconnector()
+    for _ in range(3):
+        await hub.tick()
+        await asyncio.sleep(0)
+    assert hub.reconnector.resets == ["A0"]  # once, not every tick
+
+    tel.state.transport = "idle"  # the audio link went away: a new stretch may reset again
+    await hub.tick()
+    tel.state.transport = "pending"
+    await hub.tick()
+    await asyncio.sleep(0)
+    assert hub.reconnector.resets == ["A0", "A0"]
+
+
+@pytest.mark.asyncio
+async def test_audio_with_a_call_is_left_alone(monkeypatch):
+    import asyncio
+
+    import app.hub as hub_module
+
+    monkeypatch.setattr(hub_module, "ORPHAN_AUDIO_SECONDS", 0)
+    hub, tel = make(transport="pending", calls=[Call("/ag1/call1", "active", "+1555", "")])
+    hub.reconnector = FakeReconnector()
+    await hub.tick()
+    await asyncio.sleep(0)
+    assert hub.reconnector.resets == []
+
+
+@pytest.mark.asyncio
+async def test_audio_to_pc_when_audio_already_on_pi_just_bridges(tmp_path):
+    hub, tel = make(transport="pending", calls=[Call("/ag1/call1", "active", "+1555", "")], settings_path=tmp_path / "s.json")
+    page = FakeSocket()
+    await hub.add(page)
+    await hub.command(page, {"action": "audio-ready"})
+    assert await hub.command(page, {"action": "audio-to-pc"}) is None
+    assert not getattr(tel, "activated", False)
+    assert hub.bridge.running
