@@ -117,7 +117,7 @@ async function startAudio() {
     const analyser = ctx.createAnalyser();
     analyser.fftSize = 512;
     // The mic (swapped by switchMic) feeds micBus; routeMic puts the
-    // noise filter between it and the capture/meter, or leaves it out.
+    // noise filter between it and the capture/meter.
     const micBus = ctx.createGain();
     mic.connect(micBus);
     capture.port.onmessage = (e) => {
@@ -176,16 +176,11 @@ async function makeNoiseFilter(ctx) {
   }
 }
 
-function noiseFilterOn() {
-  try { return localStorage.getItem("phone-noise-filter") !== "off"; } catch { return true; }
-}
-
+// Always on when it loaded: there's no switch.
 function routeMic() {
   const { micBus, denoise, capture, analyser } = audio;
-  micBus.disconnect();
-  if (denoise) denoise.disconnect();
   let out = micBus;
-  if (denoise && noiseFilterOn()) {
+  if (denoise) {
     micBus.connect(denoise);
     out = denoise;
   }
@@ -354,7 +349,6 @@ function render(s) {
   $("enable-audio").textContent = audio ? "Turn on speakers" : "Enable PC mic & speakers";
   $("vol-row").hidden = !audio;
   $("mic-row").hidden = !audio;
-  $("noise-row").hidden = !(audio && audio.denoise);
   // Another page (or the other browser) may have picked a different mic.
   followSavedMic();
   $("audio-dot").className = `dot ${audio ? (s.bridged ? "on" : "") : "off"}`;
@@ -518,11 +512,6 @@ try {
 $("volume").oninput = (e) => {
   if (audio) audio.gain.gain.value = Number(e.target.value);
   try { localStorage.setItem("phone-volume", e.target.value); } catch {}
-};
-$("noise-filter").checked = noiseFilterOn();
-$("noise-filter").onchange = (e) => {
-  try { localStorage.setItem("phone-noise-filter", e.target.checked ? "on" : "off"); } catch {}
-  if (audio) routeMic(); // takes effect mid-call too
 };
 
 $("answer").onclick = async () => {
