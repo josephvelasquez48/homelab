@@ -157,7 +157,7 @@ def test_metrics_keep_full_timestamp_precision():
 
 
 class FakeBluez:
-    """Stands in for Reconnector._call: scripted Connect results, records calls."""
+    """Stands in for Reconnector._call: scripted connect results, records calls."""
 
     def __init__(self, *connect_results):
         self.results = list(connect_results)
@@ -165,7 +165,9 @@ class FakeBluez:
 
     async def __call__(self, path, iface, member, *args):
         self.calls.append(member)
-        if member == "Connect":
+        if member == "ConnectProfile":
+            # Classic hands-free only: a plain Connect went over LE and never reached the phone.
+            assert args == ("s", ["0000111f-0000-1000-8000-00805f9b34fb"])
             result = self.results.pop(0)
             if result == "hang":
                 await asyncio.sleep(3600)
@@ -181,7 +183,7 @@ async def test_reconnect_clears_a_stuck_connect(monkeypatch):
     r = reconnect.Reconnector(lambda: False)
     r._call = FakeBluez(RuntimeError("org.bluez.Error.InProgress: In Progress"), None)
     assert await r.attempt("/dev_phone") is False
-    assert r._call.calls == ["Connect", "Disconnect"]  # stuck state cleared
+    assert r._call.calls == ["ConnectProfile", "Disconnect"]  # stuck state cleared
     assert await r.attempt("/dev_phone") is True
     assert (r.attempts, r.successes) == (2, 1)
 
@@ -194,7 +196,7 @@ async def test_reconnect_times_out_a_hanging_connect(monkeypatch):
     r = reconnect.Reconnector(lambda: False)
     r._call = FakeBluez("hang")
     assert await r.attempt("/dev_phone") is False
-    assert r._call.calls == ["Connect", "Disconnect"]
+    assert r._call.calls == ["ConnectProfile", "Disconnect"]
 
 
 @pytest.mark.asyncio
@@ -204,4 +206,4 @@ async def test_reconnect_out_of_range_needs_no_reset():
     r = reconnect.Reconnector(lambda: False)
     r._call = FakeBluez(RuntimeError("org.bluez.Error.Failed: br-connection-page-timeout"))
     assert await r.attempt("/dev_phone") is False
-    assert r._call.calls == ["Connect"]
+    assert r._call.calls == ["ConnectProfile"]
