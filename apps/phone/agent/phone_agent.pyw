@@ -59,10 +59,12 @@ from pathlib import Path
 import webview
 
 import hotkeys
+import taskbar
 from tray import AMBER, GREEN, GREY, Tray
 
 CONFIG_DIR = Path(os.environ["APPDATA"]) / "phone-bridge"
 PROFILE_DIR = Path(os.environ["LOCALAPPDATA"]) / "phone-bridge" / "webview"
+ICON_FILE = Path(os.environ["LOCALAPPDATA"]) / "phone-bridge" / "phone.ico"  # written by install-agent.ps1
 CA_FILE = Path(__file__).resolve().parents[3] / "certificates" / "homelab-ca.crt"
 POLL_SECONDS = 1.0
 # Whether an agent is already running: a named mutex, which only this agent
@@ -218,6 +220,7 @@ class Agent:
     def _hook_permissions_on_ui_thread(self) -> None:
         if self._permissions_hooked:
             return
+        self._set_taskbar_identity()
         from Microsoft.Web.WebView2.Core import CoreWebView2PermissionKind, CoreWebView2PermissionState
 
         def on_request(sender, args):
@@ -229,6 +232,23 @@ class Agent:
 
         self.window.native.browser.webview.CoreWebView2.PermissionRequested += on_request
         self._permissions_hooked = True
+
+    def _set_taskbar_identity(self) -> None:
+        """So the window pins to the taskbar as Phone (see taskbar.py). On
+        the UI thread, once, with the permissions hook."""
+        form = self.window.native
+        # A pin relaunches with the windowless pythonw even when this copy
+        # was started from a console with python.exe.
+        pythonw = Path(sys.executable).with_name("pythonw.exe")
+        command = f'"{pythonw}" "{Path(__file__).resolve()}" --show'
+        try:
+            if ICON_FILE.exists():
+                from System.Drawing import Icon
+
+                form.Icon = Icon(str(ICON_FILE))
+            taskbar.set_window_identity(int(form.Handle.ToInt64()), command, "Phone", f"{ICON_FILE},0")
+        except Exception:
+            log.exception("couldn't set the taskbar identity; pinning will pin Python")
 
     def sign_in(self) -> None:
         """If the page came up on the login form, sign in with the token and reload.
@@ -522,6 +542,7 @@ def main() -> None:
     CONFIG_DIR.mkdir(parents=True, exist_ok=True)
     SHOW_PORT_FILE.write_text(str(server.getsockname()[1]))
     config = json.loads((CONFIG_DIR / "agent.json").read_text())
+    taskbar.set_process_app_id()
     pi = Pi(config)
     x, y = corner()
     window = webview.create_window(

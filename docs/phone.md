@@ -203,6 +203,12 @@ audio natively.
   looping. Both write to `%APPDATA%\phone-bridgegent.log`, including
   native crashes (`faulthandler`) and uncaught thread errors - `pythonw`
   has no console, so these used to vanish.
+- **Pins to the taskbar as Phone** (`agent/taskbar.py`). Windows pins
+  by AppUserModelID; without one the window belonged to `pythonw.exe`,
+  and pinning it pinned Python. The agent sets its own ID
+  (`Homelab.PhoneBridge`) on the process, and on its window together
+  with a relaunch command (`pythonw phone_agent.pyw --show`), name and
+  icon, so the pinned button starts the agent and opens the app.
 - **One copy at a time.** A named mutex (`Local\phone-bridge-agent`)
   says whether an agent is running; the desktop shortcut's copy then
   asks it to open its window, over 127.0.0.1 on a port the running agent
