@@ -244,8 +244,13 @@ state: the slow ones run in their own loop.
   exactly that path. `RejectSCO` stays on until the call ends or the PC
   asks for the audio back.
 - **Auto-reconnect** (`app/reconnect.py`): while no phone is connected,
-  `Device1.Connect` on each paired, trusted device offering the
-  hands-free gateway profile, every 30 s. A `Connect` that hangs is
+  `Device1.ConnectProfile` for the hands-free gateway on each paired,
+  trusted device offering it, every 30 s. It used to be
+  `Device1.Connect`, and the phone never came back on its own: BlueZ ran
+  that over Bluetooth LE for the dual-mode iPhone, scanning 30 s for a
+  public address the iPhone never advertises. `btmon` showed no classic
+  page in 168 attempts with the phone in the room; `ConnectProfile`,
+  classic-only, connected in 2 s. A connect that hangs is
   given up after 30 s and followed by `Disconnect`, or BlueZ answers
   every later attempt with `InProgress` without paging the phone. The
   same module resets the hands-free profile for bug 6.
