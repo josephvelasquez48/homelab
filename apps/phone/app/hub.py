@@ -194,7 +194,10 @@ class Hub:
                 # instead of just a silent call.
                 self._audio_error = str(e)
                 log.warning("bridge start failed: %s", e)
-        elif not state.audio_on_pi and self.bridge.running:
+        elif self.bridge.running and not (state.audio_on_pi and self.audio_clients):
+            # Also when the last audio page left mid-call: a bridge feeding
+            # nobody still reports "bridged", which hides Take on PC from
+            # the next page.
             await self.bridge.stop()
 
         await self.broadcast_state()

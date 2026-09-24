@@ -257,3 +257,17 @@ async def test_audio_to_pc_when_audio_already_on_pi_just_bridges(tmp_path):
     assert await hub.command(page, {"action": "audio-to-pc"}) is None
     assert not getattr(tel, "activated", False)
     assert hub.bridge.running
+
+
+@pytest.mark.asyncio
+async def test_bridge_stops_when_its_page_leaves_mid_call():
+    hub, tel = make(transport="active", calls=[Call("/ag1/call1", "active", "+1555", "")])
+    page = FakeSocket()
+    await hub.add(page)
+    await hub.command(page, {"action": "audio-ready"})
+    assert hub.bridge.running
+
+    await hub.remove(page)
+    await hub.tick()
+    assert not hub.bridge.running
+    assert hub.snapshot()["bridged"] is False  # so the next page offers Take on PC
