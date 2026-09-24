@@ -4,8 +4,16 @@ A paired, trusted phone that walks out of range and back, or toggles
 Bluetooth, doesn't always come back to the hands-free unit on its own.
 While no phone is connected, this asks BlueZ (system bus) every 30 s to
 connect each paired device that offers the hands-free gateway profile.
-Out of range, Connect just fails after BlueZ's page timeout; that's the
+Out of range, the connect just fails after BlueZ's page timeout; that's the
 normal case while the phone is away, so it's counted, not logged loudly.
+
+It connects the hands-free profile (ConnectProfile), not the device
+(Connect). The iPhone is dual-mode, and BlueZ ran every Device1.Connect
+over Bluetooth LE: a 30 s passive scan for the phone's public address,
+which an iPhone never advertises (it uses a rotating random one), so it
+never connected - 168 attempts in a row, with the phone on the desk.
+btmon showed no classic page at all. A classic-only profile makes BlueZ
+page the phone over BR/EDR, which connected in 2 s.
 """
 import asyncio
 import logging
@@ -52,10 +60,12 @@ class Reconnector:
         return reply.body
 
     async def attempt(self, path: str) -> bool:
-        """One Connect, with a time limit; clears BlueZ's stuck state after a hang."""
+        """One connect, with a time limit; clears BlueZ's stuck state after a hang."""
         self.attempts += 1
         try:
-            await asyncio.wait_for(self._call(path, DEVICE_IFACE, "Connect"), CONNECT_TIMEOUT)
+            await asyncio.wait_for(
+                self._call(path, DEVICE_IFACE, "ConnectProfile", "s", [HFP_AG_UUID]), CONNECT_TIMEOUT
+            )
         except asyncio.TimeoutError:
             reason = "timed out"
         except RuntimeError as e:
