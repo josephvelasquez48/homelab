@@ -252,9 +252,8 @@ state: the slow ones run in their own loop.
   48 kHz. The browser's own `noiseSuppression` stays on under it; alone
   it did little against a desk fan. In WebView2 it cut synthetic fan
   noise (brown noise plus a 120 Hz hum) by 52 dB, and the other end of
-  a live call confirmed the fan was gone. On by default; *Neural noise
-  suppression (RNNoise)* turns it off, remembered per window.
-  If it can't load, the call goes ahead unfiltered.
+  a live call confirmed the fan was gone. Always on - there's no
+  switch. If it can't load, the call goes ahead unfiltered.
 - **Metrics and alerts**: `phone_bridge.prom` in node_exporter's
   textfile directory, the same route as the backup metrics, so no new
   scrape target. Rules in `kubernetes/monitoring/alertmanager.yaml`:
