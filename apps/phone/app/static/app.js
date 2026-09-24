@@ -14,7 +14,7 @@ let popupHadCall = false;
 let popupCloseTimer = null;
 let ws = null;
 let state = null;
-let audio = null; // { ctx, capture, player, gain, stream, mic, analyser }
+let audio = null; // { ctx, capture, player, gain, stream, mic, micBus, denoise, analyser }
 
 const MIC_OPTIONS = { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 };
 
@@ -105,16 +105,21 @@ async function startAudio() {
     return true;
   }
   try {
-    const ctx = new AudioContext();
+    // 48 kHz: the rate RNNoise works at. The capture worklet resamples
+    // to the wire's 16 kHz from whatever the context runs at.
+    const ctx = new AudioContext({ sampleRate: 48000 });
     ctx.resume().catch(() => {});
     await ctx.audioWorklet.addModule("/static/worklets.js");
+    const denoise = await makeNoiseFilter(ctx);
     const stream = await navigator.mediaDevices.getUserMedia({ audio: await micConstraints(savedMic()) });
     const mic = ctx.createMediaStreamSource(stream);
     const capture = new AudioWorkletNode(ctx, "capture");
     const analyser = ctx.createAnalyser();
     analyser.fftSize = 512;
-    mic.connect(capture);
-    mic.connect(analyser);
+    // The mic (swapped by switchMic) feeds micBus; routeMic puts the
+    // noise filter between it and the capture/meter, or leaves it out.
+    const micBus = ctx.createGain();
+    mic.connect(micBus);
     capture.port.onmessage = (e) => {
       if (!muted && ws && ws.readyState === WebSocket.OPEN && state && state.bridged) ws.send(e.data);
     };
@@ -131,7 +136,8 @@ async function startAudio() {
     limiter.attack.value = 0.003;
     limiter.release.value = 0.15;
     player.connect(gain).connect(limiter).connect(ctx.destination);
-    audio = { ctx, capture, player, gain, stream, mic, analyser };
+    audio = { ctx, capture, player, gain, stream, mic, micBus, denoise, analyser };
+    routeMic();
     listMics();
     followSavedMic();
     ctx.onstatechange = () => { announceAudio(); render(state); };
@@ -144,6 +150,47 @@ async function startAudio() {
     showError(`Couldn't start PC audio: ${err.message}`);
     return false;
   }
+}
+
+// RNNoise in an AudioWorklet: removes steady background noise (a fan)
+// from the mic far better than the browser's own noiseSuppression, which
+// stays on under it. null if it can't load - the call works without it.
+async function makeNoiseFilter(ctx) {
+  try {
+    const simd = WebAssembly.validate(new Uint8Array([
+      0, 97, 115, 109, 1, 0, 0, 0, 1, 5, 1, 96, 0, 1, 123, 3, 2, 1, 0, 10, 10, 1, 8, 0, 65, 0, 253, 15, 253, 98, 11,
+    ]));
+    const [wasmBinary] = await Promise.all([
+      fetch(simd ? "/static/rnnoise_simd.wasm" : "/static/rnnoise.wasm").then((r) => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        return r.arrayBuffer();
+      }),
+      ctx.audioWorklet.addModule("/static/rnnoise-worklet.js"),
+    ]);
+    return new AudioWorkletNode(ctx, "@sapphi-red/web-noise-suppressor/rnnoise", {
+      processorOptions: { wasmBinary, maxChannels: 1 },
+    });
+  } catch (err) {
+    console.warn("noise filter unavailable:", err);
+    return null;
+  }
+}
+
+function noiseFilterOn() {
+  try { return localStorage.getItem("phone-noise-filter") !== "off"; } catch { return true; }
+}
+
+function routeMic() {
+  const { micBus, denoise, capture, analyser } = audio;
+  micBus.disconnect();
+  if (denoise) denoise.disconnect();
+  let out = micBus;
+  if (denoise && noiseFilterOn()) {
+    micBus.connect(denoise);
+    out = denoise;
+  }
+  out.connect(capture);
+  out.connect(analyser);
 }
 
 // Tell the Pi this page can take a call's audio - only once it's actually
@@ -167,8 +214,7 @@ async function switchMic(label, { save = true } = {}) {
   try {
     const stream = await navigator.mediaDevices.getUserMedia({ audio: await micConstraints(label) });
     const mic = audio.ctx.createMediaStreamSource(stream);
-    mic.connect(audio.capture);
-    mic.connect(audio.analyser);
+    mic.connect(audio.micBus);
     audio.mic.disconnect();
     audio.stream.getTracks().forEach((t) => t.stop());
     Object.assign(audio, { stream, mic });
@@ -308,6 +354,7 @@ function render(s) {
   $("enable-audio").textContent = audio ? "Turn on speakers" : "Enable PC mic & speakers";
   $("vol-row").hidden = !audio;
   $("mic-row").hidden = !audio;
+  $("noise-row").hidden = !(audio && audio.denoise);
   // Another page (or the other browser) may have picked a different mic.
   followSavedMic();
   $("audio-dot").className = `dot ${audio ? (s.bridged ? "on" : "") : "off"}`;
@@ -345,10 +392,11 @@ function render(s) {
   $("incoming-actions").hidden = !ringing;
   $("active-actions").hidden = ringing;
   $("meter-row").hidden = !(audio && s.bridged);
-  // Offered for any call whose audio is on the iPhone - including one the
-  // agent's window is showing for a call answered on the phone, where PC
-  // audio isn't on yet (the click turns it on).
-  $("to-pc-row").hidden = !(call.state === "active" && !s.audioOnPi);
+  // Offered for any call whose audio isn't reaching a PC page: on the
+  // iPhone - including a call answered on the phone, where PC audio isn't
+  // on yet (the click turns it on) - or stuck on the Pi with no page
+  // taking it, which happens after the phone reconnects mid-call.
+  $("to-pc-row").hidden = !(call.state === "active" && !s.bridged);
   // Only from the page that has the call: elsewhere it would take the
   // audio away from whoever is actually talking on the PC.
   $("to-phone-row").hidden = !(call.state === "active" && s.bridged && audio && audio.ctx.state === "running");
@@ -470,6 +518,11 @@ try {
 $("volume").oninput = (e) => {
   if (audio) audio.gain.gain.value = Number(e.target.value);
   try { localStorage.setItem("phone-volume", e.target.value); } catch {}
+};
+$("noise-filter").checked = noiseFilterOn();
+$("noise-filter").onchange = (e) => {
+  try { localStorage.setItem("phone-noise-filter", e.target.checked ? "on" : "off"); } catch {}
+  if (audio) routeMic(); // takes effect mid-call too
 };
 
 $("answer").onclick = async () => {
