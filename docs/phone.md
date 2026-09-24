@@ -112,6 +112,29 @@ Each of these made a working call look broken, and each is now pinned in
    `org.pipewire.Telephony.Error.InvalidState`. `pending` now counts as
    the audio being on the Pi.
 
+6. **A call the Pi never heard about.** The hands-free link dropped at
+   15:08 and came back while a call was up. The phone reopened the audio
+   link to the Pi (transport `pending`, both streams present), but
+   `GetCalls` stayed empty, so the window had nothing to show or answer
+   and the caller's audio went to a Pi with no page taking it. PipeWire
+   doesn't pick up a call already in progress when the link comes back.
+   `Device1.DisconnectProfile` then `ConnectProfile` for just the
+   hands-free UUID (`0000111f-…`) made the phone announce it: `call1`,
+   `active`, within 2 s, and the call carried on. The hub now does that
+   itself after 8 s of audio on the Pi with no call - once per stretch,
+   because an app call (FaceTime, WhatsApp) can also put audio here
+   without an HFP call and mustn't reset in a loop.
+
+7. **"Move call audio to this PC" hidden for audio stuck on the Pi.** The button was
+   offered only while the audio was on the iPhone. With the audio on the
+   Pi and no page bridging it (bug 6), there was no way to take it. It's
+   offered now whenever the call isn't bridged to a page, and
+   `audio-to-pc` skips `Activate` when the audio is already on the Pi.
+   The same call turned up a second case: a window closed mid-call left
+   the bridge running into nobody, still reporting "bridged", so the
+   reopened window hid the button again. The bridge now stops when its
+   last audio page leaves.
+
 Checked and ruled out on the way: the Broadcom controller's SCO routing
 (`hcitool cmd 0x3f 0x1d` reads back routing `01`, over HCI, not the PCM
 pins), and whether SCO data reached the host at all (~260 packets/s each
@@ -169,8 +192,26 @@ audio natively.
   page. Closing it hides it for that call - unless this window is the
   call's mic and speakers, since hiding it then would leave the call
   silent with no way to hang up. Moving audio *back* to the phone is the
-  iPhone's own audio-route button; PipeWire's telephony API has no call
-  to release the audio link.
+  iPhone's audio-route button or *Send call audio to iPhone* (see
+  Extras).
+- **Starts at login, restarts after a crash.** The Startup-folder entry
+  runs a small supervisor that runs the real agent (`--child`) and
+  restarts it when it dies, after a short, growing pause. WebView2 and
+  pythonnet are native code and can take the process down in ways Python
+  can't catch; the agent is what makes calls reach the PC. A clean exit
+  (tray *Quit*) ends it; so do 5 crashes in 10 minutes, rather than
+  looping. Both write to `%APPDATA%\phone-bridgegent.log`, including
+  native crashes (`faulthandler`) and uncaught thread errors - `pythonw`
+  has no console, so these used to vanish.
+- **One copy at a time.** A named mutex (`Local\phone-bridge-agent`)
+  says whether an agent is running; the desktop shortcut's copy then
+  asks it to open its window, over 127.0.0.1 on a port the running agent
+  publishes in `%APPDATA%\phone-bridge\show-port`, and exits. This
+  used to be one fixed port (51871) for both jobs. It is in Windows'
+  ephemeral range, and one afternoon NVIDIA's `nvcontainer` was handed
+  it for an outgoing connection: every start took the busy port for a
+  running agent and exited cleanly - which the supervisor treats as
+  *Quit* - so the shortcut did nothing, with nothing in the log.
 
 ## Extras
 
@@ -198,7 +239,22 @@ state: the slow ones run in their own loop.
   asks for the audio back.
 - **Auto-reconnect** (`app/reconnect.py`): while no phone is connected,
   `Device1.Connect` on each paired, trusted device offering the
-  hands-free gateway profile, every 30 s.
+  hands-free gateway profile, every 30 s. A `Connect` that hangs is
+  given up after 30 s and followed by `Disconnect`, or BlueZ answers
+  every later attempt with `InProgress` without paging the phone. The
+  same module resets the hands-free profile for bug 6.
+- **Mic noise filter**: RNNoise, a small neural-network noise
+  suppressor, runs on the mic in an AudioWorklet, between the mic and
+  the capture that resamples to 16 kHz. Vendored as three static files
+  from `@sapphi-red/web-noise-suppressor` 0.4.1 (MIT,
+  `static/rnnoise-LICENSE.txt`), the SIMD build where WebAssembly SIMD
+  is available. It needs 48 kHz, so the page's AudioContext runs at
+  48 kHz. The browser's own `noiseSuppression` stays on under it; alone
+  it did little against a desk fan. In WebView2 it cut synthetic fan
+  noise (brown noise plus a 120 Hz hum) by 52 dB, and the other end of
+  a live call confirmed the fan was gone. On by default; *Filter
+  background noise from my mic* turns it off, remembered per window.
+  If it can't load, the call goes ahead unfiltered.
 - **Metrics and alerts**: `phone_bridge.prom` in node_exporter's
   textfile directory, the same route as the backup metrics, so no new
   scrape target. Rules in `kubernetes/monitoring/alertmanager.yaml`:
@@ -265,7 +321,10 @@ login, and the site's mic and autoplay allowed.)
 - One phone. If two ever pair, the first gateway on the bus wins.
 - Echo: the page asks the browser for echo cancellation, but a headset
   is still the reliable way to keep speaker audio out of the mic.
-- If the page closes mid-call, the call's audio stays on the Pi; move it
-  back from the iPhone's audio-route button.
+- If the page closes mid-call, the call's audio stays on the Pi. The
+  bridge stops, and a reopened window offers *Move call audio to this PC* for it;
+  otherwise move it back from the iPhone's audio-route button.
+- The reset for bug 6 cuts the call's audio for a few seconds; the call
+  itself stays up on the phone.
 - Only one phone can be the iPhone's hands-free unit at a time, so the
   car or earbuds compete with the Pi.
