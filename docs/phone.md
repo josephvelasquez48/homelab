@@ -200,7 +200,7 @@ audio natively.
   pythonnet are native code and can take the process down in ways Python
   can't catch; the agent is what makes calls reach the PC. A clean exit
   (tray *Quit*) ends it; so do 5 crashes in 10 minutes, rather than
-  looping. Both write to `%APPDATA%\phone-bridgegent.log`, including
+  looping. Both write to `%APPDATA%\phone-bridge\agent.log`, including
   native crashes (`faulthandler`) and uncaught thread errors - `pythonw`
   has no console, so these used to vanish.
 - **Pins to the taskbar as Phone** (`agent/taskbar.py`). Windows pins
@@ -218,6 +218,12 @@ audio natively.
   it for an outgoing connection: every start took the busy port for a
   running agent and exited cleanly - which the supervisor treats as
   *Quit* - so the shortcut did nothing, with nothing in the log.
+- **Quit ends the process.** Once, after *Quit*, the window closed but
+  the process never exited - left waiting on its threads or pythonnet's
+  shutdown - and a copy that's still alive holds the mutex: every later
+  start, from the shortcut or the pin, handed over to it and exited, so
+  the app wouldn't open. The agent now calls `os._exit` as soon as the
+  window loop returns, and 5 s after *Quit* if it never does.
 
 ## Extras
 
@@ -338,3 +344,5 @@ login, and the site's mic and autoplay allowed.)
   itself stays up on the phone.
 - Only one phone can be the iPhone's hands-free unit at a time, so the
   car or earbuds compete with the Pi.
+- Coming back into range, the phone reconnects on the next 30 s check,
+  not instantly. Measured: 26 s after a forced disconnect.
