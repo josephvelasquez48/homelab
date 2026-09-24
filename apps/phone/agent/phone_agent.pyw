@@ -461,6 +461,10 @@ class Agent:
         self.quitting = True
         self.set_ringing(False)
         self.tray.stop()
+        # If closing the window hangs, don't wait on it: a copy that's still
+        # alive holds the instance mutex, so every later start - the
+        # shortcut, the pin, the next login - hands over to it and exits.
+        threading.Timer(5, hard_exit).start()
         self.window.destroy()
 
     def _press(self, *button_ids: str) -> None:
@@ -522,6 +526,14 @@ def already_running() -> bool:
     return ctypes.get_last_error() == ERROR_ALREADY_EXISTS
 
 
+def hard_exit() -> None:
+    """End the process now, without waiting on threads or pythonnet's
+    shutdown - either kept a quit agent alive, window gone, holding the
+    instance mutex."""
+    logging.shutdown()
+    os._exit(0)
+
+
 def ask_running_agent_to_show() -> bool:
     try:
         port = int(SHOW_PORT_FILE.read_text())
@@ -564,6 +576,8 @@ def main() -> None:
     allow_audio_without_a_click()
     PROFILE_DIR.mkdir(parents=True, exist_ok=True)
     webview.start(agent.run, private_mode=False, storage_path=str(PROFILE_DIR))
+    log.info("window closed; exiting")
+    hard_exit()
 
 
 def supervise() -> None:
