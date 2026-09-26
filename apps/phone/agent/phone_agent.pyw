@@ -59,6 +59,7 @@ from pathlib import Path
 import webview
 
 import hotkeys
+import media_player
 import taskbar
 from tray import AMBER, GREEN, GREY, Tray
 
@@ -572,6 +573,7 @@ def main() -> None:
     agent.listen_for_show(server)
     agent.open_on_start = "--show" in sys.argv
     agent.tray.start()
+    media_player.MediaPlayer(pi).start()  # music/videos in "All audio" mode
     agent.start_hotkeys()
     allow_audio_without_a_click()
     PROFILE_DIR.mkdir(parents=True, exist_ok=True)

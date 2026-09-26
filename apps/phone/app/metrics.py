@@ -41,6 +41,8 @@ HELP = {
     "phone_audio_rx_peak": "Peak caller audio level (0-32767) since the last write, while bridged",
     "phone_audio_tx_peak": "Peak PC mic level (0-32767) sent to the phone since the last write, while bridged",
     "phone_pc_present": "1 while the PC has checked in lately; while 0 the iPhone is kept disconnected",
+    "phone_audio_mode_all": "1 while music and videos come to the PC too, 0 for calls only",
+    "phone_media_listeners": "Media streams open to the PC (the desktop agent's player)",
     "phone_contacts": "Phone numbers known from the iPhone's phonebook",
     "phone_reconnect_attempts_total": "Times the Pi asked a disconnected iPhone to reconnect",
     "phone_reconnect_successes_total": "Reconnect attempts that connected",

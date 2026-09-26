@@ -93,3 +93,9 @@ def test_agent_status_reports_the_live_call(client, monkeypatch):
     assert status["call"]["path"] == "/ag1/call1" and status["inCall"]
     monkeypatch.setattr(main.hub.tel.state, "calls", [])
     assert client.get("/api/agent/ringing", headers=auth).json()["call"] is None
+
+
+def test_media_stream_needs_the_token_and_all_audio_mode(client):
+    assert client.get("/api/agent/media").status_code == 401
+    # "Calls only" (and no media bridge in tests): nothing to stream, ask later.
+    assert client.get("/api/agent/media", headers={"Authorization": "Bearer agent-token"}).status_code == 204

@@ -271,3 +271,15 @@ async def test_bridge_stops_when_its_page_leaves_mid_call():
     await hub.tick()
     assert not hub.bridge.running
     assert hub.snapshot()["bridged"] is False  # so the next page offers Take on PC
+
+
+@pytest.mark.asyncio
+async def test_audio_mode_switch_is_refused_during_a_call(tmp_path):
+    from app.media import MediaBridge
+
+    hub, tel = make(calls=[Call("/ag1/call1", "active", "+1555", "")], settings_path=tmp_path / "s.json")
+    hub.media = MediaBridge()
+    page = FakeSocket()
+    assert "during a call" in await hub.command(page, {"action": "set-audio-mode", "value": "all"})
+    assert hub.settings["audioMode"] == "calls"
+    assert await hub.command(page, {"action": "set-audio-mode", "value": "loud"}) == "unknown audio mode"

@@ -35,6 +35,7 @@ log = logging.getLogger("phone.reconnect")
 BLUEZ = "org.bluez"
 DEVICE_IFACE = "org.bluez.Device1"
 HFP_AG_UUID = "0000111f-0000-1000-8000-00805f9b34fb"
+A2DP_SOURCE_UUID = "0000110a-0000-1000-8000-00805f9b34fb"  # the phone's media side
 INTERVAL_SECONDS = 30  # between connect attempts
 CHECK_SECONDS = 5  # between looks at the PC and the phone
 CONNECT_TIMEOUT = 30
@@ -153,6 +154,15 @@ class Reconnector:
         self._next_attempt = now + INTERVAL_SECONDS
         for path in reconnect_candidates(objects):
             await self.attempt(path)
+
+    async def reconnect_profiles(self, address: str, media: bool) -> None:
+        """After WirePlumber restarts: calls back now, and media in "all" mode."""
+        path = "/org/bluez/hci0/dev_" + address.replace(":", "_")
+        for uuid in (HFP_AG_UUID, A2DP_SOURCE_UUID) if media else (HFP_AG_UUID,):
+            try:
+                await asyncio.wait_for(self._call(path, DEVICE_IFACE, "ConnectProfile", "s", [uuid]), CONNECT_TIMEOUT)
+            except (asyncio.TimeoutError, RuntimeError) as e:
+                log.info("reconnecting %s on %s: %s", uuid[4:8], path, e)
 
     async def run(self) -> None:
         self.bus = await MessageBus(bus_type=BusType.SYSTEM).connect()
