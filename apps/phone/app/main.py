@@ -13,12 +13,13 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import Depends, FastAPI, Form, Header, HTTPException, Request, WebSocket, WebSocketDisconnect
-from fastapi.responses import FileResponse, RedirectResponse
+from fastapi.responses import FileResponse, RedirectResponse, Response, StreamingResponse
 from starlette.middleware.sessions import SessionMiddleware
 
 from app.contacts import Contacts
 from app.history import CallLog
 from app.hub import Hub
+from app.media import CHANNELS, RATE, MediaBridge
 from app.reconnect import Reconnector
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
@@ -45,7 +46,8 @@ if os.environ.get("PHONE_EXTRAS", "1") == "1":
     # Off in tests (conftest) - these reach for Bluetooth, disk and D-Bus.
     hub.contacts = Contacts(CONFIG / "contacts.json")
     hub.history = CallLog(DATA / "calls.db")
-    hub.reconnector = Reconnector(lambda: hub.tel.state.connected)
+    hub.reconnector = Reconnector(lambda: hub.tel.state.connected, hub.pc_present)
+    hub.media = MediaBridge()
     hub.write_metrics = True
 
 
@@ -101,6 +103,7 @@ def ringing_call():
 
 @app.get("/api/agent/ringing", dependencies=[Depends(require_agent)])
 async def agent_ringing():
+    hub.pc_seen()
     call = ringing_call()
     live = next((c for c in hub.tel.state.calls if c.state != "disconnected"), None)
     return {
@@ -116,6 +119,32 @@ async def agent_ringing():
         # For the missed-call notification: the agent remembers which it has shown.
         "missed": hub.history.last_missed() if hub.history else None,
     }
+
+
+@app.get("/api/agent/media", dependencies=[Depends(require_agent)])
+async def agent_media():
+    """The phone's music and videos as raw PCM, for the agent's player.
+
+    204 in "calls only" mode (the agent asks again in a few seconds).
+    Otherwise an endless response: s16le chunks while the phone plays,
+    nothing while it doesn't, and it ends when the mode goes back.
+    """
+    if not hub.media or hub.settings["audioMode"] != "all":
+        return Response(status_code=204)
+    q = hub.media.subscribe()
+
+    async def chunks():
+        try:
+            while (chunk := await q.get()) is not None:
+                yield chunk
+        finally:
+            hub.media.unsubscribe(q)
+
+    return StreamingResponse(
+        chunks(),
+        media_type="application/octet-stream",
+        headers={"X-Audio-Format": f"s16le; rate={RATE}; channels={CHANNELS}", "Cache-Control": "no-store"},
+    )
 
 
 @app.post("/api/agent/session", dependencies=[Depends(require_agent)])

@@ -201,7 +201,7 @@ async def test_mic_choice_is_saved_and_shared(tmp_path):
     assert load_settings(tmp_path / "s.json")["micLabel"] == "Mic/Inst (Samson G-Track Pro)"
     # An older settings file without the key still loads.
     (tmp_path / "old.json").write_text('{"keepPhoneAnswered": true}')
-    assert load_settings(tmp_path / "old.json") == {"keepPhoneAnswered": True, "micLabel": ""}
+    assert load_settings(tmp_path / "old.json") == {"keepPhoneAnswered": True, "micLabel": "", "audioMode": "calls"}
 
 
 class FakeReconnector:
@@ -271,3 +271,27 @@ async def test_bridge_stops_when_its_page_leaves_mid_call():
     await hub.tick()
     assert not hub.bridge.running
     assert hub.snapshot()["bridged"] is False  # so the next page offers Take on PC
+
+
+@pytest.mark.asyncio
+async def test_audio_mode_switch_is_refused_during_a_call(tmp_path):
+    from app.media import MediaBridge
+
+    hub, tel = make(calls=[Call("/ag1/call1", "active", "+1555", "")], settings_path=tmp_path / "s.json")
+    hub.media = MediaBridge()
+    page = FakeSocket()
+    assert "during a call" in await hub.command(page, {"action": "set-audio-mode", "value": "all"})
+    assert hub.settings["audioMode"] == "calls"
+    assert await hub.command(page, {"action": "set-audio-mode", "value": "loud"}) == "unknown audio mode"
+
+
+@pytest.mark.asyncio
+async def test_page_that_closes_its_audio_stops_counting():
+    hub, tel = make()
+    page = FakeSocket()
+    await hub.add(page)
+    await hub.command(page, {"action": "audio-ready"})
+    assert tel.reject_sco[-1] is False
+    await hub.command(page, {"action": "audio-off"})
+    assert hub.audio_clients == []
+    assert tel.reject_sco[-1] is True  # a call answered on the iPhone stays there again
