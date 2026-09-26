@@ -201,7 +201,7 @@ async def test_mic_choice_is_saved_and_shared(tmp_path):
     assert load_settings(tmp_path / "s.json")["micLabel"] == "Mic/Inst (Samson G-Track Pro)"
     # An older settings file without the key still loads.
     (tmp_path / "old.json").write_text('{"keepPhoneAnswered": true}')
-    assert load_settings(tmp_path / "old.json") == {"keepPhoneAnswered": True, "micLabel": ""}
+    assert load_settings(tmp_path / "old.json") == {"keepPhoneAnswered": True, "micLabel": "", "audioMode": "calls"}
 
 
 class FakeReconnector:
