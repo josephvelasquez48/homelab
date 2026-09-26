@@ -188,6 +188,34 @@ function routeMic() {
   out.connect(analyser);
 }
 
+// The agent's window keeps the mic only while there's a call: open while
+// it rings (to wake the Samson) or once used, closed a few seconds after
+// the last call ends - not left open, keeping the mic awake, until the
+// window reloads. The delay covers a dial, whose call appears a moment
+// after the mic opens.
+let audioIdleTimer = null;
+function releaseAudioWhenIdle(hasCall) {
+  if (!AGENT) return;
+  if (hasCall) {
+    clearTimeout(audioIdleTimer);
+    audioIdleTimer = null;
+  } else if (audio && !audioIdleTimer) {
+    audioIdleTimer = setTimeout(stopAudio, 5000);
+  }
+}
+
+async function stopAudio() {
+  audioIdleTimer = null;
+  if (!audio || enabling) return;
+  const closing = audio;
+  audio = null;
+  answeredHere = false;
+  send({ action: "audio-off" }); // or the Pi would send the next call here
+  closing.stream.getTracks().forEach((t) => t.stop());
+  await closing.ctx.close().catch(() => {});
+  render(state);
+}
+
 // Tell the Pi this page can take a call's audio - only once it's actually
 // running. A context Firefox's autoplay policy left suspended can't play
 // anything, and the Pi would otherwise send a call's audio to it.
@@ -362,6 +390,7 @@ function render(s) {
   $("audio-mode").disabled = !!(s.calls && s.calls.length);
 
   const call = pickCall(s.calls);
+  releaseAudioWhenIdle(!!call);
   $("call-card").hidden = !call;
   $("dial-card").hidden = !!call || POPUP;
   if (POPUP) {

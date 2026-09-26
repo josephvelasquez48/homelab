@@ -283,3 +283,15 @@ async def test_audio_mode_switch_is_refused_during_a_call(tmp_path):
     assert "during a call" in await hub.command(page, {"action": "set-audio-mode", "value": "all"})
     assert hub.settings["audioMode"] == "calls"
     assert await hub.command(page, {"action": "set-audio-mode", "value": "loud"}) == "unknown audio mode"
+
+
+@pytest.mark.asyncio
+async def test_page_that_closes_its_audio_stops_counting():
+    hub, tel = make()
+    page = FakeSocket()
+    await hub.add(page)
+    await hub.command(page, {"action": "audio-ready"})
+    assert tel.reject_sco[-1] is False
+    await hub.command(page, {"action": "audio-off"})
+    assert hub.audio_clients == []
+    assert tel.reject_sco[-1] is True  # a call answered on the iPhone stays there again

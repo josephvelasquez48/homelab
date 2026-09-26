@@ -49,6 +49,12 @@ ROLES_CONF = """\
 # sends music and videos here too. See apps/phone/app/media.py.
 monitor.bluez.properties = {
   bluez5.roles = [ hfp_hf a2dp_sink ]
+  # The iPhone sends media at full scale and sets the speaker's volume
+  # (AVRCP absolute volume); ignored, as 51-phone-bridge.conf has it for
+  # calls, music came out far too loud whatever the phone said. Honour it
+  # for media only - the call streams keep ignoring the phone's volume.
+  bluez5.enable-hw-volume = true
+  bluez5.hw-volume = [ a2dp_sink ]
 }
 """
 

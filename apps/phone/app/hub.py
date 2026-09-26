@@ -401,6 +401,12 @@ class Hub:
                 if ws in self.audio_clients:
                     self.audio_clients.remove(ws)
                 self.audio_clients.append(ws)
+            elif action == "audio-off":
+                # The page closed its mic and speakers (the agent's window
+                # does once the call is over): no longer somewhere to send
+                # a call, so RejectSCO goes back on.
+                if ws in self.audio_clients:
+                    self.audio_clients.remove(ws)
             elif action == "answer":
                 await self.tel.answer(str(msg.get("call", "")))
             elif action == "hangup":
