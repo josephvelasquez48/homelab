@@ -45,7 +45,7 @@ if os.environ.get("PHONE_EXTRAS", "1") == "1":
     # Off in tests (conftest) - these reach for Bluetooth, disk and D-Bus.
     hub.contacts = Contacts(CONFIG / "contacts.json")
     hub.history = CallLog(DATA / "calls.db")
-    hub.reconnector = Reconnector(lambda: hub.tel.state.connected)
+    hub.reconnector = Reconnector(lambda: hub.tel.state.connected, hub.pc_present)
     hub.write_metrics = True
 
 
@@ -101,6 +101,7 @@ def ringing_call():
 
 @app.get("/api/agent/ringing", dependencies=[Depends(require_agent)])
 async def agent_ringing():
+    hub.pc_seen()
     call = ringing_call()
     live = next((c for c in hub.tel.state.calls if c.state != "disconnected"), None)
     return {

@@ -14,11 +14,20 @@ which an iPhone never advertises (it uses a rotating random one), so it
 never connected - 168 attempts in a row, with the phone on the desk.
 btmon showed no classic page at all. A classic-only profile makes BlueZ
 page the phone over BR/EDR, which connected in 2 s.
+
+Only while the PC is around. With the desktop off the Pi is a hands-free
+unit with no speaker or mic, and the iPhone still connected to it and
+could send a call's audio there. So when nothing on the PC has checked
+in for PC_GONE_SECONDS (the agent polls every second while it runs), the
+phone is disconnected and *blocked*: BlueZ refuses its connection
+attempts straight away but keeps the pairing. When the PC is back it's
+unblocked and reconnected on the next check, a few seconds later.
 """
 import asyncio
 import logging
+import time
 
-from dbus_fast import BusType, Message, MessageType
+from dbus_fast import BusType, Message, MessageType, Variant
 from dbus_fast.aio import MessageBus
 
 log = logging.getLogger("phone.reconnect")
@@ -26,8 +35,12 @@ log = logging.getLogger("phone.reconnect")
 BLUEZ = "org.bluez"
 DEVICE_IFACE = "org.bluez.Device1"
 HFP_AG_UUID = "0000111f-0000-1000-8000-00805f9b34fb"
-INTERVAL_SECONDS = 30
+INTERVAL_SECONDS = 30  # between connect attempts
+CHECK_SECONDS = 5  # between looks at the PC and the phone
 CONNECT_TIMEOUT = 30
+# Long enough for the agent to restart after a crash (the supervisor waits
+# 5 s and more) or the PC to reboot quickly, without dropping the phone.
+PC_GONE_SECONDS = 120
 
 
 def reconnect_candidates(objects: dict) -> list[str]:
@@ -43,9 +56,24 @@ def reconnect_candidates(objects: dict) -> list[str]:
     return found
 
 
+def paired_phones(objects: dict) -> dict[str, bool]:
+    """Every paired device offering the hands-free gateway -> whether it's blocked."""
+    found = {}
+    for path, ifaces in sorted(objects.items()):
+        dev = ifaces.get(DEVICE_IFACE)
+        if not dev:
+            continue
+        value = lambda k, d=None: getattr(dev.get(k), "value", d)  # noqa: E731
+        if value("Paired") and HFP_AG_UUID in (value("UUIDs") or []):
+            found[path] = bool(value("Blocked"))
+    return found
+
+
 class Reconnector:
-    def __init__(self, is_connected):
+    def __init__(self, is_connected, pc_present=lambda: True):
         self.is_connected = is_connected  # () -> bool, from the telephony state
+        self.pc_present = pc_present  # () -> bool: has the PC checked in lately
+        self._next_attempt = 0.0
         self.attempts = 0
         self.successes = 0
         self.bus: MessageBus | None = None  # set by run()
@@ -99,15 +127,38 @@ class Reconnector:
         await asyncio.sleep(3)
         await asyncio.wait_for(self._call(path, DEVICE_IFACE, "ConnectProfile", "s", [HFP_AG_UUID]), CONNECT_TIMEOUT)
 
+    async def _set_blocked(self, path: str, blocked: bool) -> None:
+        await self._call(
+            path, "org.freedesktop.DBus.Properties", "Set", "ssv", [DEVICE_IFACE, "Blocked", Variant("b", blocked)]
+        )
+        log.info("%s %s", "blocked (PC is off)" if blocked else "unblocked (PC is back)", path)
+
+    async def check(self, now: float) -> None:
+        """One pass: block or unblock for the PC, then maybe try to connect."""
+        [objects] = await self._call("/", "org.freedesktop.DBus.ObjectManager", "GetManagedObjects")
+        phones = paired_phones(objects)
+        if not self.pc_present():
+            for path, blocked in phones.items():
+                if not blocked:
+                    await self._set_blocked(path, True)  # disconnects it too
+            return
+        if any(phones.values()):
+            for path, blocked in phones.items():
+                if blocked:
+                    await self._set_blocked(path, False)
+            self._next_attempt = 0.0  # connect now, not in up to 30 s
+            return  # the next check sees the device unblocked
+        if self.is_connected() or now < self._next_attempt:
+            return
+        self._next_attempt = now + INTERVAL_SECONDS
+        for path in reconnect_candidates(objects):
+            await self.attempt(path)
+
     async def run(self) -> None:
         self.bus = await MessageBus(bus_type=BusType.SYSTEM).connect()
         while True:
-            await asyncio.sleep(INTERVAL_SECONDS)
-            if self.is_connected():
-                continue
+            await asyncio.sleep(CHECK_SECONDS)
             try:
-                [objects] = await self._call("/", "org.freedesktop.DBus.ObjectManager", "GetManagedObjects")
-                for path in reconnect_candidates(objects):
-                    await self.attempt(path)
+                await self.check(time.monotonic())
             except Exception:
                 log.exception("reconnect check failed")

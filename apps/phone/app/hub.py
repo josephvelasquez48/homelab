@@ -28,7 +28,7 @@ from app import metrics
 from app.audio import AudioBridge
 from app.contacts import Contacts
 from app.history import CallLog
-from app.reconnect import Reconnector
+from app.reconnect import PC_GONE_SECONDS, Reconnector
 from app.telephony import Call, Telephony, TelephonyError
 
 log = logging.getLogger("phone.hub")
@@ -98,6 +98,9 @@ class Hub:
         # When the audio link was first seen on the Pi with no call, and
         # whether this stretch of it already got its one reset.
         self._orphan_since: float | None = None
+        # When the PC last showed it's on (the agent's poll). Starts at
+        # "now", so a restarted service gives the PC time to check in.
+        self._pc_seen = time.monotonic()
         self._orphan_reset = False
         self.clients: list[WebSocket] = []
         self.audio_clients: list[WebSocket] = []
@@ -202,6 +205,13 @@ class Hub:
 
         await self.broadcast_state()
 
+    def pc_seen(self) -> None:
+        self._pc_seen = time.monotonic()
+
+    def pc_present(self) -> bool:
+        """The agent polled lately, or a page is open (a browser counts)."""
+        return bool(self.clients) or time.monotonic() - self._pc_seen < PC_GONE_SECONDS
+
     def _check_orphan_audio(self, state) -> None:
         """Recover a call the Pi never heard about.
 
@@ -269,6 +279,7 @@ class Hub:
             "phone_audio_pages": len(self.audio_clients),
             "phone_audio_rx_peak": rx,
             "phone_audio_tx_peak": tx,
+            "phone_pc_present": int(self.pc_present()),
             "phone_contacts": len(self.contacts.names) if self.contacts else 0,
             "phone_reconnect_attempts_total": self.reconnector.attempts if self.reconnector else 0,
             "phone_reconnect_successes_total": self.reconnector.successes if self.reconnector else 0,
