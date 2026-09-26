@@ -9,6 +9,7 @@ the oFono interface names are just the API PipeWire chose to mirror.
 The agN number is not stable across reconnects, so it is rediscovered on
 every poll rather than cached.
 """
+import asyncio
 import re
 import time
 from dataclasses import dataclass, field
@@ -21,6 +22,14 @@ ROOT = "/org/pipewire/Telephony"
 AG_IFACE = "org.pipewire.Telephony.AudioGateway1"
 TRANSPORT_IFACE = "org.pipewire.Telephony.AudioGatewayTransport1"
 MANAGER_IFACE = "org.ofono.VoiceCallManager"
+# D-Bus has no deadline of its own short of the daemon's ~25 s. A call
+# that lands while WirePlumber restarts (switching the audio mode does
+# that) went unanswered that long, holding up every tick: pages got no
+# state for up to a minute, and the agent's window, still showing the
+# ended call as its own, wouldn't close. Anything that waits on the phone
+# itself (answer, dial) gets longer.
+CALL_TIMEOUT = 5
+PHONE_TIMEOUT = 20
 CALL_IFACE = "org.ofono.VoiceCall"
 
 # Digits plus the characters a dial pad can produce. Anything else is
@@ -152,17 +161,15 @@ class Telephony:
     async def connect(self) -> None:
         self.bus = await MessageBus(bus_type=BusType.SESSION).connect()
 
-    async def _call(self, path, iface, member, signature="", body=()):
-        reply = await self.bus.call(
-            Message(
-                destination=SERVICE,
-                path=path,
-                interface=iface,
-                member=member,
-                signature=signature,
-                body=list(body),
-            )
+    async def _call(self, path, iface, member, signature="", body=(), timeout=None):
+        message = Message(
+            destination=SERVICE, path=path, interface=iface, member=member, signature=signature, body=list(body)
         )
+        timeout = timeout or CALL_TIMEOUT
+        try:
+            reply = await asyncio.wait_for(self.bus.call(message), timeout)
+        except asyncio.TimeoutError:
+            raise TelephonyError(f"{member}: no answer from PipeWire in {timeout} s") from None
         if reply.message_type == MessageType.ERROR:
             detail = reply.body[0] if reply.body else ""
             raise TelephonyError(f"{reply.error_name}: {detail}".rstrip(": "))
@@ -204,9 +211,9 @@ class Telephony:
         if call.state == "waiting":
             # A waiting call can't take a plain Answer (ATA); "hold and
             # answer" (AT+CHLD=2) accepts it, holding any active call.
-            await self._call(self._gateway(), MANAGER_IFACE, "HoldAndAnswer")
+            await self._call(self._gateway(), MANAGER_IFACE, "HoldAndAnswer", timeout=PHONE_TIMEOUT)
         else:
-            await self._call(path, CALL_IFACE, "Answer")
+            await self._call(path, CALL_IFACE, "Answer", timeout=PHONE_TIMEOUT)
 
     async def hangup(self, path: str) -> None:
         await self._call(self._known_call(path), CALL_IFACE, "Hangup")
@@ -214,7 +221,7 @@ class Telephony:
     async def dial(self, number: str) -> None:
         if not valid_number(number):
             raise TelephonyError("invalid number")
-        await self._call(self._gateway(), MANAGER_IFACE, "Dial", "s", [number])
+        await self._call(self._gateway(), MANAGER_IFACE, "Dial", "s", [number], timeout=PHONE_TIMEOUT)
 
     async def send_tones(self, tones: str) -> None:
         if not valid_tones(tones):
