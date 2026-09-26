@@ -188,6 +188,34 @@ function routeMic() {
   out.connect(analyser);
 }
 
+// The agent's window keeps the mic only while there's a call: open while
+// it rings (to wake the Samson) or once used, closed a few seconds after
+// the last call ends - not left open, keeping the mic awake, until the
+// window reloads. The delay covers a dial, whose call appears a moment
+// after the mic opens.
+let audioIdleTimer = null;
+function releaseAudioWhenIdle(hasCall) {
+  if (!AGENT) return;
+  if (hasCall) {
+    clearTimeout(audioIdleTimer);
+    audioIdleTimer = null;
+  } else if (audio && !audioIdleTimer) {
+    audioIdleTimer = setTimeout(stopAudio, 5000);
+  }
+}
+
+async function stopAudio() {
+  audioIdleTimer = null;
+  if (!audio || enabling) return;
+  const closing = audio;
+  audio = null;
+  answeredHere = false;
+  send({ action: "audio-off" }); // or the Pi would send the next call here
+  closing.stream.getTracks().forEach((t) => t.stop());
+  await closing.ctx.close().catch(() => {});
+  render(state);
+}
+
 // Tell the Pi this page can take a call's audio - only once it's actually
 // running. A context Firefox's autoplay policy left suspended can't play
 // anything, and the Pi would otherwise send a call's audio to it.
@@ -357,8 +385,12 @@ function render(s) {
     : s.bridged ? "Call audio is on this PC" : "PC audio ready";
   if (s.audioError) showError(`Audio: ${s.audioError}`);
   if (s.settings) $("keep-phone").checked = !!s.settings.keepPhoneAnswered;
+  if (s.settings && s.settings.audioMode) $("audio-mode").value = s.settings.audioMode;
+  // Switching restarts the Pi's Bluetooth audio, which would drop a call.
+  $("audio-mode").disabled = !!(s.calls && s.calls.length);
 
   const call = pickCall(s.calls);
+  releaseAudioWhenIdle(!!call);
   $("call-card").hidden = !call;
   $("dial-card").hidden = !!call || POPUP;
   if (POPUP) {
@@ -502,6 +534,7 @@ function currentCall() {
 $("enable-audio").onclick = enableAudio;
 // Stored on the Pi, so it holds for every browser and across restarts.
 $("keep-phone").onchange = (e) => send({ action: "set-keep-phone", value: e.target.checked });
+$("audio-mode").onchange = (e) => send({ action: "set-audio-mode", value: e.target.value });
 $("mic").onchange = (e) => switchMic(e.target.value);
 // Remembered per browser; storage can be unavailable (private window),
 // in which case the slider just starts at its default.

@@ -182,6 +182,11 @@ audio natively.
   own WebView2 profile (`%LOCALAPPDATA%\phone-bridge\webview`). That
   makes the token equivalent to the password; it lives only in the
   desktop user's `%APPDATA%`.
+- **Mic only for calls.** The window opens the mic while a call rings
+  (that's what wakes the Samson) or when it's used for one, and closes
+  it 5 s after the last call ends, telling the Pi (`audio-off`) so a
+  call answered on the iPhone isn't sent to a window with no audio. It
+  used to stay open, keeping the mic awake, until the window reloaded.
 - **Mic permission.** pywebview 6.2.1 doesn't handle WebView2's
   `PermissionRequested`, so the agent does: microphone for
   `phone.home`, deny everything else.
@@ -260,6 +265,18 @@ state: the slow ones run in their own loop.
   given up after 30 s and followed by `Disconnect`, or BlueZ answers
   every later attempt with `InProgress` without paging the phone. The
   same module resets the hands-free profile for bug 6.
+- **Only while the PC is on**: with the desktop off, the Pi is a
+  hands-free unit with no speaker or mic, and the iPhone still connected
+  to it - it could send a call's audio there. The agent polls every
+  second while it runs, so when nothing on the PC has checked in for
+  2 minutes (`PC_GONE_SECONDS`; an open page counts too) the reconnector
+  sets the phone's BlueZ `Blocked` property. That disconnects it and
+  refuses its own connection attempts, but keeps the pairing - checked
+  live: still paired, bonded and trusted, and no reconnect in 20 s. When
+  the agent polls again the phone is unblocked and connected on the next
+  5 s check: 12 s after a service restart, in the test. Two minutes is
+  room for the agent's crash restart or a quick reboot without dropping
+  the phone. `phone_pc_present` in the metrics shows which state it's in.
 - **Mic noise filter**: RNNoise, a small neural-network noise
   suppressor, runs on the mic in an AudioWorklet, between the mic and
   the capture that resamples to 16 kHz. Vendored as three static files
@@ -290,6 +307,46 @@ state: the slow ones run in their own loop.
   declines or hangs up, Ctrl+Alt+M mutes - by clicking the popup's own
   buttons. A hotkey isn't a user gesture to the page, so the agent adds
   `--autoplay-policy=no-user-gesture-required` to its own WebView2 only.
+
+## All audio: music and videos on the PC too
+
+*Phone audio on this PC* in the page switches between **Calls only**
+(the default) and **All audio**. It's stored on the Pi like the other
+settings, and refused during a call.
+
+- **Pi**: "All audio" writes a WirePlumber drop-in,
+  `52-phone-media.conf`, that adds `a2dp_sink` to the roles, so the Pi
+  is also a Bluetooth speaker; "Calls only" deletes it. The later file
+  wins for the same key - checked live, the Pi advertised *Audio Sink*
+  and the phone opened an A2DP transport as soon as it reconnected.
+  Either change restarts WirePlumber, and the phone is asked back for
+  calls (and media) straight after (`app/media.py`).
+- **Stream**: `pw-record` takes the phone's A2DP node at 48 kHz stereo
+  in 10 ms chunks, with a 10 ms node latency (the default, 100 ms, would
+  be half the budget), and `/api/agent/media` streams it as raw PCM to
+  the desktop agent. A slow listener loses the oldest audio, never
+  builds up delay.
+- **PC**: the agent plays it through Windows' `waveOut`, from plain
+  ctypes (`agent/media_player.py`), in its own thread - the call window
+  is blanked while hidden, so it can't be the player. Playback starts
+  with 60 ms queued and drops a chunk rather than queue past 120 ms.
+- **The call bridge ignores it**: it used to take the first
+  `bluez_input` node, which with media on can be the music. It now skips
+  A2DP nodes.
+
+Found on the first try, and fixed:
+
+- **Far too loud.** The iPhone sends media at full scale and sets the
+  speaker's volume over AVRCP; `bluez5.enable-hw-volume = false` (for
+  calls, bug 3) threw that away. The drop-in enables hardware volume for
+  `a2dp_sink` only, so the phone's buttons work (47 of 127 on the phone
+  set the node to 0.0507) and call streams still ignore the phone.
+- **Video sync.** A2DP delay reporting lets the phone hold video back
+  by the speaker's delay, but the Pi only reported its own 80 ms. A
+  `latencyOffsetNsec` prop doesn't exist on this node; `ProcessLatency`
+  moved the report to ~100 ms but no further. It's set to an estimated
+  180 ms for the whole trip, and on a real video there was no visible
+  lag. Not measured beyond that.
 
 ## Setup
 
@@ -344,5 +401,10 @@ login, and the site's mic and autoplay allowed.)
   itself stays up on the phone.
 - Only one phone can be the iPhone's hands-free unit at a time, so the
   car or earbuds compete with the Pi.
+- With the PC off (or the agent quit) for 2 minutes, calls ring only on
+  the iPhone: the Pi keeps it disconnected on purpose. The earbuds or the
+  car get it to themselves.
+- "All audio" uses SBC: Debian's PipeWire has no AAC codec, the iPhone's
+  best. Media reaches the PC roughly 0.2 s after the phone plays it.
 - Coming back into range, the phone reconnects on the next 30 s check,
   not instantly. Measured: 26 s after a forced disconnect.

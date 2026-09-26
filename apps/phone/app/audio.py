@@ -54,7 +54,10 @@ def find_bluez_nodes(dump: list) -> dict[str, int]:
     for obj in dump:
         if obj.get("type") != "PipeWire:Interface:Node":
             continue
-        name = ((obj.get("info") or {}).get("props") or {}).get("node.name", "")
+        props = (obj.get("info") or {}).get("props") or {}
+        name = props.get("node.name", "")
+        if "a2dp" in str(props.get("api.bluez5.profile", "")):
+            continue  # music/video (media.py), not the call
         if name.startswith(("bluez_input.", "bluez_output.")):
             nodes[name] = obj["id"]
     return nodes

@@ -1,4 +1,6 @@
 import asyncio
+import tempfile
+from pathlib import Path
 
 import pytest
 from dbus_fast import Variant
@@ -78,9 +80,10 @@ def test_number_key_matches_formats():
 # -- reconnect ---------------------------------------------------------------------
 
 
-def dev(paired=True, trusted=True, connected=False, uuids=(HFP_AG_UUID,)):
+def dev(paired=True, trusted=True, connected=False, uuids=(HFP_AG_UUID,), blocked=False):
     return {
         "org.bluez.Device1": {
+            "Blocked": Variant("b", blocked),
             "Paired": Variant("b", paired),
             "Trusted": Variant("b", trusted),
             "Connected": Variant("b", connected),
@@ -207,3 +210,70 @@ async def test_reconnect_out_of_range_needs_no_reset():
     r._call = FakeBluez(RuntimeError("org.bluez.Error.Failed: br-connection-page-timeout"))
     assert await r.attempt("/dev_phone") is False
     assert r._call.calls == ["ConnectProfile"]
+
+
+class FakeBluezObjects:
+    """Stands in for Reconnector._call with a live device table."""
+
+    def __init__(self, **devices):
+        self.devices = devices
+        self.calls = []
+
+    async def __call__(self, path, iface, member, *args):
+        if member == "GetManagedObjects":
+            return [{f"/dev_{name}": d for name, d in self.devices.items()}]
+        self.calls.append((path, member, *args[1:]))
+        if member == "Set":
+            iface_name, prop, value = args[1]
+            self.devices[path.removeprefix("/dev_")]["org.bluez.Device1"][prop] = value
+        return []
+
+
+@pytest.mark.asyncio
+async def test_phone_is_blocked_while_the_pc_is_off_and_back_when_it_returns():
+    from app import reconnect
+
+    pc = {"on": False}
+    r = reconnect.Reconnector(lambda: False, lambda: pc["on"])
+    r._call = FakeBluezObjects(phone=dev(connected=True))
+    await r.check(now=0)
+    assert r._call.calls == [("/dev_phone", "Set", ["org.bluez.Device1", "Blocked", Variant("b", True)])]
+
+    r._call.calls.clear()
+    await r.check(now=5)
+    assert r._call.calls == []  # already blocked; no connect attempts while the PC is off
+
+    pc["on"] = True
+    await r.check(now=10)
+    assert r._call.calls == [("/dev_phone", "Set", ["org.bluez.Device1", "Blocked", Variant("b", False)])]
+    r._call.devices["phone"]["org.bluez.Device1"]["Connected"] = Variant("b", False)
+
+    r._call.calls.clear()
+    await r.check(now=15)  # straight away, not after the 30 s attempt interval
+    assert [c[1] for c in r._call.calls] == ["ConnectProfile"]
+
+
+@pytest.mark.asyncio
+async def test_connect_attempts_stay_30_s_apart():
+    from app import reconnect
+
+    r = reconnect.Reconnector(lambda: False, lambda: True)
+    r._call = FakeBluezObjects(phone=dev())
+    for now in (100, 105, 110, 129):
+        await r.check(now=now)
+    await r.check(now=131)
+    assert [c[1] for c in r._call.calls] == ["ConnectProfile", "ConnectProfile"]
+
+
+def test_pc_present_follows_the_agent_poll(monkeypatch):
+    import app.hub as hub_module
+    from app.hub import Hub
+
+    clock = {"t": 1000.0}
+    monkeypatch.setattr(hub_module.time, "monotonic", lambda: clock["t"])
+    hub = Hub(telephony=object(), bridge=object(), settings_path=Path(tempfile.mkdtemp()) / "s.json")
+    assert hub.pc_present()  # grace period after a service start
+    clock["t"] += hub_module.PC_GONE_SECONDS + 1
+    assert not hub.pc_present()
+    hub.pc_seen()
+    assert hub.pc_present()
