@@ -17,9 +17,18 @@ desktop agent's media stream). Like the call bridge it starts pw-record
 with --target 0 and links the ports itself.
 
 Delay: the phone can hold video back by what the speaker reports
-(A2DP delay reporting). The Pi only knows its own part, so the node gets
-a latency offset for the rest - the network, the agent's buffer and
-Windows' output - and PipeWire adds that to the delay it reports.
+(A2DP delay reporting). The Pi only knows its own part (it reported 80
+ms), so the node is told the whole trip's latency with ProcessLatency and
+reports that instead. Measured live: a Props latencyOffsetNsec did
+nothing (no such prop on this node), ProcessLatency moved the reported
+Delay from 80 ms to ~100 ms - but no further, and later values didn't
+change it, so the report may still undershoot. Video sync is judged by
+eye; see docs/phone.md.
+
+Volume: the iPhone sends media at full scale and sets the speaker's
+volume over AVRCP. The drop-in enables hardware volume for a2dp_sink
+only, so the phone's buttons set the node's volume (47 of 127 on the
+phone -> 0.0507, cubic) while calls keep ignoring it.
 """
 import asyncio
 import json
@@ -34,9 +43,10 @@ RATE = 48000
 CHANNELS = 2
 CHUNK_BYTES = RATE * CHANNELS * 2 // 100  # 10 ms
 MEDIA_NODE = "phone-bridge-media"
-# What happens after the Pi: LAN, the agent's ~60 ms start-up buffer and
-# waveOut/Windows output. Reported to the phone on top of the Pi's own.
-PC_LATENCY_NS = 100_000_000
+# The whole trip: the Pi's A2DP decode and buffers (~80 ms reported on
+# its own), the LAN, the agent's ~60 ms start-up buffer and waveOut /
+# Windows output. An estimate - see the module docstring.
+TOTAL_LATENCY_NS = 180_000_000
 # Per listener: past this many chunks (100 ms) a slow reader loses the
 # oldest, so delay can't build up behind it.
 QUEUE_CHUNKS = 10
@@ -129,7 +139,7 @@ class MediaBridge:
             await self._stop()
             raise RuntimeError(f"ports never appeared for {node}")
         try:
-            await _run("pw-cli", "set-param", str(node_id), "Props", f"{{ latencyOffsetNsec: {PC_LATENCY_NS} }}")
+            await _run("pw-cli", "set-param", str(node_id), "ProcessLatency", f"{{ ns: {TOTAL_LATENCY_NS} }}")
         except RuntimeError as e:
             log.info("couldn't set the delay report offset: %s", e)
         self.node = node
