@@ -260,6 +260,18 @@ state: the slow ones run in their own loop.
   given up after 30 s and followed by `Disconnect`, or BlueZ answers
   every later attempt with `InProgress` without paging the phone. The
   same module resets the hands-free profile for bug 6.
+- **Only while the PC is on**: with the desktop off, the Pi is a
+  hands-free unit with no speaker or mic, and the iPhone still connected
+  to it - it could send a call's audio there. The agent polls every
+  second while it runs, so when nothing on the PC has checked in for
+  2 minutes (`PC_GONE_SECONDS`; an open page counts too) the reconnector
+  sets the phone's BlueZ `Blocked` property. That disconnects it and
+  refuses its own connection attempts, but keeps the pairing - checked
+  live: still paired, bonded and trusted, and no reconnect in 20 s. When
+  the agent polls again the phone is unblocked and connected on the next
+  5 s check: 12 s after a service restart, in the test. Two minutes is
+  room for the agent's crash restart or a quick reboot without dropping
+  the phone. `phone_pc_present` in the metrics shows which state it's in.
 - **Mic noise filter**: RNNoise, a small neural-network noise
   suppressor, runs on the mic in an AudioWorklet, between the mic and
   the capture that resamples to 16 kHz. Vendored as three static files
@@ -344,5 +356,8 @@ login, and the site's mic and autoplay allowed.)
   itself stays up on the phone.
 - Only one phone can be the iPhone's hands-free unit at a time, so the
   car or earbuds compete with the Pi.
+- With the PC off (or the agent quit) for 2 minutes, calls ring only on
+  the iPhone: the Pi keeps it disconnected on purpose. The earbuds or the
+  car get it to themselves.
 - Coming back into range, the phone reconnects on the next 30 s check,
   not instantly. Measured: 26 s after a forced disconnect.
