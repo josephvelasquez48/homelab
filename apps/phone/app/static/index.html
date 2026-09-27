@@ -3,68 +3,94 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark light">
   <title>Phone</title>
   <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
-  <main>
-    <h1>
-      Phone
-      <form method="post" action="/logout"><button class="small" type="submit">Log out</button></form>
-    </h1>
+  <!-- Icons, used by <svg><use href="#i-..."/></svg> below. -->
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <symbol id="i-phone" viewBox="0 0 24 24"><path fill="currentColor" d="M6.6 10.8a15.1 15.1 0 0 0 6.6 6.6l2.2-2.2a1 1 0 0 1 1-.25 11.4 11.4 0 0 0 3.6.57 1 1 0 0 1 1 1V20a1 1 0 0 1-1 1A17 17 0 0 1 3 4a1 1 0 0 1 1-1h3.5a1 1 0 0 1 1 1c0 1.25.2 2.45.57 3.57a1 1 0 0 1-.25 1z"/></symbol>
+    <symbol id="i-hangup" viewBox="0 0 24 24"><path fill="currentColor" d="M12 9c-1.6 0-3.15.25-4.6.72v3.1a1 1 0 0 1-.56.9 11.5 11.5 0 0 0-2.66 1.85 1 1 0 0 1-1.41-.01L.29 13.08a1 1 0 0 1 0-1.41A16.9 16.9 0 0 1 12 7c4.54 0 8.66 1.8 11.71 4.67a1 1 0 0 1 0 1.41l-2.48 2.48a1 1 0 0 1-1.41.01 11.3 11.3 0 0 0-2.67-1.85 1 1 0 0 1-.56-.9v-3.1A15.3 15.3 0 0 0 12 9z"/></symbol>
+    <symbol id="i-mic" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" d="M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3zM5 11a7 7 0 0 0 14 0M12 18v3"/></symbol>
+    <symbol id="i-keypad" viewBox="0 0 24 24"><g fill="currentColor"><circle cx="6" cy="5" r="1.7"/><circle cx="12" cy="5" r="1.7"/><circle cx="18" cy="5" r="1.7"/><circle cx="6" cy="11" r="1.7"/><circle cx="12" cy="11" r="1.7"/><circle cx="18" cy="11" r="1.7"/><circle cx="6" cy="17" r="1.7"/><circle cx="12" cy="17" r="1.7"/><circle cx="18" cy="17" r="1.7"/><circle cx="12" cy="22" r="1.5"/></g></symbol>
+    <symbol id="i-computer" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" d="M3 5h18v11H3zM9 20h6M12 16v4"/></symbol>
+    <symbol id="i-iphone" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" d="M7 2h10a1 1 0 0 1 1 1v18a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1zM11 18h2"/></symbol>
+  </svg>
 
-    <div class="card">
+  <main>
+    <header class="top">
+      <div class="brand"><span class="brand-icon"><svg><use href="#i-phone"/></svg></span>Phone</div>
+      <form method="post" action="/logout"><button class="ghost small" type="submit">Log out</button></form>
+    </header>
+
+    <section class="card status-card">
       <div class="status"><span class="dot" id="phone-dot"></span><span id="phone-status">Connecting…</span></div>
-      <div class="status" style="margin-top:6px"><span class="dot" id="audio-dot"></span><span id="audio-status">PC audio off</span></div>
+      <div class="status"><span class="dot" id="audio-dot"></span><span id="audio-status">PC audio off</span></div>
       <div class="row" id="audio-setup"><button class="primary" id="enable-audio">Enable PC mic &amp; speakers</button></div>
-      <div id="mic-row" hidden>
-        <label class="vol">Mic <select id="mic"></select></label>
-        <div class="meter"><div id="mic-meter"></div></div>
-      </div>
-      <label class="vol" id="vol-row" hidden>Volume <input type="range" id="volume" min="0" max="10" step="0.1" value="4"></label>
-      <label class="toggle" id="media-row"><input type="checkbox" id="media-on-pc"> Music and videos on this PC (off: on the iPhone)</label>
-      <label class="toggle" id="keep-phone-row"><input type="checkbox" id="keep-phone"> Calls I answer on the iPhone stay on the iPhone</label>
-    </div>
+    </section>
 
     <div class="card mic-warning" id="mic-warning" hidden></div>
 
-    <div class="card" id="call-card" hidden>
-      <div class="sub" id="call-state"></div>
+    <section class="card call-card" id="call-card" hidden>
+      <div class="avatar" id="call-avatar" aria-hidden="true"></div>
+      <div class="call-state" id="call-state"></div>
       <div class="caller" id="call-who"></div>
-      <div class="sub" id="call-timer"></div>
+      <div class="call-timer" id="call-timer"></div>
       <div class="meter" id="meter-row" hidden><div id="meter"></div></div>
-      <div class="row" id="incoming-actions">
-        <button class="good" id="answer">Answer</button>
-        <button class="bad" id="decline">Decline</button>
+      <div class="round-row" id="incoming-actions">
+        <button class="round bad" id="decline" aria-label="Decline"><svg><use href="#i-hangup"/></svg><span>Decline</span></button>
+        <button class="round good" id="answer" aria-label="Answer"><svg><use href="#i-phone"/></svg><span>Answer</span></button>
       </div>
-      <div class="row" id="active-actions">
-        <button id="mute" aria-pressed="false">Mute</button>
-        <button id="show-keypad">Keypad</button>
-        <button class="bad" id="hangup">Hang up</button>
+      <div class="round-row" id="active-actions">
+        <button class="round" id="mute" aria-pressed="false"><svg><use href="#i-mic"/></svg><span id="mute-label">Mute</span></button>
+        <button class="round" id="show-keypad"><svg><use href="#i-keypad"/></svg><span>Keypad</span></button>
+        <button class="round bad" id="hangup"><svg><use href="#i-hangup"/></svg><span>End</span></button>
       </div>
-      <div class="row" id="to-pc-row" hidden><button class="primary" id="to-pc">Move call audio to this PC</button></div>
-      <div class="row" id="to-phone-row" hidden><button id="to-phone">Send call audio to iPhone</button></div>
       <div class="keypad" id="tone-pad" hidden></div>
-    </div>
+      <div class="row" id="to-pc-row" hidden><button class="primary" id="to-pc"><svg><use href="#i-computer"/></svg>Move call audio to this PC</button></div>
+      <div class="row" id="to-phone-row" hidden><button class="soft" id="to-phone"><svg><use href="#i-iphone"/></svg>Send call audio to iPhone</button></div>
+    </section>
 
-    <div class="card sub" id="popup-idle" hidden>No call right now.</div>
+    <div class="card sub popup-idle" id="popup-idle" hidden>No call right now.</div>
 
-    <div class="card" id="dial-card">
-      <input type="tel" id="number" placeholder="Number" autocomplete="off">
+    <section class="card" id="dial-card">
+      <input type="tel" id="number" placeholder="Enter a number" autocomplete="off" aria-label="Number">
       <div class="keypad" id="dial-pad"></div>
-      <div class="row"><button class="good" id="dial">Call</button></div>
-    </div>
+      <div class="dial-row"><button class="round good" id="dial" aria-label="Call"><svg><use href="#i-phone"/></svg></button></div>
+    </section>
 
-    <div class="card" id="recent-card">
-      <h2>Recent calls</h2>
+    <section class="card" id="recent-card">
+      <h2>Recent</h2>
       <ul class="list" id="recent"></ul>
       <div class="sub" id="recent-empty">No calls yet.</div>
-    </div>
+    </section>
 
-    <div class="card sub" id="contacts-card">
-      <span id="contacts-status"></span>
-      <button class="small" id="refresh-contacts">Refresh contacts</button>
-    </div>
+    <section class="card settings" id="settings-card">
+      <h2>Audio</h2>
+      <div class="setting" id="mic-row" hidden>
+        <label for="mic">Microphone</label>
+        <select id="mic"></select>
+        <div class="meter"><div id="mic-meter"></div></div>
+      </div>
+      <div class="setting" id="vol-row" hidden>
+        <label for="volume">Call volume</label>
+        <input type="range" id="volume" min="0" max="10" step="0.1" value="4">
+      </div>
+      <label class="switch-row" id="media-row">
+        <span><span class="title">Music and videos on this PC</span><span class="hint">Off plays them on the iPhone</span></span>
+        <input type="checkbox" class="switch" id="media-on-pc">
+      </label>
+      <label class="switch-row" id="keep-phone-row">
+        <span><span class="title">Keep iPhone-answered calls on the iPhone</span><span class="hint">Calls you pick up on the phone stay there</span></span>
+        <input type="checkbox" class="switch" id="keep-phone">
+      </label>
+    </section>
+
+    <section class="card contacts" id="contacts-card">
+      <span class="sub" id="contacts-status"></span>
+      <button class="ghost small" id="refresh-contacts">Refresh contacts</button>
+    </section>
 
     <div class="error" id="error"></div>
   </main>

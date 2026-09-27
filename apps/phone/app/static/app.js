@@ -81,6 +81,13 @@ function showError(text) {
   if (text) setTimeout(() => { if ($("error").textContent === text) $("error").textContent = ""; }, 6000);
 }
 
+// First letters of the first two words of a contact name ("Caroline" ->
+// "C", "Joe Smith" -> "JS"); emoji and punctuation don't count.
+function initials(name) {
+  const words = (name || "").match(/\p{L}[\p{L}'-]*/gu) || [];
+  return words.slice(0, 2).map((w) => w[0].toUpperCase()).join("");
+}
+
 // ---- audio ------------------------------------------------------------------
 
 // One start at a time: render() calls this on every state message while a
@@ -413,6 +420,7 @@ function render(s) {
   $("call-card").classList.toggle("ringing", ringing);
   $("call-state").textContent = LABELS[call.state] || call.state;
   $("call-who").textContent = call.name || call.number || "Unknown caller";
+  $("call-avatar").textContent = initials(call.name) || "#";
   $("incoming-actions").hidden = !ringing;
   $("active-actions").hidden = ringing;
   $("meter-row").hidden = !(audio && s.bridged);
@@ -563,10 +571,10 @@ $("to-pc").onclick = async () => {
   announceAudio(); // the Pi takes the audio only for a page that announced
   send({ action: "audio-to-pc" });
 };
-$("mute").onclick = (e) => {
+$("mute").onclick = () => {
   muted = !muted;
-  e.target.setAttribute("aria-pressed", String(muted));
-  e.target.textContent = muted ? "Unmute" : "Mute";
+  $("mute").setAttribute("aria-pressed", String(muted));
+  $("mute-label").textContent = muted ? "Unmute" : "Mute";
 };
 $("show-keypad").onclick = () => { $("tone-pad").hidden = !$("tone-pad").hidden; };
 
