@@ -291,11 +291,23 @@ state: the slow ones run in their own loop.
   from `@sapphi-red/web-noise-suppressor` 0.4.1 (MIT,
   `static/rnnoise-LICENSE.txt`), the SIMD build where WebAssembly SIMD
   is available. It needs 48 kHz, so the page's AudioContext runs at
-  48 kHz. The browser's own `noiseSuppression` stays on under it; alone
-  it did little against a desk fan. In WebView2 it cut synthetic fan
-  noise (brown noise plus a 120 Hz hum) by 52 dB, and the other end of
-  a live call confirmed the fan was gone. Always on - there's no
-  switch. If it can't load, the call goes ahead unfiltered.
+  48 kHz. The browser's own `noiseSuppression` stays on under it.
+  - **Off / Normal / Strong**, per window. Strong adds a gate after
+    RNNoise (`worklets.js`: open at -50 dBFS, close at -56, 200 ms hold,
+    eased 5 ms up / 60 ms down) that mutes what's left between words.
+    Not a wet/dry slider: RNNoise delays its output, and mixing it with
+    the dry mic would comb-filter the voice.
+  - **A status dot and "removing N dB"**, from the level before and
+    after the filter; *Test for 15 s* opens the mic without taking calls
+    so it can be watched against the room. On synthetic fan noise
+    (brown noise plus a 120 Hz hum, -31 dB): Off -31 dB out, Normal
+    -79 dB (47 dB removed), Strong silent.
+  - **Mono before the filter.** RNNoise here processes only its first
+    channel and its output took the input's channel count, so a stereo
+    mic (the Samson can be one) left a second, unfiltered or silent
+    channel for the capture to mix in. The mic is downmixed to one
+    channel first, and the filter's output is fixed at one.
+  - If it can't load, the call goes ahead unfiltered, and the dot says so.
 - **Metrics and alerts**: `phone_bridge.prom` in node_exporter's
   textfile directory, the same route as the backup metrics, so no new
   scrape target. Rules in `kubernetes/monitoring/alertmanager.yaml`:

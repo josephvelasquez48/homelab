@@ -91,5 +91,47 @@ class Player extends AudioWorkletProcessor {
   }
 }
 
+// Noise gate for the "Strong" noise filter: after RNNoise, it mutes what's
+// left between words. RMS per 128-sample block against open/close levels
+// (dBFS) with a 200 ms hold, and the gain eased (5 ms up, 60 ms down) so it
+// never clicks. Always returns true: routeMic links it in and out live, and
+// a processor that reports itself idle can be dropped.
+class Gate extends AudioWorkletProcessor {
+  constructor() {
+    super();
+    this.openLevel = 10 ** (-50 / 20);
+    this.closeLevel = 10 ** (-56 / 20);
+    this.holdBlocks = Math.ceil((0.2 * sampleRate) / 128);
+    this.held = 0;
+    this.open = false;
+    this.gain = 0;
+    this.up = 1 - Math.exp(-1 / (0.005 * sampleRate));
+    this.down = 1 - Math.exp(-1 / (0.06 * sampleRate));
+  }
+
+  process(inputs, outputs) {
+    const input = inputs[0][0];
+    const output = outputs[0][0];
+    if (!input || !output) return true;
+    let sum = 0;
+    for (const v of input) sum += v * v;
+    const rms = Math.sqrt(sum / input.length);
+    if (rms > this.openLevel || (this.open && rms > this.closeLevel)) {
+      this.open = true;
+      this.held = 0;
+    } else if (this.open && ++this.held > this.holdBlocks) {
+      this.open = false;
+    }
+    const target = this.open ? 1 : 0;
+    for (let i = 0; i < input.length; i++) {
+      this.gain += (target - this.gain) * (target > this.gain ? this.up : this.down);
+      output[i] = input[i] * this.gain;
+    }
+    for (let c = 1; c < outputs[0].length; c++) outputs[0][c].set(output);
+    return true;
+  }
+}
+
 registerProcessor("capture", Capture);
+registerProcessor("gate", Gate);
 registerProcessor("player", Player);

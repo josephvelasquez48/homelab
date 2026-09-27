@@ -14,7 +14,7 @@ let popupHadCall = false;
 let popupCloseTimer = null;
 let ws = null;
 let state = null;
-let audio = null; // { ctx, capture, player, gain, stream, mic, micBus, denoise, analyser }
+let audio = null; // { ctx, capture, player, gain, stream, mic, micBus, denoise, gate, rawAnalyser, analyser }
 
 const MIC_OPTIONS = { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 };
 
@@ -118,6 +118,8 @@ async function startAudio() {
     ctx.resume().catch(() => {});
     await ctx.audioWorklet.addModule("/static/worklets.js");
     const denoise = await makeNoiseFilter(ctx);
+    filterFailed = !denoise;
+    const gate = new AudioWorkletNode(ctx, "gate", { outputChannelCount: [1] });
     const stream = await navigator.mediaDevices.getUserMedia({ audio: await micConstraints(savedMic()) });
     const mic = ctx.createMediaStreamSource(stream);
     const capture = new AudioWorkletNode(ctx, "capture");
@@ -125,8 +127,17 @@ async function startAudio() {
     analyser.fftSize = 512;
     // The mic (swapped by switchMic) feeds micBus; routeMic puts the
     // noise filter between it and the capture/meter.
+    // Mono from here on: RNNoise filters only its first channel, and a
+    // stereo mic (the Samson can be) left the second one unfiltered.
     const micBus = ctx.createGain();
+    micBus.channelCount = 1;
+    micBus.channelCountMode = "explicit";
+    micBus.channelInterpretation = "speakers";
     mic.connect(micBus);
+    // Before the filter, for "removing N dB" - the page's only evidence
+    // that the filter is doing anything.
+    const rawAnalyser = ctx.createAnalyser();
+    rawAnalyser.fftSize = 2048;
     capture.port.onmessage = (e) => {
       if (!muted && ws && ws.readyState === WebSocket.OPEN && state && state.bridged) ws.send(e.data);
     };
@@ -143,7 +154,8 @@ async function startAudio() {
     limiter.attack.value = 0.003;
     limiter.release.value = 0.15;
     player.connect(gain).connect(limiter).connect(ctx.destination);
-    audio = { ctx, capture, player, gain, stream, mic, micBus, denoise, analyser };
+    analyser.fftSize = 2048;
+    audio = { ctx, capture, player, gain, stream, mic, micBus, denoise, gate, rawAnalyser, analyser };
     routeMic();
     listMics();
     followSavedMic();
@@ -176,6 +188,7 @@ async function makeNoiseFilter(ctx) {
     ]);
     return new AudioWorkletNode(ctx, "@sapphi-red/web-noise-suppressor/rnnoise", {
       processorOptions: { wasmBinary, maxChannels: 1 },
+      outputChannelCount: [1],
     });
   } catch (err) {
     console.warn("noise filter unavailable:", err);
@@ -183,16 +196,91 @@ async function makeNoiseFilter(ctx) {
   }
 }
 
-// Always on when it loaded: there's no switch.
+// Noise filter strength, per window: off (mic as is), normal (RNNoise) or
+// strong (RNNoise, then a gate that mutes what's left between words).
+// Not a wet/dry mix: RNNoise delays its output, and mixing that with the
+// dry mic would comb-filter the voice.
+let filterLevel = "normal";
+try { filterLevel = localStorage.getItem("phone-noise-level") || "normal"; } catch {}
+let filterFailed = false;
+
 function routeMic() {
-  const { micBus, denoise, capture, analyser } = audio;
+  const { micBus, denoise, gate, capture, analyser, rawAnalyser } = audio;
+  for (const node of [micBus, denoise, gate]) {
+    try { node && node.disconnect(); } catch {}
+  }
+  micBus.connect(rawAnalyser);
   let out = micBus;
-  if (denoise) {
-    micBus.connect(denoise);
+  if (denoise && filterLevel !== "off") {
+    out.connect(denoise);
     out = denoise;
+    if (filterLevel === "strong") {
+      out.connect(gate);
+      out = gate;
+    }
   }
   out.connect(capture);
   out.connect(analyser);
+}
+
+function setFilterLevel(level) {
+  filterLevel = level;
+  try { localStorage.setItem("phone-noise-level", level); } catch {}
+  if (audio) routeMic();
+  renderFilter();
+}
+
+// Levels before and after the filter, smoothed over ~1 s, from drawMeter.
+const filterMeter = { raw: -100, out: -100 };
+function rmsDb(analyser) {
+  const data = new Float32Array(analyser.fftSize);
+  analyser.getFloatTimeDomainData(data);
+  let sum = 0;
+  for (const v of data) sum += v * v;
+  return 10 * Math.log10(sum / data.length + 1e-12);
+}
+
+function renderFilter() {
+  for (const b of document.querySelectorAll("#filter-level button")) {
+    b.setAttribute("aria-checked", String(b.dataset.level === filterLevel));
+  }
+  const name = { off: "Off", normal: "Normal", strong: "Strong" }[filterLevel];
+  let dot = "";
+  let text;
+  if (filterFailed) {
+    dot = "off";
+    text = "Didn't load - the mic goes out unfiltered";
+  } else if (filterLevel === "off") {
+    text = "Off - the mic goes out as is";
+  } else if (!audio) {
+    text = `${name} - runs while the mic is on`;
+  } else {
+    dot = "on";
+    const removed = filterMeter.raw - filterMeter.out;
+    text = filterMeter.raw < -70 ? `${name} - listening` : `${name} - removing ${Math.max(0, Math.round(removed))} dB`;
+  }
+  $("filter-dot").className = `dot ${dot}`;
+  $("filter-status").textContent = text;
+}
+
+// "Test for 15 s": opens the mic without taking calls (the agent's window
+// only announces audio once a call is answered there), so the filter can be
+// watched against the room - talk, stop, and see how much it removes.
+let filterTestUntil = 0;
+async function testFilter() {
+  filterTestUntil = Date.now() + 15000;
+  $("filter-test").disabled = true;
+  await enableAudio();
+  const tick = setInterval(() => {
+    const left = Math.ceil((filterTestUntil - Date.now()) / 1000);
+    $("filter-test").textContent = left > 0 ? `Testing - ${left} s` : "Test for 15 s";
+    if (left <= 0) {
+      clearInterval(tick);
+      filterTestUntil = 0;
+      $("filter-test").disabled = false;
+      releaseAudioWhenIdle(!!currentCall());
+    }
+  }, 250);
 }
 
 // The agent's window keeps the mic only while there's a call: open while
@@ -202,7 +290,7 @@ function routeMic() {
 // after the mic opens.
 let audioIdleTimer = null;
 function releaseAudioWhenIdle(hasCall) {
-  if (!AGENT) return;
+  if (!AGENT || Date.now() < filterTestUntil) return;
   if (hasCall) {
     clearTimeout(audioIdleTimer);
     audioIdleTimer = null;
@@ -220,7 +308,9 @@ async function stopAudio() {
   send({ action: "audio-off" }); // or the Pi would send the next call here
   closing.stream.getTracks().forEach((t) => t.stop());
   await closing.ctx.close().catch(() => {});
+  filterMeter.raw = filterMeter.out = -100;
   render(state);
+  renderFilter();
 }
 
 // Tell the Pi this page can take a call's audio - only once it's actually
@@ -309,6 +399,15 @@ async function followSavedMic() {
 }
 navigator.mediaDevices?.addEventListener?.("devicechange", () => { listMics(); followSavedMic(); });
 setInterval(followSavedMic, 3000);
+
+// A timer, not drawMeter's animation frames: those stop while the window
+// is hidden or covered.
+setInterval(() => {
+  if (!audio) return;
+  filterMeter.raw += (rmsDb(audio.rawAnalyser) - filterMeter.raw) * 0.3;
+  filterMeter.out += (rmsDb(audio.analyser) - filterMeter.out) * 0.3;
+  renderFilter();
+}, 250);
 
 function drawMeter() {
   if (!audio) return;
@@ -587,6 +686,9 @@ function showDialer(on, focus = false) {
 }
 try { showDialer(localStorage.getItem("phone-dialer") === "on"); } catch { showDialer(false); }
 $("show-dialer").onchange = (e) => showDialer(e.target.checked, true);
+for (const b of document.querySelectorAll("#filter-level button")) b.onclick = () => setFilterLevel(b.dataset.level);
+$("filter-test").onclick = testFilter;
+renderFilter();
 
 $("dial").onclick = () => {
   const number = $("number").value.trim();
