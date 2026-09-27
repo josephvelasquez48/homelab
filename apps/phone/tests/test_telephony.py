@@ -1,3 +1,4 @@
+import pytest
 from dbus_fast import Variant
 
 from app.telephony import Call, PhoneState, drop_phantom_calls, parse_calls, parse_gateways, valid_number, valid_tones
@@ -87,3 +88,21 @@ def test_lone_waiting_call_goes_stale():
     assert drop_phantom_calls(lone, seen, now=130) == lone
     assert drop_phantom_calls(lone, seen, now=146) == []  # 46 s alone: leftover
     assert drop_phantom_calls([], seen, now=150) == [] and seen == {}  # forgotten once gone
+
+
+
+@pytest.mark.asyncio
+async def test_a_dbus_call_that_never_answers_is_no_phone_not_a_hang(monkeypatch):
+    import asyncio
+
+    from app import telephony
+
+    class SilentBus:  # WirePlumber mid-restart: the call is never answered
+        async def call(self, message):
+            await asyncio.sleep(3600)
+
+    monkeypatch.setattr(telephony, "CALL_TIMEOUT", 0.05)
+    tel = telephony.Telephony()
+    tel.bus = SilentBus()
+    state = await asyncio.wait_for(tel.refresh(), 1)
+    assert not state.connected and state.calls == []
