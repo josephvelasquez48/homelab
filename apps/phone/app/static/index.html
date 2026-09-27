@@ -24,6 +24,27 @@
       <form method="post" action="/logout"><button class="ghost small" type="submit">Log out</button></form>
     </header>
 
+    <section class="card settings" id="settings-card">
+      <h2>Audio</h2>
+      <div class="setting" id="mic-row" hidden>
+        <label for="mic">Microphone</label>
+        <select id="mic"></select>
+        <div class="meter"><div id="mic-meter"></div></div>
+      </div>
+      <div class="setting" id="vol-row" hidden>
+        <label for="volume">Call volume</label>
+        <input type="range" id="volume" min="0" max="10" step="0.1" value="4">
+      </div>
+      <label class="switch-row" id="media-row">
+        <span><span class="title">Music and videos on this PC</span><span class="hint">Off plays them on the iPhone</span></span>
+        <input type="checkbox" class="switch" id="media-on-pc">
+      </label>
+      <label class="switch-row" id="keep-phone-row">
+        <span><span class="title">Keep iPhone-answered calls on the iPhone</span><span class="hint">Calls you pick up on the phone stay there</span></span>
+        <input type="checkbox" class="switch" id="keep-phone">
+      </label>
+    </section>
+
     <section class="card status-card">
       <div class="status"><span class="dot" id="phone-dot"></span><span id="phone-status">Connecting…</span></div>
       <div class="status"><span class="dot" id="audio-dot"></span><span id="audio-status">PC audio off</span></div>
@@ -66,26 +87,6 @@
       <div class="sub" id="recent-empty">No calls yet.</div>
     </section>
 
-    <section class="card settings" id="settings-card">
-      <h2>Audio</h2>
-      <div class="setting" id="mic-row" hidden>
-        <label for="mic">Microphone</label>
-        <select id="mic"></select>
-        <div class="meter"><div id="mic-meter"></div></div>
-      </div>
-      <div class="setting" id="vol-row" hidden>
-        <label for="volume">Call volume</label>
-        <input type="range" id="volume" min="0" max="10" step="0.1" value="4">
-      </div>
-      <label class="switch-row" id="media-row">
-        <span><span class="title">Music and videos on this PC</span><span class="hint">Off plays them on the iPhone</span></span>
-        <input type="checkbox" class="switch" id="media-on-pc">
-      </label>
-      <label class="switch-row" id="keep-phone-row">
-        <span><span class="title">Keep iPhone-answered calls on the iPhone</span><span class="hint">Calls you pick up on the phone stay there</span></span>
-        <input type="checkbox" class="switch" id="keep-phone">
-      </label>
-    </section>
 
     <section class="card contacts" id="contacts-card">
       <span class="sub" id="contacts-status"></span>

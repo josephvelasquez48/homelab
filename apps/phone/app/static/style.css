@@ -18,7 +18,7 @@ body {
   font: 15px/1.45 "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, sans-serif;
   -webkit-font-smoothing: antialiased;
 }
-main { max-width: 420px; margin: 0 auto; padding: 20px 16px 28px; }
+main { max-width: 420px; margin: 0 auto; padding: 20px 16px 28px; display: flex; flex-direction: column; }
 svg { width: 20px; height: 20px; flex: none; }
 [hidden] { display: none !important; }
 
@@ -163,6 +163,8 @@ body.popup .top, body.popup .status-card, body.popup #recent-card, body.popup #c
 body.popup #media-row, body.popup #keep-phone-row, body.popup #mic-row, body.popup #audio-setup,
 body.popup .settings h2 { display: none !important; }
 body.popup .card { margin-bottom: 8px; }
+/* Audio sits at the top of the full page; in the call pop-up the call comes first. */
+body.popup #settings-card { order: 1; }
 body.popup .call-card { padding: 16px 12px 12px; }
 body.popup .avatar { width: 56px; height: 56px; font-size: 22px; }
 body.popup .settings { padding: 4px 16px; }
