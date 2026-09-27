@@ -263,26 +263,6 @@ function renderFilter() {
   $("filter-status").textContent = text;
 }
 
-// "Test for 15 s": opens the mic without taking calls (the agent's window
-// only announces audio once a call is answered there), so the filter can be
-// watched against the room - talk, stop, and see how much it removes.
-let filterTestUntil = 0;
-async function testFilter() {
-  filterTestUntil = Date.now() + 15000;
-  $("filter-test").disabled = true;
-  await enableAudio();
-  const tick = setInterval(() => {
-    const left = Math.ceil((filterTestUntil - Date.now()) / 1000);
-    $("filter-test").textContent = left > 0 ? `Testing - ${left} s` : "Test for 15 s";
-    if (left <= 0) {
-      clearInterval(tick);
-      filterTestUntil = 0;
-      $("filter-test").disabled = false;
-      releaseAudioWhenIdle(!!currentCall());
-    }
-  }, 250);
-}
-
 // The agent's window keeps the mic only while there's a call: open while
 // it rings (to wake the Samson) or once used, closed a few seconds after
 // the last call ends - not left open, keeping the mic awake, until the
@@ -290,7 +270,7 @@ async function testFilter() {
 // after the mic opens.
 let audioIdleTimer = null;
 function releaseAudioWhenIdle(hasCall) {
-  if (!AGENT || Date.now() < filterTestUntil) return;
+  if (!AGENT) return;
   if (hasCall) {
     clearTimeout(audioIdleTimer);
     audioIdleTimer = null;
@@ -687,7 +667,6 @@ function showDialer(on, focus = false) {
 try { showDialer(localStorage.getItem("phone-dialer") === "on"); } catch { showDialer(false); }
 $("show-dialer").onchange = (e) => showDialer(e.target.checked, true);
 for (const b of document.querySelectorAll("#filter-level button")) b.onclick = () => setFilterLevel(b.dataset.level);
-$("filter-test").onclick = testFilter;
 renderFilter();
 
 $("dial").onclick = () => {

@@ -147,7 +147,6 @@ input[type="range"] { width: 100%; accent-color: var(--accent); }
 .segmented { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; margin-top: 10px; padding: 3px; border-radius: 12px; background: var(--card-2); }
 .segmented button { padding: 7px 0; font-size: 13px; border-radius: 9px; background: transparent; color: var(--muted); }
 .segmented button[aria-checked="true"] { background: var(--card); color: var(--text); box-shadow: 0 1px 3px rgba(0, 0, 0, .25); }
-.filter-test { margin-top: 10px; width: 100%; }
 
 input.switch {
   appearance: none; -webkit-appearance: none; margin: 0; flex: none; cursor: pointer;

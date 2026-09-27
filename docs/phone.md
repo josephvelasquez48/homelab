@@ -298,8 +298,7 @@ state: the slow ones run in their own loop.
     Not a wet/dry slider: RNNoise delays its output, and mixing it with
     the dry mic would comb-filter the voice.
   - **A status dot and "removing N dB"**, from the level before and
-    after the filter; *Test for 15 s* opens the mic without taking calls
-    so it can be watched against the room. On synthetic fan noise
+    after the filter, while the mic is on (during a call). On synthetic fan noise
     (brown noise plus a 120 Hz hum, -31 dB): Off -31 dB out, Normal
     -79 dB (47 dB removed), Strong silent.
   - **Mono before the filter.** RNNoise here processes only its first
