@@ -68,12 +68,9 @@ def test_roles_drop_in_follows_the_mode(tmp_path):
     from app.media import ROLES_CONF, write_roles
 
     path = tmp_path / "52-phone-media.conf"
-    assert write_roles("calls", path) is False  # nothing to remove
-    assert write_roles("all", path) is True
+    assert write_roles(path) is True  # first start: WirePlumber restarts once
     assert "a2dp_sink" in path.read_text() and path.read_text() == ROLES_CONF
-    assert write_roles("all", path) is False  # unchanged: no WirePlumber restart
-    assert write_roles("calls", path) is True
-    assert not path.exists()
+    assert write_roles(path) is False  # after that, never again
 
 
 @pytest.mark.asyncio

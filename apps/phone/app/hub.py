@@ -28,7 +28,7 @@ from app import metrics
 from app.audio import AudioBridge
 from app.contacts import Contacts
 from app.history import CallLog
-from app.media import MODES, MediaBridge, write_roles
+from app.media import MediaBridge, write_roles
 from app.reconnect import PC_GONE_SECONDS, Reconnector
 from app.telephony import Call, Telephony, TelephonyError
 
@@ -46,9 +46,9 @@ DEFAULT_SETTINGS = {
     # Label of the mic pages should use; "" means the browser's default.
     # A label, not a device ID: IDs differ per browser profile.
     "micLabel": "",
-    # "calls": only calls come to the PC; "all": music and videos too
-    # (the Pi also registers as a Bluetooth speaker - see media.py).
-    "audioMode": "calls",
+    # Music and videos play on the PC (the Pi is the phone's Bluetooth
+    # speaker) - or, off, on the iPhone. Calls come to the PC either way.
+    "mediaOnPc": True,
 }
 # Page actions that mean "this call belongs on the PC".
 PC_ACTIONS = ("answer", "dial", "audio-to-pc")
@@ -155,32 +155,29 @@ class Hub:
             return True
         return self.settings["keepPhoneAnswered"] and not self._pc_claimed
 
-    async def apply_audio_mode(self) -> None:
-        """Make WirePlumber's roles match the audioMode setting.
-
-        A change restarts WirePlumber, which drops the phone's profiles;
-        the phone is then asked back for calls, and in "all" for media.
-        """
-        mode = self.settings["audioMode"]
-        if not self.media or not write_roles(mode):
+    async def ensure_speaker_role(self) -> None:
+        """Put the speaker-role drop-in in place (media.py). Only a first
+        start (or a changed drop-in) restarts WirePlumber; after that the
+        switch just moves the media link."""
+        if not self.media or not write_roles():
             return
-        if mode == "calls":
-            self.media.end_streams()
-        log.info("audio mode %s: restarting WirePlumber", mode)
+        log.info("speaker role added: restarting WirePlumber")
         proc = await asyncio.create_subprocess_exec("systemctl", "--user", "restart", "wireplumber")
         await proc.wait()
         if self.reconnector and self.tel.state.address:
             await asyncio.sleep(3)
-            asyncio.create_task(self.reconnector.reconnect_profiles(self.tel.state.address, media=mode == "all"))
+            asyncio.create_task(
+                self.reconnector.reconnect_profiles(self.tel.state.address, media=self.settings["mediaOnPc"])
+            )
 
     async def run(self) -> None:
         await self.tel.connect()
         try:
-            await self.apply_audio_mode()  # e.g. after the Pi rebooted
+            await self.ensure_speaker_role()
         except Exception:
-            log.exception("couldn't apply the audio mode")
+            log.exception("couldn't add the speaker role")
         if self.media:
-            asyncio.create_task(self.media.run(lambda: self.settings["audioMode"] == "all"))
+            asyncio.create_task(self.media.run(lambda: self.settings["mediaOnPc"]))
         asyncio.create_task(self.extras_loop())
         if self.reconnector:
             asyncio.create_task(self.reconnector.run())
@@ -309,7 +306,7 @@ class Hub:
             "phone_audio_rx_peak": rx,
             "phone_audio_tx_peak": tx,
             "phone_pc_present": int(self.pc_present()),
-            "phone_audio_mode_all": int(self.settings["audioMode"] == "all"),
+            "phone_media_on_pc": int(self.settings["mediaOnPc"]),
             "phone_media_listeners": len(self.media.listeners) if self.media else 0,
             "phone_contacts": len(self.contacts.names) if self.contacts else 0,
             "phone_reconnect_attempts_total": self.reconnector.attempts if self.reconnector else 0,
@@ -382,18 +379,14 @@ class Hub:
             if action == "set-keep-phone":
                 self.settings["keepPhoneAnswered"] = bool(msg.get("value"))
                 save_settings(self.settings_path, self.settings)
-            elif action == "set-audio-mode":
-                mode = str(msg.get("value", ""))
-                if mode not in MODES:
-                    return "unknown audio mode"
-                if not self.media:
-                    return "audio modes aren't available"
-                if self.tel.state.calls:
-                    return "Can't switch during a call - the phone would drop it for a moment"
-                self.settings["audioMode"] = mode
+            elif action == "set-media-on-pc":
+                self.settings["mediaOnPc"] = bool(msg.get("value"))
                 save_settings(self.settings_path, self.settings)
-                await self.broadcast_state()
-                await self.apply_audio_mode()
+                if self.media and not self.settings["mediaOnPc"]:
+                    self.media.end_streams()
+                if self.reconnector and self.reconnector.bus:
+                    self.reconnector.media_changed()
+                    asyncio.create_task(self.reconnector.check(time.monotonic()))
             elif action == "set-mic":
                 self.settings["micLabel"] = str(msg.get("value", ""))[:200]
                 save_settings(self.settings_path, self.settings)

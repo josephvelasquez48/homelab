@@ -70,11 +70,26 @@ def paired_phones(objects: dict) -> dict[str, bool]:
     return found
 
 
+def media_links(objects: dict) -> dict[str, bool]:
+    """Connected, unblocked phones -> whether their A2DP (media) link is up."""
+    links = {}
+    for path, blocked in paired_phones(objects).items():
+        dev = objects[path][DEVICE_IFACE]
+        if blocked or not getattr(dev.get("Connected"), "value", False):
+            continue
+        links[path] = any(
+            p.startswith(path + "/") and "org.bluez.MediaTransport1" in ifaces for p, ifaces in objects.items()
+        )
+    return links
+
+
 class Reconnector:
-    def __init__(self, is_connected, pc_present=lambda: True):
+    def __init__(self, is_connected, pc_present=lambda: True, media_wanted=lambda: False):
         self.is_connected = is_connected  # () -> bool, from the telephony state
         self.pc_present = pc_present  # () -> bool: has the PC checked in lately
+        self.media_wanted = media_wanted  # () -> bool: the "Music and videos on this PC" switch
         self._next_attempt = 0.0
+        self._next_media_attempt = 0.0
         self.attempts = 0
         self.successes = 0
         self.bus: MessageBus | None = None  # set by run()
@@ -149,14 +164,45 @@ class Reconnector:
                     await self._set_blocked(path, False)
             self._next_attempt = 0.0  # connect now, not in up to 30 s
             return  # the next check sees the device unblocked
-        if self.is_connected() or now < self._next_attempt:
+        if self.is_connected():
+            await self._match_media(objects, now)
+            return
+        if now < self._next_attempt:
             return
         self._next_attempt = now + INTERVAL_SECONDS
         for path in reconnect_candidates(objects):
             await self.attempt(path)
 
+    async def _match_media(self, objects: dict, now: float) -> None:
+        """Connect or drop just the media link, to match the switch.
+
+        Every check, so it also holds after the phone reconnects (iOS
+        brings A2DP up with the calls link): media goes back to the iPhone
+        within a check if the switch says so.
+        """
+        wanted = self.media_wanted()
+        for path, up in media_links(objects).items():
+            if up == wanted:
+                continue
+            if not wanted:
+                member = "DisconnectProfile"
+            elif now >= self._next_media_attempt:
+                self._next_media_attempt = now + INTERVAL_SECONDS
+                member = "ConnectProfile"
+            else:
+                continue
+            try:
+                await asyncio.wait_for(self._call(path, DEVICE_IFACE, member, "s", [A2DP_SOURCE_UUID]), 15)
+                log.info("media %s %s", "to the PC:" if wanted else "back to the iPhone:", path)
+            except (asyncio.TimeoutError, RuntimeError) as e:
+                log.info("media %s on %s failed: %s", member, path, e)
+
+    def media_changed(self) -> None:
+        """The switch moved: act on the next check, not after a back-off."""
+        self._next_media_attempt = 0.0
+
     async def reconnect_profiles(self, address: str, media: bool) -> None:
-        """After WirePlumber restarts: calls back now, and media in "all" mode."""
+        """After WirePlumber restarts: calls back now, and media if it's wanted on the PC."""
         path = "/org/bluez/hci0/dev_" + address.replace(":", "_")
         for uuid in (HFP_AG_UUID, A2DP_SOURCE_UUID) if media else (HFP_AG_UUID,):
             try:
