@@ -201,7 +201,7 @@ async def test_mic_choice_is_saved_and_shared(tmp_path):
     assert load_settings(tmp_path / "s.json")["micLabel"] == "Mic/Inst (Samson G-Track Pro)"
     # An older settings file without the key still loads.
     (tmp_path / "old.json").write_text('{"keepPhoneAnswered": true}')
-    assert load_settings(tmp_path / "old.json") == {"keepPhoneAnswered": True, "micLabel": "", "audioMode": "calls"}
+    assert load_settings(tmp_path / "old.json") == {"keepPhoneAnswered": True, "micLabel": "", "mediaOnPc": True}
 
 
 class FakeReconnector:
@@ -274,15 +274,17 @@ async def test_bridge_stops_when_its_page_leaves_mid_call():
 
 
 @pytest.mark.asyncio
-async def test_audio_mode_switch_is_refused_during_a_call(tmp_path):
+async def test_media_switch_works_mid_call_and_ends_the_pc_stream(tmp_path):
     from app.media import MediaBridge
 
     hub, tel = make(calls=[Call("/ag1/call1", "active", "+1555", "")], settings_path=tmp_path / "s.json")
     hub.media = MediaBridge()
+    listener = hub.media.subscribe()
     page = FakeSocket()
-    assert "during a call" in await hub.command(page, {"action": "set-audio-mode", "value": "all"})
-    assert hub.settings["audioMode"] == "calls"
-    assert await hub.command(page, {"action": "set-audio-mode", "value": "loud"}) == "unknown audio mode"
+    assert await hub.command(page, {"action": "set-media-on-pc", "value": False}) is None  # no restart, so no refusal
+    assert hub.settings["mediaOnPc"] is False
+    assert load_settings(tmp_path / "s.json")["mediaOnPc"] is False
+    assert listener.get_nowait() is None  # the agent's stream ends
 
 
 @pytest.mark.asyncio
