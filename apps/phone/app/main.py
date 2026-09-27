@@ -46,7 +46,7 @@ if os.environ.get("PHONE_EXTRAS", "1") == "1":
     # Off in tests (conftest) - these reach for Bluetooth, disk and D-Bus.
     hub.contacts = Contacts(CONFIG / "contacts.json")
     hub.history = CallLog(DATA / "calls.db")
-    hub.reconnector = Reconnector(lambda: hub.tel.state.connected, hub.pc_present)
+    hub.reconnector = Reconnector(lambda: hub.tel.state.connected, hub.pc_present, lambda: hub.settings["mediaOnPc"])
     hub.media = MediaBridge()
     hub.write_metrics = True
 
@@ -125,11 +125,11 @@ async def agent_ringing():
 async def agent_media():
     """The phone's music and videos as raw PCM, for the agent's player.
 
-    204 in "calls only" mode (the agent asks again in a few seconds).
-    Otherwise an endless response: s16le chunks while the phone plays,
-    nothing while it doesn't, and it ends when the mode goes back.
+    204 while media is set to play on the iPhone (the agent asks again in
+    a few seconds). Otherwise an endless response: s16le chunks while the
+    phone plays, nothing while it doesn't; it ends when the switch goes off.
     """
-    if not hub.media or hub.settings["audioMode"] != "all":
+    if not hub.media or not hub.settings["mediaOnPc"]:
         return Response(status_code=204)
     q = hub.media.subscribe()
 

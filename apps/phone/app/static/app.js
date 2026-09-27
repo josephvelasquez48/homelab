@@ -385,9 +385,7 @@ function render(s) {
     : s.bridged ? "Call audio is on this PC" : "PC audio ready";
   if (s.audioError) showError(`Audio: ${s.audioError}`);
   if (s.settings) $("keep-phone").checked = !!s.settings.keepPhoneAnswered;
-  if (s.settings && s.settings.audioMode) $("audio-mode").value = s.settings.audioMode;
-  // Switching restarts the Pi's Bluetooth audio, which would drop a call.
-  $("audio-mode").disabled = !!(s.calls && s.calls.length);
+  if (s.settings) $("media-on-pc").checked = !!s.settings.mediaOnPc;
 
   const call = pickCall(s.calls);
   releaseAudioWhenIdle(!!call);
@@ -534,7 +532,7 @@ function currentCall() {
 $("enable-audio").onclick = enableAudio;
 // Stored on the Pi, so it holds for every browser and across restarts.
 $("keep-phone").onchange = (e) => send({ action: "set-keep-phone", value: e.target.checked });
-$("audio-mode").onchange = (e) => send({ action: "set-audio-mode", value: e.target.value });
+$("media-on-pc").onchange = (e) => send({ action: "set-media-on-pc", value: e.target.checked });
 $("mic").onchange = (e) => switchMic(e.target.value);
 // Remembered per browser; storage can be unavailable (private window),
 // in which case the slider just starts at its default.

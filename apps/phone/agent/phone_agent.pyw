@@ -59,7 +59,6 @@ from pathlib import Path
 import webview
 
 import hotkeys
-import media_player
 import taskbar
 from tray import AMBER, GREEN, GREY, Tray
 
@@ -68,6 +67,7 @@ PROFILE_DIR = Path(os.environ["LOCALAPPDATA"]) / "phone-bridge" / "webview"
 ICON_FILE = Path(os.environ["LOCALAPPDATA"]) / "phone-bridge" / "phone.ico"  # written by install-agent.ps1
 CA_FILE = Path(__file__).resolve().parents[3] / "certificates" / "homelab-ca.crt"
 POLL_SECONDS = 1.0
+WINDOW_HANG_SECONDS = 45  # see Agent.watch_window
 # Whether an agent is already running: a named mutex, which only this agent
 # ever creates. (A fixed TCP port used to double as this check, but it sat in
 # Windows' ephemeral range - any program's outgoing connection could be given
@@ -116,7 +116,8 @@ class Pi:
     def __init__(self, config: dict):
         self.url = config["url"].rstrip("/")
         self.token = config["token"]
-        self.context = ssl.create_default_context(cafile=str(Path(config.get("cafile", CA_FILE))))
+        self.cafile = str(Path(config.get("cafile", CA_FILE)))
+        self.context = ssl.create_default_context(cafile=self.cafile)
 
     def status(self) -> dict:
         req = urllib.request.Request(
@@ -353,8 +354,43 @@ class Agent:
             log.warning("can't reach the Pi: %s", e)
             return {}
 
+    def watch_window(self) -> None:
+        """Restart the agent if its window stops responding, with a record why.
+
+        Once (2026-09-26) the window froze as a call came in: Windows logged
+        an AppHang and it sat "Not responding" for an hour until closed by
+        hand - no traceback, since nothing crashed. Every 5 s this asks the
+        UI thread to run a no-op (BeginInvoke: it needs both the message loop
+        and the GIL) and, when it does, re-arms faulthandler's timer. That
+        timer lives in C, so it fires even if Python itself is deadlocked:
+        after WINDOW_HANG_SECONDS without a re-arm it dumps every thread's
+        stack to the log and exits, and the supervisor starts a fresh agent.
+        """
+        from System import Action
+
+        answered = threading.Event()
+
+        def ping() -> None:
+            answered.set()
+
+        while not self.quitting:
+            answered.clear()
+            try:
+                self.window.native.BeginInvoke(Action(ping))
+            except Exception:
+                answered.set()  # no window handle yet: nothing to judge
+            if answered.wait(WINDOW_HANG_SECONDS - 10):
+                faulthandler.dump_traceback_later(
+                    WINDOW_HANG_SECONDS, exit=True, file=_crash_log
+                )
+            else:
+                log.error("window not responding; restarting in 10 s unless it recovers")
+            time.sleep(5)
+        faulthandler.cancel_dump_traceback_later()
+
     def run(self) -> None:
         log.info("watching %s", self.pi.url)
+        threading.Thread(target=self.watch_window, name="watchdog", daemon=True).start()
         if self.open_on_start:  # started by the desktop shortcut with none running
             self.open_app()
         failures = 0
@@ -460,6 +496,7 @@ class Agent:
     def quit(self) -> None:
         log.info("quitting")
         self.quitting = True
+        faulthandler.cancel_dump_traceback_later()  # closing may take a moment; hard_exit covers it
         self.set_ringing(False)
         self.tray.stop()
         # If closing the window hangs, don't wait on it: a copy that's still
@@ -527,6 +564,24 @@ def already_running() -> bool:
     return ctypes.get_last_error() == ERROR_ALREADY_EXISTS
 
 
+def run_media_player(pi: "Pi") -> None:
+    """Keep the "All audio" player running, in its own process (see
+    media_player.py for why). Config goes over stdin, not argv, so the
+    token isn't in the process list; it exits by itself when we're gone."""
+    config = {"url": pi.url, "token": pi.token, "cafile": pi.cafile, "parent": os.getpid(),
+              "log": str(CONFIG_DIR / "agent.log")}
+    script = Path(__file__).with_name("media_player.py")
+    while True:
+        proc = subprocess.Popen(
+            [sys.executable, str(script)], stdin=subprocess.PIPE, creationflags=subprocess.CREATE_NO_WINDOW
+        )
+        proc.stdin.write((json.dumps(config) + "\n").encode())
+        proc.stdin.close()
+        code = proc.wait()
+        log.error("media player exited with code %s; restarting it", code)
+        time.sleep(10)
+
+
 def hard_exit() -> None:
     """End the process now, without waiting on threads or pythonnet's
     shutdown - either kept a quit agent alive, window gone, holding the
@@ -573,7 +628,7 @@ def main() -> None:
     agent.listen_for_show(server)
     agent.open_on_start = "--show" in sys.argv
     agent.tray.start()
-    media_player.MediaPlayer(pi).start()  # music/videos in "All audio" mode
+    threading.Thread(target=run_media_player, args=(pi,), name="media", daemon=True).start()
     agent.start_hotkeys()
     allow_audio_without_a_click()
     PROFILE_DIR.mkdir(parents=True, exist_ok=True)

@@ -277,3 +277,35 @@ def test_pc_present_follows_the_agent_poll(monkeypatch):
     assert not hub.pc_present()
     hub.pc_seen()
     assert hub.pc_present()
+
+
+
+@pytest.mark.asyncio
+async def test_media_link_follows_the_switch():
+    from app import reconnect
+
+    wanted = {"on": False}
+    r = reconnect.Reconnector(lambda: True, lambda: True, lambda: wanted["on"])
+    bluez = FakeBluezObjects(phone=dev(connected=True))
+    r._call = bluez
+
+    async def objects_with_media(path, iface, member, *args):
+        if member == "GetManagedObjects":
+            [objs] = await FakeBluezObjects.__call__(bluez, path, iface, member, *args)
+            objs["/dev_phone/sep1/fd0"] = {"org.bluez.MediaTransport1": {}}
+            return [objs]
+        return await FakeBluezObjects.__call__(bluez, path, iface, member, *args)
+
+    r._call = objects_with_media
+    await r.check(now=0)  # media is up but wanted on the iPhone: drop just that link
+    assert bluez.calls == [("/dev_phone", "DisconnectProfile", [reconnect.A2DP_SOURCE_UUID])]
+
+    bluez.calls.clear()
+    r._call = bluez  # no media link now
+    wanted["on"] = True
+    await r.check(now=5)
+    await r.check(now=10)  # a failed/slow connect isn't retried every 5 s
+    assert bluez.calls == [("/dev_phone", "ConnectProfile", [reconnect.A2DP_SOURCE_UUID])]
+    r.media_changed()  # the switch moved: try again straight away
+    await r.check(now=12)
+    assert [c[1] for c in bluez.calls] == ["ConnectProfile", "ConnectProfile"]

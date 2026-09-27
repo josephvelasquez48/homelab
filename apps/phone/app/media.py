@@ -1,13 +1,18 @@
 """Media audio (music, videos) from the phone to the PC, when asked for.
 
-"Calls only" is the default: WirePlumber registers the Pi as a hands-free
-unit and nothing else (51-phone-bridge.conf), so iOS keeps media on the
-phone. "All audio" adds a drop-in, 52-phone-media.conf, that also
-registers the Pi as an A2DP speaker (a2dp_sink). A later drop-in wins for
-the same key - checked live: the Pi advertised Audio Sink, and the phone
-opened an A2DP transport as soon as it reconnected. Switching means
-restarting WirePlumber, which drops the phone's profiles for a moment, so
-it's refused during a call.
+51-phone-bridge.conf registers the Pi as a hands-free unit only; the
+service adds a drop-in, 52-phone-media.conf, that also registers it as an
+A2DP speaker (a2dp_sink). A later drop-in wins for the same key - checked
+live: the Pi advertised Audio Sink, and the phone opened an A2DP
+transport as soon as it reconnected.
+
+Where media plays is the phone's A2DP link, not the roles: the "Music and
+videos on this PC" switch connects or drops just that profile
+(reconnect.py), which moves media between the PC and the iPhone in a
+second or two while calls stay connected. It used to switch the roles,
+which meant restarting WirePlumber - ~10 s with the phone dropping, and
+refused during a call. Checked live: after DisconnectProfile the iPhone
+played media itself and didn't reconnect A2DP on its own in 30 s.
 
 While the phone plays, PipeWire exposes the A2DP stream as a bluez_input
 node. The bridge records it at 48 kHz stereo (s16) in 10 ms chunks with a
@@ -51,12 +56,11 @@ TOTAL_LATENCY_NS = 180_000_000
 # oldest, so delay can't build up behind it.
 QUEUE_CHUNKS = 10
 
-MODES = ("calls", "all")
 ROLES_FILE = Path.home() / ".config/wireplumber/wireplumber.conf.d/52-phone-media.conf"
 ROLES_CONF = """\
-# Written by the phone bridge while its audio mode is "All audio"; removed
-# for "Calls only". Also registers the Pi as an A2DP speaker, so the phone
-# sends music and videos here too. See apps/phone/app/media.py.
+# Written by the phone bridge (apps/phone/app/media.py). Also registers
+# the Pi as an A2DP speaker, so music and videos can come to the PC; the
+# service decides per link whether they do.
 monitor.bluez.properties = {
   bluez5.roles = [ hfp_hf a2dp_sink ]
   # The iPhone sends media at full scale and sets the speaker's volume
@@ -69,18 +73,13 @@ monitor.bluez.properties = {
 """
 
 
-def write_roles(mode: str, path: Path = ROLES_FILE) -> bool:
-    """Make the drop-in match the mode; True if that changed anything."""
-    if mode == "all":
-        if path.exists() and path.read_text() == ROLES_CONF:
-            return False
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(ROLES_CONF)
-        return True
-    if path.exists():
-        path.unlink()
-        return True
-    return False
+def write_roles(path: Path = ROLES_FILE) -> bool:
+    """Put the speaker-role drop-in in place; True if that changed anything."""
+    if path.exists() and path.read_text() == ROLES_CONF:
+        return False
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(ROLES_CONF)
+    return True
 
 
 def find_media_node(dump: list) -> tuple[str, int] | None:
