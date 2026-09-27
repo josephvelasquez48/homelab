@@ -68,6 +68,7 @@ PROFILE_DIR = Path(os.environ["LOCALAPPDATA"]) / "phone-bridge" / "webview"
 ICON_FILE = Path(os.environ["LOCALAPPDATA"]) / "phone-bridge" / "phone.ico"  # written by install-agent.ps1
 CA_FILE = Path(__file__).resolve().parents[3] / "certificates" / "homelab-ca.crt"
 POLL_SECONDS = 1.0
+WINDOW_HANG_SECONDS = 45  # see Agent.watch_window
 # Whether an agent is already running: a named mutex, which only this agent
 # ever creates. (A fixed TCP port used to double as this check, but it sat in
 # Windows' ephemeral range - any program's outgoing connection could be given
@@ -353,8 +354,43 @@ class Agent:
             log.warning("can't reach the Pi: %s", e)
             return {}
 
+    def watch_window(self) -> None:
+        """Restart the agent if its window stops responding, with a record why.
+
+        Once (2026-09-26) the window froze as a call came in: Windows logged
+        an AppHang and it sat "Not responding" for an hour until closed by
+        hand - no traceback, since nothing crashed. Every 5 s this asks the
+        UI thread to run a no-op (BeginInvoke: it needs both the message loop
+        and the GIL) and, when it does, re-arms faulthandler's timer. That
+        timer lives in C, so it fires even if Python itself is deadlocked:
+        after WINDOW_HANG_SECONDS without a re-arm it dumps every thread's
+        stack to the log and exits, and the supervisor starts a fresh agent.
+        """
+        from System import Action
+
+        answered = threading.Event()
+
+        def ping() -> None:
+            answered.set()
+
+        while not self.quitting:
+            answered.clear()
+            try:
+                self.window.native.BeginInvoke(Action(ping))
+            except Exception:
+                answered.set()  # no window handle yet: nothing to judge
+            if answered.wait(WINDOW_HANG_SECONDS - 10):
+                faulthandler.dump_traceback_later(
+                    WINDOW_HANG_SECONDS, exit=True, file=_crash_log
+                )
+            else:
+                log.error("window not responding; restarting in 10 s unless it recovers")
+            time.sleep(5)
+        faulthandler.cancel_dump_traceback_later()
+
     def run(self) -> None:
         log.info("watching %s", self.pi.url)
+        threading.Thread(target=self.watch_window, name="watchdog", daemon=True).start()
         if self.open_on_start:  # started by the desktop shortcut with none running
             self.open_app()
         failures = 0
@@ -460,6 +496,7 @@ class Agent:
     def quit(self) -> None:
         log.info("quitting")
         self.quitting = True
+        faulthandler.cancel_dump_traceback_later()  # closing may take a moment; hard_exit covers it
         self.set_ringing(False)
         self.tray.stop()
         # If closing the window hangs, don't wait on it: a copy that's still
