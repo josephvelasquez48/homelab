@@ -59,7 +59,6 @@ from pathlib import Path
 import webview
 
 import hotkeys
-import media_player
 import taskbar
 from tray import AMBER, GREEN, GREY, Tray
 
@@ -117,7 +116,8 @@ class Pi:
     def __init__(self, config: dict):
         self.url = config["url"].rstrip("/")
         self.token = config["token"]
-        self.context = ssl.create_default_context(cafile=str(Path(config.get("cafile", CA_FILE))))
+        self.cafile = str(Path(config.get("cafile", CA_FILE)))
+        self.context = ssl.create_default_context(cafile=self.cafile)
 
     def status(self) -> dict:
         req = urllib.request.Request(
@@ -564,6 +564,24 @@ def already_running() -> bool:
     return ctypes.get_last_error() == ERROR_ALREADY_EXISTS
 
 
+def run_media_player(pi: "Pi") -> None:
+    """Keep the "All audio" player running, in its own process (see
+    media_player.py for why). Config goes over stdin, not argv, so the
+    token isn't in the process list; it exits by itself when we're gone."""
+    config = {"url": pi.url, "token": pi.token, "cafile": pi.cafile, "parent": os.getpid(),
+              "log": str(CONFIG_DIR / "agent.log")}
+    script = Path(__file__).with_name("media_player.py")
+    while True:
+        proc = subprocess.Popen(
+            [sys.executable, str(script)], stdin=subprocess.PIPE, creationflags=subprocess.CREATE_NO_WINDOW
+        )
+        proc.stdin.write((json.dumps(config) + "\n").encode())
+        proc.stdin.close()
+        code = proc.wait()
+        log.error("media player exited with code %s; restarting it", code)
+        time.sleep(10)
+
+
 def hard_exit() -> None:
     """End the process now, without waiting on threads or pythonnet's
     shutdown - either kept a quit agent alive, window gone, holding the
@@ -610,7 +628,7 @@ def main() -> None:
     agent.listen_for_show(server)
     agent.open_on_start = "--show" in sys.argv
     agent.tray.start()
-    media_player.MediaPlayer(pi).start()  # music/videos in "All audio" mode
+    threading.Thread(target=run_media_player, args=(pi,), name="media", daemon=True).start()
     agent.start_hotkeys()
     allow_audio_without_a_click()
     PROFILE_DIR.mkdir(parents=True, exist_ok=True)

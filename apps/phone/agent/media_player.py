@@ -12,14 +12,25 @@ Delay is kept short on purpose: playback starts once PRIME_CHUNKS are
 queued, and past MAX_CHUNKS queued (the Pi's clock and the sound card's
 drift apart, or the network hiccuped) a chunk is dropped instead of the
 delay growing. After a gap - the phone paused - it primes again.
+
+It runs as its own process, started by the agent (python media_player.py,
+config on stdin). In the agent's process, the agent froze twice within
+two hours of music starting to play - the window "Not responding" until
+closed by hand - and never while this was off. Whatever the mechanism, a
+separate process can't take the call window with it; at worst the music
+stops and the agent starts the player again. It exits once the agent's
+process is gone.
 """
 import ctypes
+import json
 import logging
 import socket
-import threading
+import ssl
+import sys
 import time
 import urllib.request
 from ctypes import wintypes
+from types import SimpleNamespace
 
 log = logging.getLogger("phone-agent.media")
 
@@ -29,6 +40,7 @@ CHUNK_BYTES = RATE * CHANNELS * 2 // 100  # 10 ms, as the Pi sends it
 PRIME_CHUNKS = 6  # 60 ms queued before playback starts
 MAX_CHUNKS = 12  # 120 ms: beyond this, drop instead of lagging
 RETRY_SECONDS = 5
+IDLE_TIMEOUT = 20  # an idle stream (nothing playing) is reopened this often
 
 WAVE_MAPPER = 0xFFFFFFFF  # the default output device
 WAVE_FORMAT_PCM = 1
@@ -129,17 +141,34 @@ class WaveOut:
         winmm.waveOutClose(self.handle)
 
 
+kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+kernel32.OpenProcess.restype = wintypes.HANDLE
+kernel32.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+kernel32.WaitForSingleObject.argtypes = [wintypes.HANDLE, wintypes.DWORD]
+kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+SYNCHRONIZE = 0x00100000
+WAIT_TIMEOUT = 0x102
+
+
+def process_alive(pid: int) -> bool:
+    handle = kernel32.OpenProcess(SYNCHRONIZE, False, pid)
+    if not handle:
+        return False
+    try:
+        return kernel32.WaitForSingleObject(handle, 0) == WAIT_TIMEOUT
+    finally:
+        kernel32.CloseHandle(handle)
+
+
 class MediaPlayer:
-    def __init__(self, pi):
+    def __init__(self, pi, keep_running=lambda: True):
         self.pi = pi  # url, token, context - the agent's connection to the Pi
+        self.keep_running = keep_running  # () -> bool: is the agent still there
         self.playing = False
 
-    def start(self) -> None:
-        threading.Thread(target=self._run, name="media", daemon=True).start()
-
-    def _run(self) -> None:
+    def run(self) -> None:
         last_error = None
-        while True:
+        while self.keep_running():
             try:
                 self._stream()
                 last_error = None
@@ -158,18 +187,41 @@ class MediaPlayer:
         )
         # The read timeout only ends an idle stream (nothing playing); it's
         # reopened straight away.
-        with urllib.request.urlopen(req, context=self.pi.context, timeout=60) as resp:
+        with urllib.request.urlopen(req, context=self.pi.context, timeout=IDLE_TIMEOUT) as resp:
             if resp.status == 204:
                 return  # "Calls only"
             out = WaveOut()
             log.info("media stream open")
             try:
+                count = 0
                 while chunk := resp.read(CHUNK_BYTES):
                     self.playing = True
                     out.play(chunk)
+                    count += 1
+                    if count % 100 == 0 and not self.keep_running():  # once a second
+                        return
             finally:
                 if out.dropped:
                     log.info("media: dropped %d late chunks", out.dropped)
                 out.close()
                 self.playing = False
                 log.info("media stream closed")
+
+
+def main() -> None:
+    """Run as the agent's media process: one JSON line of config on stdin."""
+    config = json.loads(sys.stdin.buffer.readline().decode("utf-8-sig"))
+    logging.basicConfig(
+        filename=config["log"], level=logging.INFO, format="%(asctime)s %(levelname)s media: %(message)s"
+    )
+    pi = SimpleNamespace(
+        url=config["url"], token=config["token"], context=ssl.create_default_context(cafile=config["cafile"])
+    )
+    parent = config["parent"]
+    log.info("media player started for agent pid %d", parent)
+    MediaPlayer(pi, lambda: process_alive(parent)).run()
+    log.info("agent gone; media player exiting")
+
+
+if __name__ == "__main__":
+    main()
