@@ -223,6 +223,14 @@ audio natively.
   it for an outgoing connection: every start took the busy port for a
   running agent and exited cleanly - which the supervisor treats as
   *Quit* - so the shortcut did nothing, with nothing in the log.
+- **Restarts itself if the window freezes.** A watchdog thread asks the
+  UI thread to run a no-op every 5 s (`BeginInvoke`, which needs the
+  message loop and the GIL) and, each time it does, re-arms
+  `faulthandler.dump_traceback_later(45, exit=True)` - a timer in C that
+  fires even if Python is deadlocked. After 45 s with no answer it
+  dumps every thread's stack to `agent.log` and exits, and the
+  supervisor starts a fresh agent. Before it, a frozen window sat "Not
+  responding" for an hour with nothing in the log.
 - **Quit ends the process.** Once, after *Quit*, the window closed but
   the process never exited - left waiting on its threads or pythonnet's
   shutdown - and a copy that's still alive holds the mutex: every later
@@ -308,28 +316,43 @@ state: the slow ones run in their own loop.
   buttons. A hotkey isn't a user gesture to the page, so the agent adds
   `--autoplay-policy=no-user-gesture-required` to its own WebView2 only.
 
-## All audio: music and videos on the PC too
+## Music and videos on the PC too
 
-*Phone audio on this PC* in the page switches between **Calls only**
-(the default) and **All audio**. It's stored on the Pi like the other
-settings, and refused during a call.
+*Music and videos on this PC* in the page (on by default, stored on the
+Pi) says where media plays; calls come to the PC either way.
 
-- **Pi**: "All audio" writes a WirePlumber drop-in,
+- **Pi**: the service writes a WirePlumber drop-in,
   `52-phone-media.conf`, that adds `a2dp_sink` to the roles, so the Pi
-  is also a Bluetooth speaker; "Calls only" deletes it. The later file
-  wins for the same key - checked live, the Pi advertised *Audio Sink*
-  and the phone opened an A2DP transport as soon as it reconnected.
-  Either change restarts WirePlumber, and the phone is asked back for
-  calls (and media) straight after (`app/media.py`).
+  is also a Bluetooth speaker. The later file wins for the same key -
+  checked live, the Pi advertised *Audio Sink* and the phone opened an
+  A2DP transport as soon as it reconnected. Only the first start with it
+  restarts WirePlumber.
+- **The switch moves the media link, not the roles.** Off, the
+  reconnector drops just the phone's A2DP profile (`DisconnectProfile`)
+  and the iPhone plays media itself; on, it connects it again. That
+  takes a second or two, keeps the calls link up, and works mid-call.
+  Checked live: with A2DP dropped the iPhone didn't bring it back on its
+  own in 30 s, and the calls link stayed. The reconnector checks every
+  5 s, so the switch also holds after the phone reconnects. This
+  replaced a first version that switched the roles instead: each switch
+  restarted WirePlumber (~10 s of the phone dropping, refused during a
+  call) - and one froze the window, below.
 - **Stream**: `pw-record` takes the phone's A2DP node at 48 kHz stereo
   in 10 ms chunks, with a 10 ms node latency (the default, 100 ms, would
   be half the budget), and `/api/agent/media` streams it as raw PCM to
   the desktop agent. A slow listener loses the oldest audio, never
   builds up delay.
-- **PC**: the agent plays it through Windows' `waveOut`, from plain
-  ctypes (`agent/media_player.py`), in its own thread - the call window
-  is blanked while hidden, so it can't be the player. Playback starts
-  with 60 ms queued and drops a chunk rather than queue past 120 ms.
+- **PC**: `agent/media_player.py` plays it through Windows' `waveOut`,
+  from plain ctypes, in a process of its own that the agent starts -
+  the call window is blanked while hidden, so it can't be the player.
+  Playback starts with 60 ms queued and drops a chunk rather than queue
+  past 120 ms. Its config goes over stdin (the token stays out of the
+  process list); the agent restarts it if it dies, and it exits when the
+  agent's process is gone. It started as a thread in the agent, and the
+  agent froze twice within two hours of music playing (Windows AppHang,
+  the window "Not responding" until closed by hand) and not in the hour
+  after media was turned off. The mechanism wasn't found; in its own
+  process it can't take the call window down with it.
 - **The call bridge ignores it**: it used to take the first
   `bluez_input` node, which with media on can be the music. It now skips
   A2DP nodes.
@@ -341,6 +364,13 @@ Found on the first try, and fixed:
   calls, bug 3) threw that away. The drop-in enables hardware volume for
   `a2dp_sink` only, so the phone's buttons work (47 of 127 on the phone
   set the node to 0.0507) and call streams still ignore the phone.
+- **A switch that froze the window.** With the role switch, a
+  WirePlumber restart could catch a telephony D-Bus call in flight, and
+  D-Bus has no deadline short of the daemon's ~25 s: every tick waited,
+  so pages got no state for up to a minute and the agent's window,
+  still showing an ended call as its own, wouldn't close. Every
+  telephony call now has a limit (5 s; 20 s for answer and dial, which
+  wait on the phone), and a timeout reads as "no phone right now".
 - **Video sync.** A2DP delay reporting lets the phone hold video back
   by the speaker's delay, but the Pi only reported its own 80 ms. A
   `latencyOffsetNsec` prop doesn't exist on this node; `ProcessLatency`
@@ -404,7 +434,7 @@ login, and the site's mic and autoplay allowed.)
 - With the PC off (or the agent quit) for 2 minutes, calls ring only on
   the iPhone: the Pi keeps it disconnected on purpose. The earbuds or the
   car get it to themselves.
-- "All audio" uses SBC: Debian's PipeWire has no AAC codec, the iPhone's
+- Media uses SBC: Debian's PipeWire has no AAC codec, the iPhone's
   best. Media reaches the PC roughly 0.2 s after the phone plays it.
 - Coming back into range, the phone reconnects on the next 30 s check,
   not instantly. Measured: 26 s after a forced disconnect.
