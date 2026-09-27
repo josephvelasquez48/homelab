@@ -106,6 +106,8 @@ input:focus { outline: none; border-color: var(--accent); }
 .keypad { display: grid; grid-template-columns: repeat(3, 64px); justify-content: center; gap: 12px 22px; margin-top: 16px; }
 .keypad button { width: 64px; height: 64px; border-radius: 50%; padding: 0; font-size: 24px; font-weight: 450; }
 .dial-row { display: flex; justify-content: center; margin-top: 16px; }
+.dial-card .card-switch { padding: 0; border-bottom: 0; }
+#dialer { margin-top: 14px; }
 .dial-row button.round { margin-bottom: 0; }
 
 /* Recent */

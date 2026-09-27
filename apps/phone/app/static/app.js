@@ -578,6 +578,16 @@ $("mute").onclick = () => {
 };
 $("show-keypad").onclick = () => { $("tone-pad").hidden = !$("tone-pad").hidden; };
 
+// The dial pad stays folded away until switched on; remembered per window.
+function showDialer(on, focus = false) {
+  $("show-dialer").checked = on;
+  $("dialer").hidden = !on;
+  try { localStorage.setItem("phone-dialer", on ? "on" : "off"); } catch {}
+  if (on && focus) $("number").focus();
+}
+try { showDialer(localStorage.getItem("phone-dialer") === "on"); } catch { showDialer(false); }
+$("show-dialer").onchange = (e) => showDialer(e.target.checked, true);
+
 $("dial").onclick = () => {
   const number = $("number").value.trim();
   if (number) dialNumber(number);

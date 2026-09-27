@@ -75,10 +75,16 @@
 
     <div class="card sub popup-idle" id="popup-idle" hidden>No call right now.</div>
 
-    <section class="card" id="dial-card">
-      <input type="tel" id="number" placeholder="Enter a number" autocomplete="off" aria-label="Number">
-      <div class="keypad" id="dial-pad"></div>
-      <div class="dial-row"><button class="round good" id="dial" aria-label="Call"><svg><use href="#i-phone"/></svg></button></div>
+    <section class="card dial-card" id="dial-card">
+      <label class="switch-row card-switch">
+        <span><span class="title">Dial pad</span><span class="hint">Make a call from this PC</span></span>
+        <input type="checkbox" class="switch" id="show-dialer">
+      </label>
+      <div id="dialer" hidden>
+        <input type="tel" id="number" placeholder="Enter a number" autocomplete="off" aria-label="Number">
+        <div class="keypad" id="dial-pad"></div>
+        <div class="dial-row"><button class="round good" id="dial" aria-label="Call"><svg><use href="#i-phone"/></svg></button></div>
+      </div>
     </section>
 
     <section class="card" id="recent-card">
