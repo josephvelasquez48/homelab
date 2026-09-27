@@ -1,72 +1,173 @@
 :root {
-  --bg: #f4f5f7; --card: #ffffff; --text: #16181d; --muted: #646a76;
-  --line: #dde0e6; --accent: #2563eb; --good: #15803d; --bad: #c2362b;
+  --bg: #0d0f13; --card: #16191f; --card-2: #1e222a; --text: #eef0f4; --muted: #8d95a3;
+  --line: rgba(255, 255, 255, .07); --accent: #4f8cff; --good: #30d158; --bad: #ff453a;
+  --on-color: #fff; --shadow: 0 1px 2px rgba(0, 0, 0, .4), 0 8px 24px rgba(0, 0, 0, .25);
+  --radius: 18px;
 }
-@media (prefers-color-scheme: dark) {
+@media (prefers-color-scheme: light) {
   :root {
-    --bg: #111317; --card: #1b1e24; --text: #e8eaee; --muted: #9aa1ad;
-    --line: #2c3039; --accent: #5b8def; --good: #34a560; --bad: #e0574a;
+    --bg: #f2f3f7; --card: #ffffff; --card-2: #f0f2f6; --text: #14161b; --muted: #6a7180;
+    --line: rgba(0, 0, 0, .07); --accent: #2f6bff; --good: #1fb24a; --bad: #e5392e;
+    --shadow: 0 1px 2px rgba(20, 22, 27, .06), 0 8px 24px rgba(20, 22, 27, .06);
   }
 }
 * { box-sizing: border-box; }
+html { color-scheme: dark light; }
 body {
   margin: 0; background: var(--bg); color: var(--text);
-  font: 15px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif;
+  font: 15px/1.45 "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, sans-serif;
+  -webkit-font-smoothing: antialiased;
 }
-main { max-width: 420px; margin: 0 auto; padding: 24px 16px; }
-h1 { font-size: 18px; margin: 0 0 16px; display: flex; justify-content: space-between; align-items: center; }
-.card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 16px; margin-bottom: 12px; }
-.status { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 14px; }
-.dot { width: 9px; height: 9px; border-radius: 50%; background: var(--muted); flex: none; }
-.dot.on { background: var(--good); }
-.dot.off { background: var(--bad); }
-.caller { font-size: 22px; font-weight: 600; margin: 4px 0 2px; word-break: break-all; }
-.sub { color: var(--muted); font-size: 14px; }
-.row { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
-button {
-  font: inherit; border: 1px solid var(--line); background: var(--card); color: var(--text);
-  border-radius: 10px; padding: 10px 14px; cursor: pointer; flex: 1; min-width: 0;
-}
-button:hover { border-color: var(--accent); }
-button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
-button.good { background: var(--good); border-color: var(--good); color: #fff; }
-button.bad { background: var(--bad); border-color: var(--bad); color: #fff; }
-button.small { flex: none; padding: 6px 10px; font-size: 13px; }
-button[aria-pressed="true"] { background: var(--text); color: var(--bg); }
-input[type="tel"], input[type="password"] {
-  width: 100%; font: inherit; font-size: 18px; padding: 10px 12px; border-radius: 10px;
-  border: 1px solid var(--line); background: var(--bg); color: var(--text);
-}
-.keypad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-top: 10px; }
-.keypad button { padding: 12px 0; font-size: 18px; }
-.ringing { animation: ring 1s ease-in-out infinite; border-color: var(--good); }
-@keyframes ring { 50% { box-shadow: 0 0 0 4px color-mix(in srgb, var(--good) 35%, transparent); } }
-.error { color: var(--bad); font-size: 14px; min-height: 20px; margin-top: 8px; }
-.meter { height: 4px; background: var(--line); border-radius: 2px; overflow: hidden; margin-top: 10px; }
-.meter > div { height: 100%; width: 0; background: var(--good); transition: width 80ms linear; }
-label.vol { display: flex; align-items: center; gap: 8px; margin-top: 12px; color: var(--muted); font-size: 14px; }
-label.vol input { flex: 1; }
-label.vol select {
-  flex: 1; min-width: 0; font: inherit; font-size: 14px; padding: 6px 8px; border-radius: 8px;
-  border: 1px solid var(--line); background: var(--bg); color: var(--text);
-}
-label.toggle { display: flex; align-items: center; gap: 8px; margin-top: 12px; color: var(--muted); font-size: 14px; cursor: pointer; }
+main { max-width: 420px; margin: 0 auto; padding: 20px 16px 28px; display: flex; flex-direction: column; }
+svg { width: 20px; height: 20px; flex: none; }
 [hidden] { display: none !important; }
 
-/* Compact window opened by the desktop ring agent. */
-body.popup main { padding: 10px; }
-body.popup h1 { display: none; }
-body.popup .card { margin-bottom: 8px; padding: 12px; }
-body.popup #audio-setup, body.popup #keep-phone-row, body.popup #mic-row { display: none !important; }
-.mic-warning { border-color: var(--bad); color: var(--bad); font-size: 14px; }
+/* Header */
+.top { display: flex; align-items: center; justify-content: space-between; margin: 0 2px 14px; }
+.brand { display: flex; align-items: center; gap: 10px; font-size: 20px; font-weight: 650; letter-spacing: -.01em; }
+.brand-icon {
+  width: 34px; height: 34px; border-radius: 11px; display: grid; place-items: center; color: #fff;
+  background: linear-gradient(135deg, #3ddc84, #1fa855); box-shadow: 0 4px 14px rgba(48, 209, 88, .3);
+}
+.brand-icon svg { width: 18px; height: 18px; }
+h1 { font-size: 20px; margin: 0 0 14px; }
+h2 { font-size: 12px; font-weight: 650; margin: 0 0 10px; color: var(--muted); text-transform: uppercase; letter-spacing: .08em; }
 
-h2 { font-size: 14px; font-weight: 600; margin: 0 0 8px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+/* Cards */
+.card {
+  background: var(--card); border: 1px solid var(--line); border-radius: var(--radius);
+  padding: 16px; margin-bottom: 12px; box-shadow: var(--shadow);
+}
+.sub { color: var(--muted); font-size: 14px; }
+
+/* Status */
+.status-card { display: grid; gap: 8px; }
+.status { display: flex; align-items: center; gap: 10px; font-size: 14px; color: var(--muted); }
+.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); flex: none; }
+.dot.on { background: var(--good); box-shadow: 0 0 0 4px color-mix(in srgb, var(--good) 20%, transparent); }
+.dot.off { background: var(--bad); box-shadow: 0 0 0 4px color-mix(in srgb, var(--bad) 18%, transparent); }
+
+/* Buttons */
+button {
+  font: inherit; font-weight: 550; border: 0; background: var(--card-2); color: var(--text);
+  border-radius: 12px; padding: 11px 14px; cursor: pointer; flex: 1; min-width: 0;
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  transition: filter .15s, transform .08s, background .15s;
+}
+button:hover { filter: brightness(1.12); }
+button:active { transform: scale(.97); }
+button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+button.primary { background: var(--accent); color: #fff; }
+button.good { background: var(--good); color: #fff; }
+button.bad { background: var(--bad); color: #fff; }
+button.soft { background: var(--card-2); }
+button.ghost { background: transparent; color: var(--muted); border: 1px solid var(--line); }
+button.small { flex: none; padding: 6px 12px; font-size: 13px; border-radius: 10px; }
+.row { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+
+/* Call */
+.call-card { text-align: center; padding: 22px 16px 18px; }
+.avatar {
+  width: 72px; height: 72px; margin: 0 auto 10px; border-radius: 50%; display: grid; place-items: center;
+  font-size: 28px; font-weight: 600; color: #fff;
+  background: linear-gradient(135deg, #5b8cff, #8f5bff);
+}
+.call-state { color: var(--muted); font-size: 13px; text-transform: uppercase; letter-spacing: .08em; }
+.caller { font-size: 24px; font-weight: 650; letter-spacing: -.01em; margin: 2px 0; word-break: break-word; }
+.call-timer { font-variant-numeric: tabular-nums; color: var(--muted); font-size: 15px; min-height: 1.4em; }
+.round-row { display: flex; justify-content: center; gap: 22px; margin-top: 18px; }
+button.round {
+  flex: none; width: 64px; height: 64px; padding: 0; border-radius: 50%;
+  display: grid; place-items: center; position: relative; margin-bottom: 20px;
+}
+button.round svg { width: 26px; height: 26px; }
+button.round span {
+  position: absolute; top: calc(100% + 6px); left: 50%; transform: translateX(-50%);
+  font-size: 12px; font-weight: 500; color: var(--muted); white-space: nowrap;
+}
+button.round[aria-pressed="true"] { background: var(--text); color: var(--bg); }
+.call-card .row button { flex: 1; }
+.ringing { animation: ring 1.2s ease-in-out infinite; }
+.ringing .avatar { animation: pulse 1.2s ease-in-out infinite; }
+@keyframes ring { 50% { box-shadow: var(--shadow), 0 0 0 6px color-mix(in srgb, var(--good) 30%, transparent); } }
+@keyframes pulse { 50% { transform: scale(1.06); } }
+
+/* Meters */
+.meter { height: 4px; background: var(--card-2); border-radius: 2px; overflow: hidden; margin-top: 12px; }
+.meter > div { height: 100%; width: 0; background: var(--good); border-radius: 2px; transition: width 80ms linear; }
+
+/* Dialer */
+input[type="tel"], input[type="password"] {
+  width: 100%; font: inherit; font-size: 22px; font-weight: 500; text-align: center; letter-spacing: .02em;
+  padding: 10px 12px; border-radius: 12px; border: 1px solid transparent; background: var(--card-2); color: var(--text);
+}
+input[type="password"] { font-size: 16px; text-align: left; }
+input:focus { outline: none; border-color: var(--accent); }
+.keypad { display: grid; grid-template-columns: repeat(3, 64px); justify-content: center; gap: 12px 22px; margin-top: 16px; }
+.keypad button { width: 64px; height: 64px; border-radius: 50%; padding: 0; font-size: 24px; font-weight: 450; }
+.dial-row { display: flex; justify-content: center; margin-top: 16px; }
+.dial-card .card-switch { padding: 0; border-bottom: 0; }
+#dialer { margin-top: 14px; }
+.dial-row button.round { margin-bottom: 0; }
+
+/* Recent */
 .list { list-style: none; margin: 0; padding: 0; }
-.list li { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-top: 1px solid var(--line); }
-.list li:first-child { border-top: 0; }
+.list li { display: flex; align-items: center; gap: 12px; padding: 10px 0; border-top: 1px solid var(--line); }
+.list li:first-child { border-top: 0; padding-top: 2px; }
 .list .who { flex: 1; min-width: 0; }
-.list .who div:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.list .who div:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 550; }
 .list .meta { color: var(--muted); font-size: 13px; }
 .list .missed { color: var(--bad); }
-#contacts-card { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-body.popup #recent-card, body.popup #contacts-card { display: none !important; }
+.list button.small { background: color-mix(in srgb, var(--good) 16%, transparent); color: var(--good); }
+
+/* Settings */
+.settings { padding-bottom: 6px; }
+/* Rows divide below, so hidden rows never leave a stray line. */
+.setting { padding: 10px 0; border-bottom: 1px solid var(--line); }
+.setting label { display: block; font-size: 14px; margin-bottom: 8px; }
+select {
+  width: 100%; font: inherit; font-size: 14px; padding: 9px 10px; border-radius: 10px;
+  border: 1px solid transparent; background: var(--card-2); color: var(--text);
+}
+input[type="range"] { width: 100%; accent-color: var(--accent); }
+.switch-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 14px;
+  padding: 12px 0; border-bottom: 1px solid var(--line); cursor: pointer;
+}
+.switch-row .title { display: block; font-size: 14px; }
+.switch-row .hint { display: block; font-size: 12.5px; color: var(--muted); margin-top: 1px; }
+
+/* iOS-style toggle */
+.settings > :last-child { border-bottom: 0; }
+
+input.switch {
+  appearance: none; -webkit-appearance: none; margin: 0; flex: none; cursor: pointer;
+  width: 46px; height: 28px; border-radius: 14px; position: relative;
+  background: color-mix(in srgb, var(--muted) 45%, transparent); transition: background .2s ease;
+}
+input.switch::before {
+  content: ""; position: absolute; top: 3px; left: 3px; width: 22px; height: 22px; border-radius: 50%;
+  background: #fff; box-shadow: 0 1px 3px rgba(0, 0, 0, .35); transition: transform .2s ease;
+}
+input.switch:checked { background: var(--good); }
+input.switch:checked::before { transform: translateX(18px); }
+input.switch:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* Contacts, errors, warnings */
+.contacts { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 12px 16px; }
+.error { color: var(--bad); font-size: 14px; min-height: 20px; margin-top: 8px; text-align: center; }
+.mic-warning { border-color: color-mix(in srgb, var(--bad) 50%, transparent); color: var(--bad); font-size: 14px; }
+.popup-idle { text-align: center; }
+
+/* Compact window opened by the desktop ring agent for a call. */
+body.popup main { padding: 10px; }
+body.popup .top, body.popup .status-card, body.popup #recent-card, body.popup #contacts-card,
+body.popup #media-row, body.popup #keep-phone-row, body.popup #mic-row, body.popup #audio-setup,
+body.popup .settings h2 { display: none !important; }
+body.popup .card { margin-bottom: 8px; }
+/* Audio sits at the top of the full page; in the call pop-up the call comes first. */
+body.popup #settings-card { order: 1; }
+body.popup .call-card { padding: 16px 12px 12px; }
+body.popup .avatar { width: 56px; height: 56px; font-size: 22px; }
+body.popup .settings { padding: 4px 16px; }
+body.popup .setting { border-bottom: 0; padding: 8px 0; }
