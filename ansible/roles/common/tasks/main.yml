@@ -138,3 +138,59 @@
   when:
     - pi_resolver_write is changed
     - not (pi_allow_network_bounce | bool)
+
+# No printers are attached to the Pi, but the desktop image ships CUPS and
+# cups-browsed. cups-browsed had a remote-code-execution chain in 2024, and
+# the desktop's Control Centre raised admin-password prompts on the
+# touchscreen asking to manage it. Nothing here prints, so it's all off.
+- name: Stop and disable printing (CUPS) - no printers on this host
+  ansible.builtin.systemd_service:
+    name: '{{ item }}'
+    state: stopped
+    enabled: false
+  loop: [cups-browsed.service, cups.path, cups.socket, cups.service]
+  register: pi_cups_off
+  failed_when:
+    - pi_cups_off.failed
+    - "'Could not find' not in (pi_cups_off.msg | default(''))"
+
+# The weekly StevenBlack blocklist refresh from before AdGuard took over
+# filtering (docs/milestone-1.md). Its script was deleted with that change,
+# so the timer kept firing a job that failed every Monday.
+- name: Stop the retired CoreDNS blocklist timer
+  ansible.builtin.systemd_service:
+    name: coredns-blocklist-update.timer
+    state: stopped
+    enabled: false
+  register: pi_blocklist_timer
+  failed_when:
+    - pi_blocklist_timer.failed
+    - "'Could not find' not in (pi_blocklist_timer.msg | default(''))"
+
+- name: Remove the retired CoreDNS blocklist units
+  ansible.builtin.file:
+    path: '/etc/systemd/system/coredns-blocklist-update.{{ item }}'
+    state: absent
+  loop: [service, timer]
+  register: pi_blocklist_units
+
+- name: Reload systemd after removing units
+  ansible.builtin.systemd_service:
+    daemon_reload: true
+  when: pi_blocklist_units is changed
+
+# mpris-proxy (a user unit from bluez) hands a Bluetooth device's media
+# controls to desktop players. Nothing on the Pi uses that; it segfaulted
+# when the phone bridge restarted the Bluetooth stack, and every phone
+# feature was built and tested with it off. Kept off. The package enables
+# it for every user (/etc/systemd/user/default.target.wants), so a per-user
+# disable doesn't stick; it has to be disabled globally.
+- name: Disable the Bluetooth MPRIS proxy (global user unit)
+  ansible.builtin.systemd_service:
+    name: mpris-proxy.service
+    scope: global
+    enabled: false
+  register: pi_mpris_off
+  failed_when:
+    - pi_mpris_off.failed
+    - "'Could not find' not in (pi_mpris_off.msg | default(''))"
