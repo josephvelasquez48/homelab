@@ -1,254 +1,89 @@
 # Ansible
 
-Roadmap step 13: "Use Ansible for server configuration."
+Roadmap step 13. Ansible rebuilds the Pi's *host* setup - everything done
+by hand over SSH early in the project. Kubernetes manifests are Argo CD's
+job ([argocd.md](argocd.md)); managing them here too would mean two systems
+fighting over the same state.
 
-## Scope
+## Running it
 
-Codifies the Pi's **host-level** setup - everything that was done by hand
-over SSH earlier in this project: the cgroup kernel param fix, Docker
-install, `ufw` rules, K3s install, the two remaining Docker Compose stacks
-(DNS, monitoring), and the self-hosted GitHub Actions runner.
-
-Deliberately **not** Kubernetes manifests - Argo CD ([docs/argocd.md](argocd.md))
-already owns those declaratively. Re-deploying them via Ansible too would
-just be two systems fighting over the same state, with no clear owner of
-"what's actually true" when they disagree.
-
-## Control node
-
-Ansible doesn't run natively on Windows - it needs a POSIX control node.
-That was the Ubuntu-24.04 WSL2 distro, which was retired during the node
-migration (`docs/node-migration.md`). Nobody noticed at the time, so from
-then until 2026-09-10 the playbook had nowhere to run from at all.
-
-There are two control nodes. Prefer the Mac; the Pi is the fallback when
-the Mac is unavailable.
-
-**The Mac, over SSH, which is what the inventory already describes:**
+Two control nodes. **Prefer the Mac**: a control node that is also the
+target can't fix the target when it breaks, and the `common` role edits
+the Pi's networking.
 
 ```bash
+# From the Mac, over SSH (the inventory already points at joe@192.168.1.253)
 cd ~/Desktop/homelab/ansible
 ansible-playbook playbooks/site.yml --check --diff
-```
 
-No connection flag: the inventory addresses the Pi at 192.168.1.253 as
-`joe`, and the Mac already holds that key because the backup collector
-uses it. `joe` has `NOPASSWD: ALL`, so become needs no password.
-
-This is the one to reach for. A control node that is also the target
-cannot fix the target when the target is broken, and the `common` role
-edits the Pi's networking.
-
-**The Pi, against itself, when the Mac is not available:**
-
-```bash
+# From the Pi itself, when the Mac isn't available
 cd ~/apps/homelab/ansible
 ansible-playbook playbooks/site.yml --check --diff -c local
 ```
 
-`-c local` is required. The inventory addresses the Pi over SSH, which is
-correct from any other control node, but the Pi holds no key authorising
-it to connect to itself - and going through localhost SSH would be a
-pointless hop anyway. `become` needs no password here: `joe` has
-`NOPASSWD: ALL`.
+Always `--check --diff` first. The two nodes run different Ansible
+versions (ansible-core 2.19 on the Pi from apt, 2.21 on the Mac from
+Homebrew), so check from the node you'll apply from. macOS has no
+`timeout` command, so scripts that wrap the playbook in it only work on
+the Pi.
 
-Control node and target being the same host is a real weakness, not a
-tidy solution. A change that breaks the Pi's networking also breaks the
-thing that would fix it, and the `common` role now edits exactly that.
-The alternative is installing Ansible on the MacBook, which is the better
-shape but adds a second machine that has to be present and current before
-anything can be provisioned.
+## Roles, in order
 
-**Historical, kept because the failure was non-obvious**: running Ansible
-directly against the repo's `/mnt/d/homelab/ansible` (the Windows-drive
-WSL2 mount) silently ignored `ansible.cfg` - `/mnt/*` mounts don't map
-NTFS permissions cleanly, so Ansible's world-writable-directory safety
-check flagged the whole path. Copying into WSL2's own filesystem fixed
-it. Moot now: the Pi runs from a real `git clone`, which is what that
-entry recommended.
+| Role | What it does |
+|---|---|
+| `common` | Memory cgroup kernel flag (plus reboot), the Pi's own DNS resolver, avahi's `enable-wide-area=no` |
+| `docker` | Docker Engine |
+| `firewall` | ufw: LAN-only rules for SSH, DNS, K3s; removes rules for retired IPv6 prefixes |
+| `k3s` | K3s server |
+| `dns_monitoring` | The repo checkout and the CoreDNS + AdGuard Compose stack |
+| `github_runner` | The self-hosted Actions runner (needs a fresh token, below) |
 
-## Roles
-
-`common` (cgroup fix + reboot) -> `docker` -> `firewall` -> `k3s` ->
-`dns_monitoring` -> `github_runner`, in that order (each depends on the
-one before: Docker needs the cgroup fix to have already happened, K3s
-needs Docker's iptables setup in place, etc.).
-
-`firewall`'s rule set is deliberately incomplete in a way that matches
-reality, not aspiration: it does **not** open port 80/443 for Traefik,
-because a `ufw` rule there would be a no-op that implies protection it
-doesn't provide - see the K3s-bypasses-ufw finding in
-[docs/kubernetes.md](kubernetes.md) and its fix in
-[docs/argocd.md](argocd.md). Writing a rule that looks like security but
-isn't would be worse than no rule at all.
-
-`github_runner` needs a registration token that expires within the hour,
-so it can't be baked into the playbook - passed at run time:
+Each depends on the one before it: Docker needs the cgroup fix, K3s needs
+Docker's iptables setup.
 
 ```bash
 ansible-playbook playbooks/site.yml --tags github_runner \
   -e runner_token=$(gh api repos/josephvelasquez48/homelab/actions/runners/registration-token --jq .token)
 ```
 
-## Log
+## Safeguards built in
 
-- 2026-09-03: Wrote all six roles, then actually ran them - `--check
-  --diff` first, catching **three real bugs** before they ever touched the
-  live Pi:
-  1. The cgroup-check task got skipped in `--check` mode (Ansible defaults
-     read-only `command` tasks to skip during a dry run), so the "is this
-     already present" condition saw no data and tried to double-append the
-     kernel params - visible directly in the diff output
-     (`cgroup_memory=1 ... cgroup_memory=1 ...`, duplicated). Fixed with
-     `check_mode: false` on that one task - a read-only check is safe to
-     actually run even during `--check`.
-  2. A Jinja operator-precedence bug in the Docker role's architecture
-     detection: `ansible_architecture == 'aarch64' | ternary('arm64',
-     'amd64')` - the `|` filter binds tighter than `==`, so it evaluated
-     `'aarch64' | ternary(...)` first (a non-empty string, always truthy)
-     and then compared *that* against `ansible_architecture`, instead of
-     the intended comparison. Confirmed by diffing against the actual
-     correct `arch=arm64` line already on the Pi from the original manual
-     install. Fixed with explicit parentheses.
-  3. The `git` module refused to pull with `Local modifications exist in
-     the destination (force=no)` - correct, safe behavior, not a bug in
-     Ansible. Root cause: `docker/dns/scripts/update-blocklist.sh` had
-     been `chmod +x`'d by hand on the Pi (more than once this session -
-     see docs/kubernetes.md for the first time this exact issue appeared)
-     but git had only ever tracked it as mode `644`, so every deploy left
-     an untracked local modification blocking the next pull. Fixed at the
-     actual root this time: `git update-index --chmod=+x` + commit, so the
-     executable bit is correctly part of what git delivers on every future
-     clone/pull - not a workaround in the playbook, a fix to the repo.
+- **No ufw rules for Traefik's 80/443.** K3s's iptables run first, so they
+  would do nothing while looking like protection; the real boundary is a
+  NetworkPolicy ([argocd.md](argocd.md)).
+- **Network restarts are opt-in.** Reactivating the Pi's connection drops
+  DNS for the whole LAN for a few seconds. The role writes the config (it
+  applies at next reboot) and only restarts the connection with
+  `-e pi_allow_network_bounce=true`; otherwise it prints that a change is
+  staged.
+- **Connections found by device, not name**, since the name changed when
+  the Pi moved to Ethernet. It fails loudly if nothing is active on
+  `pi_lan_interface`.
+- **Stale firewall rules are removed explicitly.** ufw doesn't delete a rule
+  just because Ansible stopped asking for it. `retired_ipv6_prefixes` lists
+  old prefixes (like the previous router's ULA) whose rules get deleted -
+  a stale allow-rule reads as protection that isn't there.
 
-  After all three fixes: a real (non-check) run applied cleanly (2
-  legitimate, safe permission-tightening changes - `.kube` from `0775` to
-  the declared `0700`, the blocklist script from `0775` to `0755`), and a
-  **second** real run immediately after reported `changed=0` - genuine,
-  verified idempotency, not assumed. Confirmed the whole stack (K3s nodes,
-  `api.home`, `grafana.home`, Docker containers on the Pi) stayed healthy
-  throughout.
+## Bugs found by actually running it
 
-- 2026-09-10: **Control node moved to the Pi, and two DNS host settings
-  moved into the `common` role.** Both settings had been applied by hand
-  during the DNS incident that night (`docs/dns-loop.md`) and existed
-  nowhere else, so a rebuild from this repo would have come back without
-  them:
+| Bug | Fix |
+|---|---|
+| `--check` skipped the cgroup check, so the diff showed the kernel flags appended twice | `check_mode: false` on that read-only task |
+| `ansible_architecture == 'aarch64' \| ternary(...)`: the filter binds before `==`, so it was always true | Parentheses |
+| git refused to pull: a script had been `chmod +x`'d on the Pi but tracked as 644 | `git update-index --chmod=+x`, fixed in the repo |
+| `nmcli` escapes colons (`\:\:1`), so the "already set" check never matched and every run would bounce the network | `--escape no` |
+| git refused to pull again: a file had been copied to the Pi with `scp` | Commit, merge, pull - never `scp` things you mean to keep |
 
-  1. **`enable-wide-area=no`** in `/etc/avahi/avahi-daemon.conf`. Left on,
-     avahi queries `lb._dns-sd._udp.<reverse-subnet>.in-addr.arpa` over
-     unicast DNS at roughly 13 per second, all failing, all forwarded to
-     the upstream resolvers.
-  2. **The Pi's own resolver**, pointed at `127.0.0.1`/`::1` with
-     `ignore-auto-dns` on both families. Without the second half,
-     NetworkManager appends the DHCP- and RA-learned servers and the Pi
-     resolves through whichever answers first.
+**Idempotency verified, not assumed:** a real run, then a second real run
+reporting `changed=0`. Same after the 2026-09-11 changes: check run, real
+run (`changed=3`), DNS and both nodes confirmed untouched, second run
+`changed=0`.
 
-  The role looks the NetworkManager connection up **by device**, not by
-  name - that name changed when the Pi moved from Wi-Fi to Ethernet the
-  same night - and fails loudly when nothing is active on
-  `pi_lan_interface` rather than silently configuring nothing.
+## History
 
-  **One bug, found by running the command instead of assuming its output.**
-  `nmcli --get-values` escapes colons, returning the IPv6 address as
-  `\:\:1`. The idempotency comparison against `::1` would never have
-  matched, so the task would have re-run and reactivated the connection on
-  every single play - and reactivating drops the only resolver on the LAN
-  for several seconds. `--escape no` fixes it.
-
-  Verified with `--check --diff -c local`: 27 ok, 0 failed, and the
-  resolver task **skips**, which is the assertion that matters - the guard
-  works and re-runs will not bounce the network.
-
-  Two tasks report `changed` in check mode, both understood and neither a
-  defect:
-
-  - `firewall: Allow LAN-scoped services (IPv6)` - the live ufw rule for
-    the current prefix was added by hand without a comment, and ufw treats
-    the comment as part of the rule identity.
-  - `dns_monitoring: Clone or update the homelab repo` - the Pi's checkout
-    was on a feature branch during the test, so the role wanted main back.
-
-  **Also still on the box and matching nothing**: ufw rules scoped to
-  `fd00:f405:95c7:c412::/64`, the dead ULA prefix from the old router. The
-  role no longer emits them (`lan_ipv6_prefix` is the delegated GUA now),
-  but `ufw` does not remove a rule just because Ansible stopped asking for
-  it. A stale allow-rule reads as protection that is not being provided,
-  which is the exact mistake the firewall role's own comments refuse to
-  make elsewhere. Not cleaned up yet.
-
-  The Pi being both control node and only target is a weakness worth
-  stating: a change that breaks its networking also breaks the thing that
-  would fix it, and this role now edits precisely that.
-
-- 2026-09-11: **Gated the network bounce, and taught the firewall role to
-  clean up after itself.**
-
-  Making the Pi the control node the night before turned the resolver task
-  into a trap. It fired its handler unconditionally, so any routine play
-  would reactivate the connection and drop DNS for every device on the LAN
-  for several seconds - on the one host that is simultaneously the only
-  resolver, the K3s control plane, and the machine running the play.
-
-  Writing the NetworkManager profile is harmless and persists, so the
-  config still converges and corrects itself at the next reboot. Only the
-  disruptive half is now opt-in:
-
-  ```bash
-  ansible-playbook playbooks/site.yml -c local -e pi_allow_network_bounce=true
-  ```
-
-  Without it, a staged-but-unapplied change prints a message saying so
-  rather than silently leaving `/etc/resolv.conf` stale. The handler is
-  gone - an explicit task puts the condition where someone reading the
-  role will actually see it, which a `notify:` line does not.
-
-  **`ufw` does not remove a rule just because Ansible stopped asking for
-  it.** Dropping a prefix from `lan_ipv6_prefix` only stops the rule being
-  created. The allow-rules for `fd00:f405:95c7:c412::/64` - the previous
-  router's self-generated ULA - had been sitting there matching nothing
-  ever since the router was replaced. A stale allow-rule is worse than no
-  rule, because it reads as protection that is not being provided, which
-  is the mistake this role's own comments refuse to make for Traefik's
-  ports. `retired_ipv6_prefixes` now deletes them explicitly.
-
-  Deleting is safe *because* nothing holds an address in that prefix. If
-  something did, the rule would be load-bearing and removal would be the
-  wrong fix - so the list is a deliberate record of retired prefixes, not
-  a diff against the live one.
-
-  Verified in the order the earlier entries in this log argue for: check
-  run first (both new tasks skipped, the two firewall changes reported),
-  then a real run (`changed=3`), then confirmation that `resolv.conf`, the
-  interface, DNS on both families and both cluster nodes were untouched,
-  then a **second real run reporting `changed=0`**. The firewall ended at
-  eight rules, all commented, no dead prefixes.
-
-- 2026-09-11: **Second control node on the MacBook**, closing the last of
-  the five operating rules set after the DNS outage. Ansible 14 via
-  Homebrew, run over SSH with no connection flag, since the inventory
-  already describes exactly that and the Mac already holds the key the
-  backup collector uses. Verified with a full check run: `28 ok`,
-  `changed=0`, `failed=0`.
-
-  **Version skew is real and deliberate.** The Pi has ansible-core 2.19.4
-  from Debian's apt, the Mac has 2.21.4 from Homebrew. Both run these
-  roles identically today, but they are not the same interpreter of the
-  same YAML, and a role that works on one is not proof it works on the
-  other. Run a check from whichever node you intend to apply from.
-
-  **The first attempt failed, on something worth recording.** The git
-  module refused with `Local modifications exist in the destination
-  (force=no)` - correct, safe behaviour, and the same failure this log
-  already records from an earlier session. The cause both times was a file
-  copied to the Pi with `scp` instead of going through git: a config
-  change applied by hand leaves the Pi's checkout dirty, and the next play
-  stops dead rather than silently discarding it.
-
-  The right sequence is commit, merge, pull. Copying straight to the box
-  is fine for testing something you are about to throw away, and it is a
-  trap for anything you intend to keep, because the breakage surfaces
-  later and somewhere else.
-
-  `timeout` does not exist on macOS, so scripted runs that wrap
-  `ansible-playbook` in it work on the Pi and fail on the Mac.
+The first control node was the WSL2 Ubuntu distro, retired with the node
+migration ([node-migration.md](node-migration.md)); for a while nothing
+could run the playbook. The Pi became a control node on 2026-09-10, and
+the Mac on 2026-09-11. (Running from a Windows drive mounted in WSL also
+silently ignored `ansible.cfg`: NTFS permissions look world-writable, so
+Ansible refuses the config.)

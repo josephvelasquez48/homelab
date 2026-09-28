@@ -1,368 +1,100 @@
-# Security Testing
+# Security testing
 
-> Update 2026-09-10: all five Ingress hostnames now use HTTPS with a local
-> CA and HTTP redirects. Dashboard cookies are Secure. See [https.md](https.md).
-> The historical no-TLS finding below is superseded for these Ingresses;
-> AdGuard port 3000 and the Ollama LAN endpoint remain outside this change.
+Roadmap step 15. What's exposed, what was found by reading the manifests,
+what's fixed, and how to scan it.
 
-Layered security validation for the homelab. Scoped to the actual assets in
-this repo — the manifests under `kubernetes/`, the images those manifests
-pin, and the five hostnames CoreDNS serves.
-
-Run the scanners from a trusted machine or an isolated VM **on the LAN**, so
-you test the same attack surface a LAN client actually sees. Scanning from
-the Pi or the desktop tests a loopback path that no real client uses.
+Scan from a trusted machine **on the LAN**, so you see what a LAN client
+sees. Scanning from the Pi tests a loopback path no real client uses.
 
 ## Targets
 
-| What | Address | Notes |
+| What | Address |
+|---|---|
+| Pi - K3s control plane, CoreDNS, AdGuard | 192.168.1.253 |
+| M1 VM - K3s worker | 192.168.1.63 |
+| Windows desktop - Ollama `:11434`, sshd (not in the cluster) | 192.168.1.131 |
+| Web: `api.home`, `ai.home`, `grafana.home`, `argocd.home`, `dashboard.home`, `chat.home`, `wikipedia.home`, `prometheus.home`, `alerts.home` | all via Traefik on the Pi, HTTPS |
+| Phone bridge | `phone.home:8443` (its own TLS, [phone.md](phone.md)) |
+
+## Findings and status
+
+Found by reading the manifests first - so a scanner that comes back clean
+on them is misconfigured, not reassuring.
+
+| # | Finding | Status |
 |---|---|---|
-| Pi (control plane, node `joe`) | `192.168.1.253` | K3s server, CoreDNS, AdGuard |
-| M1 MacBook (worker, `m1-node`) | `192.168.1.63` | K3s agent, Ubuntu 24.04 arm64 in a bridged VM |
-| Desktop (GPU host, **not** a cluster member) | `192.168.1.131` | Ollama :11434, sshd. `node-exporter :9100` is gone with the node |
-| LAN | `192.168.1.0/24` | The CIDR `traefik-lan-only` allows |
-| `api.home` / `ai.home` | → `192.168.1.253` | FastAPI behind Traefik |
-| `grafana.home` | → `192.168.1.253` | Grafana 13.2.1 |
-| `argocd.home` | → `192.168.1.253` | Argo CD, `--insecure` |
-| `dashboard.home` | → `192.168.1.253` | Status page **+ gaming-mode trigger** |
+| 1 | **The dashboard's POST endpoints ran remote commands with no auth.** A bodyless `POST` is a simple cross-site request, so any web page could make a LAN browser trigger a node drain; the NetworkPolicy only checks who *reaches* it | **Fixed**: session cookie + JSON-only ([dashboard.md](dashboard.md)). The endpoint now only unloads GPU models |
+| 2 | **Most workloads run as root** - no `securityContext` | **Partly**: hardened - adguard-exporter, alertmanager, chat, kiwix. Not yet - api, worker, dashboard, redis, postgres, grafana, prometheus. The block to copy is in `kubernetes/monitoring/adguard-exporter.yaml` |
+| 3 | A `hostNetwork`, host-PID node-exporter on the desktop could read its whole disk | **Gone** with the desktop node |
+| 4 | **East-west traffic was allowed everywhere** - any pod could reach Redis and Postgres | **Partly**: Redis and Postgres now accept only the `backend` namespace. Redis still has no password; `inference` (Ollama) is open to any pod |
+| 5 | **No TLS** - logins and API keys crossed the LAN in clear text | **Fixed** for every Ingress ([https.md](https.md)). Still plain: AdGuard's admin on `:3000`, Ollama on the desktop |
+| 6 | **Floating image tags** (`redis:7-alpine`, `pgvector/pgvector:pg17`, the `python:3.12-slim` base) | **Open**. Our own images are pinned to a git SHA, not a digest |
 
-Images currently pinned by the manifests:
+## Before you scan
 
-```
-ghcr.io/josephvelasquez48/homelab-api:5d06bdd8d884
-ghcr.io/josephvelasquez48/homelab-dashboard:69f979a559a7
-redis:7-alpine
-pgvector/pgvector:pg17
-grafana/grafana:13.2.1
-prom/node-exporter:v1.9.1
-ghcr.io/josephvelasquez48/homelab-adguard-exporter:cc809aa77468
-```
+- **Don't fuzz `dashboard.home`'s POST routes or `argocd.home`.** The
+  dashboard's `/api/gpu/release` now needs a session and only unloads a
+  model, but Argo CD has cluster-wide write access. Use passive scans.
+- **Check the dashboard's auth against the deployed site**, not just unit
+  tests: `./scripts/verify-dashboard-auth.sh https://dashboard.home`.
 
----
+## How to scan
 
-## Before you scan: read this
-
-**Do not run an active ZAP scan or an unrestricted nuclei run against
-`dashboard.home`.** (Stakes reduced 2026-09-10 - see below.)
-
-`apps/dashboard/app/main.py` exposes one mutating POST endpoint:
-
-```python
-@app.post("/api/gpu/release")  # -> HTTP -> Ollama keep_alive:0 (evict resident models)
-```
-
-This replaced a pair that SSHed to the desktop and ran PowerShell to
-cordon and drain a K3s node. That node no longer exists
-(docs/node-migration.md), and with it went the mounted SSH private key,
-the `known_hosts` ConfigMap, and remote command execution from a pod -
-which is the single largest reduction in this project's attack surface so
-far. What remains evicts a model from VRAM, which Ollama reloads on the
-next request.
-
-FastAPI publishes both in `/openapi.json`. Any scanner that imports the spec,
-or that fuzzes discovered POST routes, **will drain a node in the middle of
-your scan** and then leave you blaming the resulting pod churn on something
-else. Use a passive baseline scan for that host, or exclude the two paths
-explicitly.
-
-**Status: fixed in the code, gated on the deployed check.** Both endpoints now
-require a session (see finding 1). The exclusions below stay in place until
-this passes against the live host:
+**1. Images and dependencies** (Trivy, from anywhere with Docker):
 
 ```bash
-./scripts/verify-dashboard-auth.sh http://dashboard.home
+trivy image --severity HIGH,CRITICAL --ignore-unfixed ghcr.io/josephvelasquez48/homelab-api:<tag>
+trivy fs --scanners vuln,secret --severity HIGH,CRITICAL --skip-dirs apps/api/.venv .
 ```
 
-Unit tests cannot clear this gate. They never exercise Traefik, the Ingress,
-the real Secret, or the cookie attributes a browser enforces — and the
-failure being guarded against is a node drain, so "it passed in CI" is not
-evidence that the deployed endpoint is closed.
+The SOPS files should come back clean; a secret hit means something was
+committed decrypted.
 
-The same caution applies to `argocd.home` — Argo CD has cluster-wide write
-access and its API is reachable over plain HTTP.
-
----
-
-## Ground truth (found by reading the manifests, before any scanner ran)
-
-Use this list to check that your tooling is actually configured correctly. A
-Trivy config run that comes back clean on `kubernetes/` is misconfigured, not
-reassuring.
-
-### 1. `dashboard.home` triggers remote command execution with no auth
-
-**Fixed — verify with `scripts/verify-dashboard-auth.sh` before trusting it.**
-
-The highest-impact finding, and the one no config scanner will catch — it is
-application logic, not a manifest problem.
-
-- As shipped, the endpoints had no `Depends(...)` guard of any kind. Compare
-  `apps/api/`, where every router carries `dependencies=[Depends(rate_limit)]`
-  and `rate_limit` chains `require_api_key`. The dashboard had no equivalent.
-- The pod mounts an SSH private key (`dashboard-ssh-key`, mode `0400`) and
-  shells out to `powershell.exe -ExecutionPolicy Bypass -File ...` on
-  `192.168.1.131` as user `josep`.
-- `traefik-lan-only` limits *who can reach it* to `192.168.1.0/24`. It does
-  not limit *who can cause a request*. A plain `fetch()` from any page on the
-  public internet is a CORS-simple request — no preflight, opaque response,
-  but the POST still executes:
-
-  ```js
-  fetch('http://dashboard.home/api/gaming/on', {method: 'POST', mode: 'no-cors'})
-  ```
-
-  Any browser on the LAN that loads a hostile page drains the node. The
-  NetworkPolicy is satisfied because the request genuinely originates from a
-  LAN host: the victim's own browser.
-
-Before the fix this returned `200` from any LAN host, and drained the node.
-It should now return `401`:
+**2. Kubernetes config:**
 
 ```bash
-curl -si -X POST -H 'Content-Type: application/json' -d '{}' http://dashboard.home/api/gaming/off | head -1
+trivy config --severity MEDIUM,HIGH,CRITICAL kubernetes/
+kubectl run kube-bench --rm -it --restart=Never --image=aquasec/kube-bench:latest \
+  --overrides='{"spec":{"nodeSelector":{"kubernetes.io/hostname":"joe"},"hostPID":true}}' \
+  -- run --targets master,node --benchmark k3s-cis-1.24
 ```
 
-`scripts/verify-dashboard-auth.sh` runs that plus the cases a single curl
-misses — the bodyless simple POST, a forged cookie, and the preflight.
+Trivy should flag the seven unhardened workloads and *not* the four
+hardened ones - a useful check that it's configured right. It can't see
+Argo CD, Traefik or K3s's own components (installed from upstream);
+kube-bench covers those. K3s fails some CIS checks by design - read the
+remediation before changing anything.
 
-The fix, in order of what actually does the work:
-
-1. **Authorization.** A signed, `HttpOnly`, `SameSite=Strict` session cookie
-   guards both endpoints (`apps/dashboard/app/auth.py`). Deliberately not the
-   API's `X-API-Key` pattern: the dashboard is a browser app, so any key the
-   page could send would have to sit in JavaScript that anyone able to load
-   the page can read — a public string, not a credential.
-2. **Content type.** Both endpoints require `application/json`, which makes
-   the request non-simple and forces a preflight this app answers no CORS
-   for. This is defence in depth *behind* the session check, not a boundary
-   of its own: `SameSite=Strict` is what actually withholds the cookie
-   cross-site.
-
-`optional: true` on the `dashboard-auth` secretRef means a missing Secret
-leaves the endpoints unreachable rather than open, and keeps the status page
-itself running. See docs/dashboard.md.
-
-### 2. `securityContext` is set on only two workloads
-
-`adguard-exporter` is the exception and the template: it sets
-`runAsNonRoot`, `runAsUser`/`runAsGroup`, `allowPrivilegeEscalation: false`,
-`readOnlyRootFilesystem: true`, and `capabilities.drop: ["ALL"]`. The
-`inference-endpoint-sync` CronJob
-(`kubernetes/ai/inference-endpoint-sync.yaml`) carries the same block.
-
-Every other workload sets none of them, so `api`, `worker`, `dashboard`,
-`redis`, `postgres`, `grafana`, and `node-exporter-desktop` all run as root
-inside their namespace. Trivy config should emit findings in the
-KSV001/003/012/014/020/021/030 family for those seven, and stay quiet about
-the two that are hardened. That makes it a useful control: if the scan
-flags all nine equally, the scan is misconfigured. The fix for the other seven is
-already written, in `kubernetes/monitoring/adguard-exporter.yaml`.
-
-### 3. `node-exporter-desktop` is the widest blast radius in the cluster
-
-`kubernetes/monitoring/node-exporter-desktop.yaml` sets `hostNetwork: true`,
-`hostPID: true`, and hostPath-mounts `/proc`, `/sys`, and `/` (as
-`/host/root`). The mounts are `readOnly`, and the file documents why all three
-are needed — this is the standard node_exporter trade-off, not an accident.
-It is still true that compromising this container reads the desktop's entire
-filesystem and sees every process on the host. Worth an explicit
-accepted-risk note, so the scanner finding does not look unexamined.
-
-### 4. East-west traffic is default-allow
-
-Two NetworkPolicies exist: `traefik-lan-only` (kube-system) and
-`adguard-exporter-prometheus-only` (monitoring). Both are ingress rules
-scoped to a single pod; nothing guards `backend`, `data`, or `ai` at all,
-and the rest of `monitoring` is unguarded. So:
-
-- `redis.backend.svc:6379` has **no `requirepass`** and is reachable from any
-  pod in the cluster. It holds the rate-limit counters and the job queue —
-  flushing it resets every client's rate limit.
-- `postgres.data.svc:5432` is reachable cluster-wide; only the password
-  stands in the way.
-- `inference.ai.svc:11434` forwards to Ollama on the desktop, unauthenticated.
-
-Verify from any pod:
-
-```bash
-kubectl -n monitoring exec deploy/grafana -- sh -c 'nc -zv redis.backend.svc.cluster.local 6379; nc -zv postgres.data.svc.cluster.local 5432'
-```
-
-### 5. No TLS anywhere
-
-Every Ingress is HTTP-only and Argo CD runs `--insecure` (documented in
-`kubernetes/argocd/ingress.yaml`). Grafana's admin login, the Argo CD session
-token, and the API key in `X-API-Key` all cross the LAN in cleartext, where
-anything on the wire — including the CoreDNS/AdGuard host — can read them.
-
-### 6. Mutable image tags
-
-`redis:7-alpine`, `pgvector/pgvector:pg17`, and `python:3.12-slim` (the base
-in both Dockerfiles) are floating tags. The first-party images are pinned to a
-git SHA, which is reproducible from your side but is still a mutable tag in
-the registry, and CI also pushes `:latest` alongside it. Digest pinning is
-what makes "the manifest says X" and "the cluster runs X" the same statement.
-
----
-
-## Layer 1 — Container supply chain
-
-Trivy, against the images the manifests actually pin. Runs anywhere with
-Docker; needs no LAN access.
-
-```bash
-trivy image --severity HIGH,CRITICAL --ignore-unfixed ghcr.io/josephvelasquez48/homelab-api:5d06bdd8d884
-```
-
-```bash
-trivy image --severity HIGH,CRITICAL --ignore-unfixed ghcr.io/josephvelasquez48/homelab-dashboard:69f979a559a7
-```
-
-```bash
-for img in redis:7-alpine pgvector/pgvector:pg17 grafana/grafana:13.2.1 prom/node-exporter:v1.9.1; do trivy image --severity HIGH,CRITICAL --ignore-unfixed "$img"; done
-```
-
-Dependencies and secrets straight from the tree, which catches anything
-committed that never reached an image:
-
-```bash
-trivy fs --scanners vuln,secret --severity HIGH,CRITICAL --skip-dirs apps/api/.venv /d/homelab
-```
-
-`apps/api/uv.lock` is the lockfile Trivy reads for the Python dependency
-graph. `--skip-dirs apps/api/.venv` matters — the checked-out virtualenv is in
-the working tree and would otherwise be scanned as a second, duplicate
-inventory.
-
-Expect the SOPS-encrypted files under `kubernetes/secrets/` to come back
-clean. If the secret scanner flags one, something got committed decrypted.
-
-## Layer 2 — Kubernetes configuration
-
-Trivy config over the manifests:
-
-```bash
-trivy config --severity MEDIUM,HIGH,CRITICAL /d/homelab/kubernetes
-```
-
-Cross-check against findings 2–4 above. Note that Trivy sees only what is in
-this repo — Argo CD, Traefik, and K3s's own bundled components are installed
-from upstream manifests and are invisible to this scan. That gap is what
-kube-bench and Layer 3 cover.
-
-CIS benchmark on the Pi, using the K3s-specific profile:
-
-```bash
-kubectl run kube-bench --rm -it --restart=Never --image=aquasec/kube-bench:latest --overrides='{"spec":{"nodeSelector":{"kubernetes.io/hostname":"joe"},"hostPID":true}}' -- run --targets master,node --benchmark k3s-cis-1.24
-```
-
-K3s deviates from stock Kubernetes on purpose — single binary, different file
-paths, embedded datastore — so a handful of failures are expected and
-correct. Read the remediation text before changing anything; several CIS
-items would break K3s outright.
-
-## Layer 3 — Network exposure
-
-From the scanner VM, not from either node.
-
-Full service sweep of both hosts:
+**3. Network exposure** (from the LAN, not a node):
 
 ```bash
 sudo nmap -sS -sV -p- --reason 192.168.1.253 192.168.1.131
 ```
 
-Confirm the Traefik NetworkPolicy behaves the way `traefik-security.yaml`
-claims — 80/443 should answer from a LAN address:
-
-```bash
-nmap -Pn -p 80,443,6443,8080,8443 192.168.1.253
-```
-
-The interesting question is what is exposed *besides* Traefik:
-
-- `6443` (K3s API) — should not be broadly reachable
-- `11434` on `.131` — Ollama, unauthenticated, no rate limit
-- `9100` on `.131` — node-exporter via `hostNetwork`
-- `22` on `.131` — the sshd the dashboard's key authenticates to
-- `5432` / `6379` — should **not** appear; they are ClusterIP-only, and a hit
-  here means something is publishing them on the host
-
-Cluster-aware probing, from off-cluster:
-
-```bash
-docker run --rm --network host aquasec/kube-hunter --remote 192.168.1.253
-```
-
-And again as a pod, which tests what an attacker with code execution inside a
-container can reach. Given finding 4, this is the more informative of the two:
+Expect 80/443 on the Pi. Watch for `6443` (K3s API), `11434` (Ollama,
+unauthenticated), `22` on the desktop, and `5432`/`6379`, which should
+**not** appear. Then from inside a pod, which shows what a compromised
+container can reach:
 
 ```bash
 kubectl run kube-hunter --rm -it --restart=Never --image=aquasec/kube-hunter -- --pod
 ```
 
-## Layer 4 — Web and API
-
-ZAP baseline is passive: it spiders and analyzes, it does not attack. Safe for
-all four hosts.
+**4. Web and API** (ZAP baseline is passive - safe):
 
 ```bash
-docker run --rm -t -v "$(pwd):/zap/wrk:rw" ghcr.io/zaproxy/zaproxy:stable zap-baseline.py -t http://api.home -r zap-api.html
-```
-
-```bash
-docker run --rm -t -v "$(pwd):/zap/wrk:rw" ghcr.io/zaproxy/zaproxy:stable zap-baseline.py -t http://grafana.home -r zap-grafana.html
-```
-
-For `dashboard.home`, stay passive and exclude the mutating endpoints anyway —
-a spider that follows the UI's own buttons will reach them:
-
-```bash
-docker run --rm -t -v "$(pwd):/zap/wrk:rw" ghcr.io/zaproxy/zaproxy:stable zap-baseline.py -t http://dashboard.home -r zap-dashboard.html -z "-config globalexcludeurl.url_list.url\(0\).regex=.*/api/gaming/.*"
-```
-
-The API returns `401` without `X-API-Key`, so an unauthenticated run against
-`api.home` only exercises `/health`, `/metrics`, `/docs`, and `/openapi.json`.
-To reach the real surface, give ZAP the header — and point the API at a
-scratch database first, because `/v1/documents` writes:
-
-```bash
-docker run --rm -t -v "$(pwd):/zap/wrk:rw" ghcr.io/zaproxy/zaproxy:stable zap-api-scan.py -t http://api.home/openapi.json -f openapi -r zap-api-full.html -z "-config replacer.full_list\(0\).description=apikey -config replacer.full_list\(0\).enabled=true -config replacer.full_list\(0\).matchtype=REQ_HEADER -config replacer.full_list\(0\).matchstr=X-API-Key -config replacer.full_list\(0\).replacement=YOUR_KEY"
-```
-
-Nuclei across all five hosts:
-
-```bash
-printf 'http://api.home\nhttp://ai.home\nhttp://grafana.home\nhttp://argocd.home\nhttp://dashboard.home\n' > targets.txt
-```
-
-```bash
+docker run --rm -t -v "$(pwd):/zap/wrk:rw" ghcr.io/zaproxy/zaproxy:stable zap-baseline.py -t https://api.home -r zap-api.html
 nuclei -l targets.txt -severity medium,high,critical -exclude-tags dos,fuzz -o nuclei.txt
 ```
 
-`-exclude-tags dos,fuzz` is not optional here. Several fuzzing templates issue
-POSTs against discovered paths, which is the same node-draining problem as
-above.
+`-exclude-tags dos,fuzz` matters: fuzzing templates POST to discovered
+routes. For a full API scan, give ZAP an `X-API-Key` and point the API at
+a scratch database first - `/v1/documents` writes.
 
-Grafana 13.2.1 and whichever Argo CD version is installed are the two most
-likely sources of real CVE hits — both are internet-facing-grade software
-running here with no TLS, and Argo CD with cluster-admin.
+## What to fix next
 
-## Suggested order to fix
-
-1. ~~**Authenticate `/api/gaming/*`.**~~ Done: session auth, plus a JSON
-   content-type requirement behind it. Still needs the `dashboard-auth`
-   Secret applied and `scripts/verify-dashboard-auth.sh` passing against the
-   deployed host before gaming mode works again or the scan exclusions come
-   off.
-2. **NetworkPolicies for `backend` and `data`.** The pattern already exists in
-   `traefik-security.yaml`; apply it so only the API and worker can reach
-   Redis and Postgres. Set a Redis `requirepass` while you are there.
-3. **Add `securityContext` blocks to the other seven workloads.** Mechanical,
-   and it clears most of what Trivy config reports — copy the block
-   already in `kubernetes/monitoring/adguard-exporter.yaml`.
-4. **TLS on the Ingresses.** A local CA or cert-manager with a self-signed
-   issuer; drop Argo CD's `--insecure` once it is in place.
-5. **Digest-pin the third-party images.**
-6. **Wire Layers 1–2 into CI** — `trivy image` after the build step and
-   `trivy config` on `kubernetes/`, both gated on HIGH,CRITICAL. Layers 3–4
-   stay manual; they need LAN position that GitHub-hosted runners do not have.
+1. Redis `requirepass`, and a NetworkPolicy for `inference`.
+2. `securityContext` on the remaining seven workloads.
+3. Pin third-party images by digest.
+4. Trivy image and config scans in CI, failing on HIGH/CRITICAL.
+   (Network and web scans stay manual - they need a LAN position.)
