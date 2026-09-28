@@ -1,88 +1,56 @@
-# Backend (apps/api)
+# Backend (`apps/api`)
 
-Tracks work on the FastAPI service beyond Milestone 1 - auth, validation,
-rate limiting, caching, retries, migrations, structured logging, `/metrics`,
-`/v1/embed` - per the original backend feature list. See
-[milestone-1.md](milestone-1.md) for the initial FastAPI/Postgres/Redis/
-Ollama setup this builds on.
+The FastAPI service behind `api.home`: the gateway to Ollama, plus jobs,
+auth and metrics. Builds on [milestone-1.md](milestone-1.md); the RAG
+endpoints are in [rag.md](rag.md).
 
-## Log
+## Endpoints
 
-- 2026-09-02: **Structured logging + module layout + background jobs.**
-  Split the single `main.py` into `app/routers/{health,chat,jobs}.py` with
-  shared `config.py`/`db.py`, since a flat file wasn't going to survive
-  auth/rate-limiting/metrics being added on top. Logging switched to
-  `structlog` (JSON output) with a request-logging middleware that stamps
-  each request with an ID (`X-Request-ID` response header) and logs
-  method/path/status/duration.
+| Endpoint | Auth | What |
+|---|---|---|
+| `GET /health` | open | Real checks: Postgres `SELECT 1`, Redis `PING` |
+| `GET /ready` | open | Readiness; also sets `homelab_inference_reachable` ([monitoring.md](monitoring.md)) |
+| `GET /metrics` | open | Prometheus metrics (`prometheus-fastapi-instrumentator`) |
+| `POST /v1/chat` | API key | Generation through Ollama; answers cached in Redis for an hour |
+| `POST /v1/embed` | API key | Embeddings with `nomic-embed-text` (768 dimensions), one string or a batch |
+| `POST /v1/documents`, `POST /v1/rag/query` | API key | RAG ([rag.md](rag.md)) |
+| `POST /jobs`, `GET /jobs/{id}` | API key | Background jobs |
+| `/v1/conversations` (list, create, get, `POST .../messages`) | API key | Stored chat conversations for the chat assistant (`chat.home`), with optional Wikipedia sources ([rag.md](rag.md)) |
 
-  Added `POST /jobs` + `GET /jobs/{id}`: jobs are persisted in Postgres
-  (`jobs` table - id, type, status, payload, result, error, timestamps)
-  and queued via a Redis list; a separate `worker` container (same image,
-  different command) blocks on the queue and processes them. First job
-  type is `chat` - runs the same Ollama generation as `/v1/chat`, but off
-  the request path, which is the actual point: LLM generation is slow
-  enough that it shouldn't hold an HTTP connection open.
+`/health` and `/metrics` stay open for probes and Prometheus; the LAN
+boundary protects them.
 
-  Schema is now managed with **Alembic** instead of hand-run SQL - a
-  `migrate` one-shot service runs `alembic upgrade head` and must exit 0
-  before `api`/`worker` start (`depends_on: condition:
-  service_completed_successfully`). Alembic runs synchronously via
-  `psycopg`, separate from the app's async `asyncpg` pool - normal split,
-  migrations don't need to be async.
+## How it's built
 
-  **Debugging note:** the worker crashed on every single queue poll with a
-  `redis.exceptions.TimeoutError`, immediately after logging
-  `worker_started`. Root cause: the Redis client's default socket timeout
-  was shorter than the `BLPOP ... timeout=5` blocking wait - the client
-  gave up on the socket read before Redis's own blocking wait could
-  return, even with nothing wrong on the Redis side. Fixed by setting
-  `socket_timeout=10` on the client (must exceed any blocking command
-  timeout used against it). Verified with a full job lifecycle
-  (`pending` -> `running` -> `done`, result populated) plus the 404 and
-  422 error paths, not just the happy path.
+- **Auth:** an `X-API-Key` header with a constant-time compare.
+- **Rate limiting:** 60 requests a minute per API key, a fixed window in
+  Redis (`INCR` + `EXPIRE`), on the same dependency as auth. Verified: a
+  burst of 65 gave exactly 60 successes and five 429s (and 60/15 later
+  under k6 - [load-testing.md](load-testing.md)).
+- **Background jobs:** stored in Postgres, queued on a Redis list. A
+  separate `worker` (same image, different command) runs them, so slow LLM
+  generation doesn't hold an HTTP connection open.
+- **Retries:** one shared Ollama client (`app/ollama.py`) with `tenacity` -
+  3 attempts, exponential backoff, on connection and timeout errors only.
+  Separate connect (5 s) and read (120 s) timeouts, after failure testing
+  found a dead backend hung requests for minutes ([failure-testing.md](failure-testing.md)).
+- **Migrations:** Alembic (synchronous, via `psycopg`; the app itself uses
+  async `asyncpg`). They run as an Argo CD `PreSync` hook before new pods start.
+- **Logging:** `structlog` JSON, with a request ID on every request
+  (`X-Request-ID`) and its method, path, status and duration.
 
-- 2026-09-03: **API-key auth + rate limiting.** `X-API-Key` header,
-  constant-time compare, applied to `/v1/chat` and `/jobs` -
-  `/health` stays open since container healthchecks and uncredentialed
-  monitoring need to hit it. Rate limiting (60 req/min default, fixed
-  window, Redis `INCR`+`EXPIRE`) is keyed on the API key rather than IP,
-  so it rides the same auth dependency rather than being separate
-  middleware. Verified: no key / wrong key / correct key / unauthenticated
-  health, and a 65-request burst that produced exactly 60 successes then
-  five `429`s.
+## Verified
 
-- 2026-09-03: **Retries + caching.** Consolidated the Ollama-call logic
-  `chat.py` and `worker.py` had each duplicated into `app/ollama.py` -
-  the one place that needed retry logic was duplicated, so it would have
-  needed retrying twice. `tenacity`, 3 attempts, exponential backoff, on
-  connect/timeout errors only (not on e.g. a 4xx from Ollama itself,
-  which retrying wouldn't fix). `/v1/chat` caches responses in Redis for
-  an hour keyed on `(model, message)`. Verified retries actually fire
-  (not just trusted the decorator) against a deliberately unreachable
-  URL - 2 logged attempts, ~3.1s before final failure - and verified a
-  cache hit returns identical output in ~40ms.
+Each feature was checked on its failure paths too, not just the happy
+path: missing and wrong keys; job 404 and 422; retries firing against an
+unreachable URL (2 retries logged, ~3 s); a cache hit returning identical
+output in ~40 ms; a metrics counter reading exactly 1 after one request;
+three different vectors from a batch of three.
 
-- 2026-09-03: **`GET /metrics`** via `prometheus-fastapi-instrumentator`,
-  unauthenticated like `/health` (Prometheus will scrape it directly; the
-  LAN-only firewall is the real protection boundary here, not app auth).
-  Verified counts are real, not just exposed - a single `/health` hit
-  showed up as exactly `1` in the counter.
-- 2026-09-03: **`POST /v1/embed`**. Pulled `nomic-embed-text` on Ollama
-  (only a chat/code model existed before). Batches through Ollama's
-  `/api/embed`, single string or list. This is generation only - storing
-  and querying these in pgvector is the RAG step (roadmap step 8), not
-  this. Verified a 3-item batch returned three distinct 768-dim vectors
-  (not the same one duplicated three times) plus the empty-input and
-  missing-auth error paths.
+## A bug worth remembering
 
-  **This closes out the original backend feature list**: auth, rate
-  limiting, caching, retries, migrations, structured logging, and all
-  five endpoints (`/health`, `/jobs`, `/jobs/{id}`, `/v1/chat`,
-  `/v1/embed`, plus `/metrics`) are in place and verified.
-
-## Next
-
-Whatever's next on the project roadmap - RAG (step 8, now unblocked -
-`/v1/embed` and pgvector both exist), Prometheus + Grafana (step 9, now
-unblocked - `/metrics` exists), or Kubernetes/K3s (step 10).
+The worker crashed on every queue poll with a Redis `TimeoutError`: the
+client's socket timeout was shorter than its own `BLPOP ... timeout=5`, so
+it gave up before Redis's blocking wait could return. A client's socket
+timeout must be longer than any blocking command it sends
+(`socket_timeout=10`).

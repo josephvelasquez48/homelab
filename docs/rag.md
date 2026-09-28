@@ -1,156 +1,84 @@
-# RAG
+# RAG (retrieval-augmented generation)
 
-Roadmap step 8. Implements the pipeline from the project plan:
-
-```
-Question -> FastAPI -> Embedding model -> pgvector -> Relevant documents -> Local LLM -> Answer
-```
-
-## Log
-
-- 2026-09-03: `documents` table (pgvector column, HNSW index on cosine
-  distance) via Alembic migration. `POST /v1/documents` embeds content
-  through `nomic-embed-text` and stores it; `POST /v1/rag/query` embeds
-  the question, retrieves the `top_k` nearest documents by cosine
-  distance, builds a context-grounded prompt, and generates through the
-  same Ollama gateway `/v1/chat` uses.
-
-  No pgvector Python codec (e.g. the `pgvector` package's asyncpg
-  integration) was needed - embeddings are only ever written via a
-  `::vector` cast and compared via the `<=>` operator in SQL, never
-  selected back out as a value, so a plain string literal
-  (`[0.1,0.2,...]`) is sufficient on both sides.
-
-  **Verified semantic retrieval, not just that the endpoints respond**:
-  ingested three documents on unrelated topics (DNS/Pi, GPU/desktop,
-  bananas), asked three different questions, and each one correctly
-  retrieved and answered from its matching document - the banana
-  document never surfaced for the GPU or DNS questions and vice versa.
-  Distances were also sane (correct match: ~0.2-0.3 cosine distance;
-  wrong-topic document in the GPU query's top-2: ~0.46).
-
-## A second retrieval path: Wikipedia, without embeddings
-
-Added 2026-09-12. The chat assistant can search a local copy of Wikipedia,
-and it deliberately does not go through the pipeline above.
-
-Embedding it was never realistic. The full archive is millions of articles;
-generating that many vectors on one 8GB card would take weeks and produce a
-pgvector table larger than the 127GB source. But the archive already ships a
-Xapian full-text index built by Kiwix, so the retrieval problem was solved
-before it started - the work was exposing it, not building it.
+Roadmap step 8. Two ways to ground the local LLM's answers in real
+documents:
 
 ```
-Question -> zimsearch -> Xapian index -> passages -> conversation context -> LLM
+Your documents:  question -> embed (nomic-embed-text) -> pgvector -> top matches -> LLM -> answer
+Wikipedia:       question -> subject words -> Xapian index (zimsearch) -> passages -> LLM -> answer with citations
 ```
 
-`apps/zimsearch` reads the archive through the libzim Python bindings and
-returns JSON. It runs beside kiwix-serve rather than inside the api, because
-the archive is a hostPath on `joe` and mounting it into the api would pin
-the api to that node and cost its second replica.
+## 1. Your documents: pgvector
 
-Two archives are tried in order rather than merged. Simple English answers
-when it has the topic, since its articles cost a fraction of the context on
-a 7B model, and the full archive covers the long tail it misses.
+- `POST /v1/documents` embeds the text and stores it in a `documents`
+  table (pgvector column, HNSW index on cosine distance).
+- `POST /v1/rag/query` embeds the question, fetches the `top_k` nearest
+  documents, and asks the LLM to answer from them.
+- No pgvector Python library needed: vectors go in with a `::vector` cast
+  and are only compared in SQL (`<=>`).
 
-Deciding when to fall through took two attempts, both judged on the real
-archives rather than on test fixtures. Hit count alone never fell through:
-Xapian matches loosely enough that almost any question finds a few articles,
-so for "Treaty of Nerchinsk" Simple English answered with the year pages
-1680s, 1689 and 1685 while the full archive had the treaty itself. Relevance
-scores were not an option, since Xapian scores are not comparable across
-separate indexes. So an archive now has to return titles that name the
-subject: two of the question's subject words, or half of them.
+**Verified on meaning, not just that it responds:** three documents on
+unrelated topics (DNS, GPU, bananas) and three questions - each question
+retrieved its own document (distance ~0.2-0.3; the nearest wrong one ~0.46).
 
-The larger problem was the query. The chat sent the question as typed, and
-the question words steered the index: "who was Ada Lovelace" returned
-Federico Menabrea, Charles Babbage and Nottingham from Simple English, and
-"explain the Kessler syndrome" returned lists of deaths. Xapian now gets the
-subject words only. Both changes together:
+**Simplifications:** no chunking (a document is stored whole), no distance
+cut-off (it always returns `top_k`, however poor), and no list or delete
+endpoints.
 
-| Question | Before | After |
-|---|---|---|
-| who was Ada Lovelace | Federico Menabrea (simple) | Ada Lovelace (simple) |
-| explain the Kessler syndrome | Deaths in May 2017 (simple) | Kessler Syndrome (simple) |
-| how does photosynthesis work | Electron transport chain (simple) | Photosynthesis (simple) |
-| What was the Treaty of Nerchinsk? | Kangxi Emperor (simple) | Treaty of Nerchinsk (full) |
-| what caused the Byzantine iconoclasm | History of the Catholic Church (simple) | Byzantine Iconoclasm (full) |
+## 2. Wikipedia: full-text search, no embeddings
 
-Retrieval is opt-in per message. Most turns in a conversation are not
-lookups, and searching an encyclopedia for "say that again shorter" returns
-articles about rewriting and shortness that then crowd out the actual
-conversation.
+The chat assistant can search a local copy of Wikipedia. Embedding millions
+of articles on one 8 GB GPU would take weeks and outgrow the 127 GB
+archive, but the archive already ships a Xapian full-text index built by
+Kiwix. So `apps/zimsearch` reads it with the libzim bindings and returns
+JSON. It runs beside kiwix-serve, because the archive lives on the Pi's
+disk and mounting it into the API would pin the API to the Pi.
 
-The passages are stored beside the answer in a `sources` JSONB column, and
-the model is asked to mark borrowed claims as `[1]`. The page turns those
-markers into links to the article on `wikipedia.home`, and lists each source
-underneath with the excerpt the model was actually given. That excerpt is
-the part worth having: it is the only way to tell a grounded answer from one
-that merely mentions the same article.
+How it answers:
 
-Citations were first appended to the reply as a text footer, which avoided
-the migration and was wrong twice over. The list replayed into the model's
-context on every following turn, and text cannot hold the passage itself -
-only which article it came from, which was never the part in doubt.
+- **Simple English first, then the full archive.** Simple English articles
+  cost a fraction of a 7B model's context. The fallback triggers when the
+  top titles don't name the subject - hit counts can't decide it (Xapian
+  matches almost anything), and scores can't be compared across two indexes.
+- **Only the subject words go to Xapian.** Question words steered it
+  wrong: "who was Ada Lovelace" found Federico Menabrea.
+- **Opt-in per message**, since most chat turns aren't lookups.
+- **Citations:** the model marks borrowed claims `[1]`, and the page links
+  each to the article and shows the excerpt the model was actually given -
+  the only way to tell a grounded answer from one that just mentions the
+  article. Stored in a nullable `sources` column: "didn't search" and
+  "searched, found nothing" are different facts.
 
-The column is nullable rather than defaulting to an empty array. "This turn
-did not search" and "this turn searched and found nothing" are different
-facts, and the column is the only place that distinction survives.
+### Measured
 
-### Measuring it
-
-`apps/zimsearch/eval` holds 40 labelled questions and a runner that scores
-one or more running instances against the real archives. It cannot run in
-CI, because the archive only exists on the Pi. Run it there before merging
-anything that changes query handling or the cascade:
+`apps/zimsearch/eval` has 40 labelled questions, run against the real
+archives on the Pi (the archives aren't in CI):
 
 ```
 python3 run.py http://127.0.0.1:8096=deployed http://127.0.0.1:8097=branch
 ```
 
-Results on 2026-09-13, before and after subject-word search, the title
-check, and plural matching:
-
-| Questions | Right article first, before | After | In top three, after |
+| Questions | Right article first - before | After | In top 3 - after |
 |---|---|---|---|
 | Common topics | 5 of 15 | 11 of 15 | 13 of 15 |
 | Obscure topics | 8 of 15 | 15 of 15 | 15 of 15 |
 | Unusual phrasing | 3 of 10 | 6 of 10 | 8 of 10 |
+| **All 40** | **16** | **32** | **36** |
 
-Two questions got worse. "what is the capital of Australia" found Canberra
-from the raw wording and now finds the Australian Capital Territory, and
-"inflation in economics" now ranks Stagflation above Inflation. Still
-wrong either way: a misspelling ("eifel tower", no spelling correction), a
-question whose answer is not its subject ("current president of France"),
-and non-English questions, which the English archives cannot answer.
+Two got worse ("capital of Australia" now finds the Australian Capital
+Territory; "inflation in economics" ranks Stagflation first). Still wrong
+either way: misspellings, questions whose answer isn't their subject
+("current president of France"), and non-English questions.
 
-Under load with the pod's one-CPU limit the service handles about 50
-searches a second with no failures and memory flat around 130 MiB, far under
-its 1 GiB limit. Making the endpoint synchronous so FastAPI threads it was
-measured too: no throughput gain, since the limit is the CPU rather than the
-event loop, and twice the memory. It stays async.
+**Load:** about 50 searches/s on its one-CPU limit, no failures, memory
+flat at ~130 MiB. A synchronous version was measured too - no faster (the
+CPU is the limit) and twice the memory - so it stays async.
 
-### What this does not do
+### Not done yet
 
-- **No reranking.** Xapian ranks on term statistics and has no idea what the
-  question means, so its ordering is a good shortlist and a poor final
-  answer. The `candidates` parameter over-fetches for a reranking step that
-  does not exist yet; the response reports `reranked: false` rather than
-  implying otherwise.
-- **No query rewriting.** The user's message is sent to Xapian as written,
-  so a follow-up like "and what about his brother" carries almost no usable
-  terms. Retrieval is weakest exactly where a conversation is most
-  conversational. Fixing it means a model round trip before the first token.
-
-## Known simplifications (fine for now, worth knowing about)
-
-- **No chunking.** `POST /v1/documents` embeds and stores whatever
-  content it's given as one unit. Fine for short facts (what this was
-  tested with); a long document would need splitting into overlapping
-  chunks before ingestion, which doesn't exist yet.
-- **No distance threshold.** `/v1/rag/query` always returns `top_k`
-  documents regardless of how irrelevant they are to the question - if
-  the corpus has nothing related, it'll still hand the LLM the closest
-  (but bad) matches rather than saying "no relevant documents." A
-  threshold on `distance` would fix this if it becomes a real problem.
-- **No delete/list endpoint** for documents yet - only insert and query.
+- **No reranking.** Xapian's order is a good shortlist and a poor final
+  answer. The API over-fetches `candidates` for a future reranker and says
+  `reranked: false`.
+- **No query rewriting.** A follow-up like "and what about his brother"
+  has almost no searchable words; fixing that needs a model call before the
+  first token.
