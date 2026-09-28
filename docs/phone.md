@@ -130,8 +130,8 @@ Certificate (desktop, needs the CA key), then copy the pair to
 uv run --no-project --with cryptography python certificates/issue-phone.py
 ```
 
-Desktop - run in your own PowerShell, not from inside the Claude app (its
-file writes to AppData are redirected):
+Desktop - run in your own PowerShell window (installers run from inside
+sandboxed apps can have their AppData writes redirected):
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File apps\phone\agent\install-agent.ps1 -Token <PHONE_AGENT_TOKEN>
