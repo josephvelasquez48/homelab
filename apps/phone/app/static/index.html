@@ -25,36 +25,42 @@
     </header>
 
     <section class="card settings" id="settings-card">
-      <h2>Audio</h2>
-      <div class="setting" id="mic-row" hidden>
-        <label for="mic">Microphone</label>
-        <select id="mic"></select>
-        <div class="meter"><div id="mic-meter"></div></div>
-      </div>
-      <div class="setting" id="filter-row">
-        <div class="filter-head">
-          <span class="dot" id="filter-dot"></span>
-          <span class="filter-title">Noise filter</span>
-          <span class="filter-status" id="filter-status"></span>
+      <button class="section-toggle" id="audio-toggle" type="button" aria-expanded="false" aria-controls="audio-body">
+        <span class="section-title">Audio</span>
+        <span class="section-summary" id="audio-summary"></span>
+        <svg class="chevron" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M6 9l6 6 6-6"/></svg>
+      </button>
+      <div class="section-body" id="audio-body" hidden>
+        <div class="setting" id="mic-row" hidden>
+          <label for="mic">Microphone</label>
+          <select id="mic"></select>
+          <div class="meter"><div id="mic-meter"></div></div>
         </div>
-        <div class="segmented" id="filter-level" role="radiogroup" aria-label="Noise filter strength">
-          <button type="button" data-level="off" role="radio">Off</button>
-          <button type="button" data-level="normal" role="radio">Normal</button>
-          <button type="button" data-level="strong" role="radio">Strong</button>
+        <div class="setting" id="filter-row">
+          <div class="filter-head">
+            <span class="dot" id="filter-dot"></span>
+            <span class="filter-title">Noise filter</span>
+            <span class="filter-status" id="filter-status"></span>
+          </div>
+          <div class="segmented" id="filter-level" role="radiogroup" aria-label="Noise filter strength">
+            <button type="button" data-level="off" role="radio">Off</button>
+            <button type="button" data-level="normal" role="radio">Normal</button>
+            <button type="button" data-level="strong" role="radio">Strong</button>
+          </div>
         </div>
+        <div class="setting" id="vol-row" hidden>
+          <label for="volume">Call volume</label>
+          <input type="range" id="volume" min="0" max="10" step="0.1" value="4">
+        </div>
+        <label class="switch-row" id="media-row">
+          <span><span class="title">Music and videos on this PC</span><span class="hint">Off plays them on the iPhone</span></span>
+          <input type="checkbox" class="switch" id="media-on-pc">
+        </label>
+        <label class="switch-row" id="keep-phone-row">
+          <span><span class="title">Keep iPhone-answered calls on the iPhone</span><span class="hint">Calls you pick up on the phone stay there</span></span>
+          <input type="checkbox" class="switch" id="keep-phone">
+        </label>
       </div>
-      <div class="setting" id="vol-row" hidden>
-        <label for="volume">Call volume</label>
-        <input type="range" id="volume" min="0" max="10" step="0.1" value="4">
-      </div>
-      <label class="switch-row" id="media-row">
-        <span><span class="title">Music and videos on this PC</span><span class="hint">Off plays them on the iPhone</span></span>
-        <input type="checkbox" class="switch" id="media-on-pc">
-      </label>
-      <label class="switch-row" id="keep-phone-row">
-        <span><span class="title">Keep iPhone-answered calls on the iPhone</span><span class="hint">Calls you pick up on the phone stay there</span></span>
-        <input type="checkbox" class="switch" id="keep-phone">
-      </label>
     </section>
 
     <section class="card status-card">

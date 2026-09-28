@@ -122,7 +122,8 @@ input:focus { outline: none; border-color: var(--accent); }
 .recent-more { width: 100%; margin-top: 8px; }
 
 /* Settings */
-.settings { padding-bottom: 6px; }
+.settings { padding-bottom: 14px; }
+.settings:has(.section-body:not([hidden])) { padding-bottom: 6px; }
 /* Rows divide below, so hidden rows never leave a stray line. */
 .setting { padding: 10px 0; border-bottom: 1px solid var(--line); }
 .setting label { display: block; font-size: 14px; margin-bottom: 8px; }
@@ -139,7 +140,21 @@ input[type="range"] { width: 100%; accent-color: var(--accent); }
 .switch-row .hint { display: block; font-size: 12.5px; color: var(--muted); margin-top: 1px; }
 
 /* iOS-style toggle */
-.settings > :last-child { border-bottom: 0; }
+.settings .section-body > :last-child { border-bottom: 0; }
+
+/* Collapsible section header (Audio) */
+button.section-toggle {
+  width: 100%; background: transparent; padding: 0; border-radius: 0;
+  display: flex; align-items: center; gap: 10px; justify-content: flex-start; font-weight: 400;
+}
+button.section-toggle:hover { filter: none; }
+button.section-toggle:active { transform: none; }
+.section-title { font-size: 12px; font-weight: 650; color: var(--muted); text-transform: uppercase; letter-spacing: .08em; }
+.section-summary { margin-left: auto; font-size: 13px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.chevron { width: 18px; height: 18px; color: var(--muted); transition: transform .2s ease; }
+button.section-toggle[aria-expanded="true"] .chevron { transform: rotate(180deg); }
+button.section-toggle[aria-expanded="true"] .section-summary { visibility: hidden; }
+.section-body { margin-top: 8px; }
 
 /* Noise filter */
 .filter-head { display: flex; align-items: center; gap: 8px; font-size: 14px; }
@@ -172,7 +187,9 @@ input.switch:focus-visible { outline: 2px solid var(--accent); outline-offset: 2
 body.popup main { padding: 10px; }
 body.popup .top, body.popup .status-card, body.popup #recent-card, body.popup #contacts-card,
 body.popup #media-row, body.popup #keep-phone-row, body.popup #mic-row, body.popup #audio-setup,
-body.popup .settings h2, body.popup #filter-row { display: none !important; }
+body.popup .settings h2, body.popup #filter-row, body.popup #audio-toggle { display: none !important; }
+/* The call pop-up always shows its volume slider, whatever the section's state. */
+body.popup #audio-body { display: block !important; margin-top: 0; }
 body.popup .card { margin-bottom: 8px; }
 /* Audio sits at the top of the full page; in the call pop-up the call comes first. */
 body.popup #settings-card { order: 1; }
@@ -180,3 +197,17 @@ body.popup .call-card { padding: 16px 12px 12px; }
 body.popup .avatar { width: 56px; height: 56px; font-size: 22px; }
 body.popup .settings { padding: 4px 16px; }
 body.popup .setting { border-bottom: 0; padding: 8px 0; }
+
+/* A call ringing in the pop-up fills the whole window: nothing else shows,
+   and the call is centred and bigger. */
+body.popup.incoming main { min-height: 100vh; padding: 10px; }
+body.popup.incoming main > :not(#call-card) { display: none !important; }
+body.popup.incoming .call-card {
+  flex: 1; margin: 0; display: flex; flex-direction: column; justify-content: center;
+  padding: 24px 16px;
+}
+body.popup.incoming .avatar { width: 96px; height: 96px; font-size: 38px; margin-bottom: 14px; }
+body.popup.incoming .caller { font-size: 28px; }
+body.popup.incoming .round-row { gap: 44px; margin-top: 34px; }
+body.popup.incoming button.round { width: 72px; height: 72px; }
+body.popup.incoming button.round svg { width: 30px; height: 30px; }
