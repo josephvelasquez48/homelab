@@ -1,451 +1,163 @@
 # Phone bridge
 
-Not part of the original roadmap. Take iPhone calls on the Windows
-desktop: the Pi pairs with the phone as a Bluetooth hands-free unit (the
-role a car stereo plays), and a browser page on the desktop is that
-unit's microphone and speaker. No VoIP provider or phone number is
-involved - the call stays on the carrier, the phone just hands its audio
-to the Pi.
+Take iPhone calls on the Windows desktop, with its mic and speakers. The Pi
+pairs with the phone as a Bluetooth hands-free unit (what a car stereo
+does), and a window on the desktop is that unit's mic and speaker. The
+call stays on the carrier - no VoIP service or extra number. Not part of
+the original roadmap.
+
+What it does:
+
+- Incoming calls ring on the PC in a small pop-up: answer, decline, mute,
+  keypad, hang up. Outgoing calls from a dial pad or recent calls.
+- Caller names from the iPhone's contacts, and a call history.
+- Music and videos from the phone can play on the PC too (a switch).
+- Neural noise filtering on the mic, with a status readout.
+- Tray icon, hotkeys, a taskbar pin, starts at login, restarts itself
+  after a crash or freeze.
+- Only while the PC is on: otherwise the phone is left alone.
+
+## How it works
 
 ```
-iPhone ──Bluetooth HFP──► Pi: PipeWire/WirePlumber (hands-free role)
-                               │  org.pipewire.Telephony (session D-Bus): answer/dial/hang up
-                               │  bluez_input/bluez_output streams: call audio
-                               ▼
-                           phone-bridge (FastAPI, systemd user unit, :8443)
-                               │  WebSocket: call state as JSON, audio as 16 kHz s16 frames
-                               ▼
-                           desktop agent's window (the page, embedded in WebView2):
-                           the full app from the tray / desktop shortcut, or the
-                           always-on-top popup when a call comes in
-                               ▲
-                           desktop agent (pythonw) - polls the Pi about calls, tray, hotkeys
+iPhone ──Bluetooth──► Pi: PipeWire / WirePlumber, hands-free role (+ A2DP speaker for media)
+                          │  org.pipewire.Telephony (D-Bus): answer, dial, hang up
+                          ▼
+                      phone-bridge: FastAPI, systemd user unit, https://phone.home:8443
+                          │  WebSocket: call state + call audio (16 kHz)
+                          │  /api/agent/media: music and videos (48 kHz stereo)
+                          ▼
+                      desktop agent (Python): the Phone window (WebView2), tray,
+                      hotkeys, and a separate media-player process
 ```
 
-## Why a host service, not K3s
+| Where | What | Code |
+|---|---|---|
+| Pi | Call control, call-audio bridge, media stream, contacts, history, reconnects, metrics | `apps/phone/app/` |
+| Pi | WirePlumber settings | `apps/phone/wireplumber/51-phone-bridge.conf`, plus `52-phone-media.conf` written by the service |
+| Desktop | The Phone window, tray, hotkeys, taskbar pin, watchdog | `apps/phone/agent/phone_agent.pyw` and friends |
+| Desktop | Media player (its own process) | `apps/phone/agent/media_player.py` |
 
-Everything else of this shape runs in the cluster. This can't, for the
-same reason CoreDNS doesn't: it needs the Pi's Bluetooth radio and the
-logged-in user's PipeWire session and session bus. A pod could only get
-those by being handed the host, at which point it is a host service with
-extra steps. So it's a systemd *user* unit, with linger enabled so the
-user session exists without anyone logged in.
+## Using it
 
-That also puts it outside Traefik, so it terminates its own TLS
-(`phone.home` only, issued from the homelab CA by
-`certificates/issue-phone.py`, separate from the five-name cluster
-certificate so re-issuing one never touches the other) and has its own
-ufw rule, which - unlike Traefik's ports - ufw does enforce, because no
-kube-router chain sits in front of a host process
-([kubernetes.md](kubernetes.md)).
+**The Phone window** opens from the taskbar pin, the desktop shortcut or
+the tray. From the top:
 
-HTTPS isn't optional here: browsers only allow `getUserMedia` (the mic) in
-a secure context.
+- **Audio** - call volume, and while the mic is on, which mic. Two switches:
+  - *Music and videos on this PC* - off plays them on the iPhone. Calls
+    come to the PC either way. The iPhone's volume buttons set the level.
+  - *Keep iPhone-answered calls on the iPhone* - calls you pick up on the
+    phone stay there.
+  - *Noise filter* - Off / Normal / Strong, with a status dot and "removing
+    N dB" during a call. Strong also mutes the gaps between words.
+- **Status** - whether the iPhone is connected and where call audio is.
+- **Dial pad** - hidden until its switch is on.
+- **Recent** - the latest 3 calls, *Show all* for up to 30, each with *Call*.
 
-## No oFono
+**During a call:** Mute, Keypad, End. *Move call audio to this PC* and
+*Send call audio to iPhone* move the audio either way.
 
-The usual Linux recipe for a hands-free unit is BlueZ + oFono.
-WirePlumber 0.5.8 on this Pi already publishes `org.pipewire.Telephony`
-on the session bus with an oFono-compatible `VoiceCallManager`
-(`Dial`, `GetCalls`, `HangupAll`, `SendTones`) and per-call
-`org.ofono.VoiceCall` (`Answer`, `Hangup`). Found by introspecting the
-live bus once the phone was paired, not from documentation. oFono was
-never installed.
+**Tray and hotkeys:** the tray icon is green (connected), amber (on a
+call) or grey. Ctrl+Alt+A answers, Ctrl+Alt+H declines or hangs up,
+Ctrl+Alt+M mutes. The X hides the window; *Quit* in the tray stops the app.
+
+## Design choices
+
+- **A host service, not K3s.** It needs the Pi's Bluetooth radio and the
+  user's PipeWire session, so it's a systemd *user* unit with linger. It
+  terminates its own TLS (`phone.home`, from the homelab CA via
+  `certificates/issue-phone.py`) - browsers only allow the mic over HTTPS -
+  and has its own ufw rule on 8443.
+- **No oFono.** WirePlumber 0.5.8 already publishes an oFono-compatible
+  call API (`org.pipewire.Telephony`) - found by introspecting the bus.
+- **A web view for audio.** The page holds the mic and speakers, so it gets
+  the web engine's echo cancellation for free.
+- **Call audio stays on the iPhone unless the PC can play it.** The bridge
+  sets `RejectSCO` while no window has PC audio on, or while *Keep
+  iPhone-answered calls* is on and the PC didn't answer, dial or claim the
+  call. The claim is taken *before* the command goes to the phone, or the
+  audio link it opens in reply would be refused.
+- **Only while the PC is on.** The agent checks in every second. After 2
+  minutes without it, the Pi blocks the phone in BlueZ - disconnected, but
+  still paired - and unblocks it within 5 s of the PC coming back.
+- **The media switch moves one link.** The Pi is always registered as a
+  speaker; the switch connects or drops just the phone's A2DP profile. That
+  takes a second or two and never touches the calls link.
+- **Mic only during calls.** The window opens the mic while a call rings
+  (that also wakes the Samson, which sleeps) and closes it 5 s after the
+  call ends.
+- **Timeouts everywhere.** Every telephony D-Bus call has a limit (5 s,
+  20 s for answer and dial), and reconnect attempts time out after 30 s.
 
 ## Bugs found on real calls
 
-Each of these made a working call look broken, and each is now pinned in
-`apps/phone/wireplumber/51-phone-bridge.conf` or the bridge code.
+Each made a working call look broken. Found by measuring, not guessing.
 
-1. **A wrong diagnosis: wideband voice blamed for a silent call.** The
-   first call negotiated mSBC (16 kHz) and measured as near-silence
-   (peaks 4-28 of 32767). The journal had `spa.bluez5.source.sco: decode
-   failed: -3` and the kernel `Unexpected continuation frame`, and that
-   was read as "the Pi 5's UART Bluetooth mangles every mSBC frame". mSBC
-   was forced off in favour of CVSD (8 kHz). But the decode error
-   appeared twice in the whole call, not per frame; the silence was the
-   stream volume (bug 3), found later. Calls on CVSD sounded muffled both
-   ways next to an HD cell call. Re-tested with mSBC on after the volume
-   fix: 400 of 400 SCO packets in a 3 s capture were intact mSBC frames
-   (H2 header in sequence + 0xAD sync, exactly 60 bytes apart), zero
-   decode failures in 25 minutes, and it sounded clearer. mSBC is back
-   on, explicitly, in `51-phone-bridge.conf`.
-
-   The lesson is the same one as bug 3: count before concluding. "Decode
-   failed" in the log was true, and irrelevant.
-
-2. **The caller heard themselves.** WirePlumber's default policy linked
-   the call's incoming stream into the Pi's only sink (Dummy Output) and
-   that sink's monitor back into the outgoing stream. The person on the
-   other end reported a feedback loop. Fixed by `node.autoconnect = false`
-   on the hands-free streams; the bridge links them itself with
-   `pw-link`, port by port.
-
-3. **A live call measured as silence.** With the codec fixed, the
-   incoming stream still peaked at 5-16 out of 32767 while the other
-   person was talking. Raw SCO packets captured with `btmon` on the same
-   call peaked at 427 - the audio was arriving and being turned down. The
-   stream's volume was 0.019 (about -34 dB), pushed by the phone's call
-   volume over HFP and restored by WirePlumber. Fixed with
-   `bluez5.enable-hw-volume = false`, and the bridge sets both streams to
-   1.0 when a call starts. Volume is the page's slider now.
-   The first version of that fix didn't work, and a later call showed
-   why: the node has two volumes. `wpctl set-volume` sets
-   `channelVolumes` (it read back 1.00), but the 0.019 was the node's
-   master `volume` prop, untouched. The bridge now sets both
-   (`pw-cli set-param <id> Props '{ volume: 1.0 }'`); PipeWire's output
-   then matched raw `btmon` packet levels on the same call (~1000 peak
-   both).
-
-4. **A missing target records silence without error.** `pw-record
-   --target X` with X absent falls back to the default sink's monitor and
-   happily records nothing. The bridge starts both `pw-cat`s with
-   `--target 0` and fails loudly (shown on the page) if the phone's
-   streams or ports aren't there.
-
-5. **A call's audio sat on the Pi and went nowhere.** The bridge only
-   started once the transport read `active`, but with autoconnect off
-   (bug 2) nothing consumes the phone's streams until the bridge does,
-   so the transport stayed `pending` forever - while `btmon` showed ~260
-   SCO packets/s arriving. Neither side of the call heard anything, and
-   pressing "Move call audio to this PC" again returned
-   `org.pipewire.Telephony.Error.InvalidState`. `pending` now counts as
-   the audio being on the Pi.
-
-6. **A call the Pi never heard about.** The hands-free link dropped at
-   15:08 and came back while a call was up. The phone reopened the audio
-   link to the Pi (transport `pending`, both streams present), but
-   `GetCalls` stayed empty, so the window had nothing to show or answer
-   and the caller's audio went to a Pi with no page taking it. PipeWire
-   doesn't pick up a call already in progress when the link comes back.
-   `Device1.DisconnectProfile` then `ConnectProfile` for just the
-   hands-free UUID (`0000111f-…`) made the phone announce it: `call1`,
-   `active`, within 2 s, and the call carried on. The hub now does that
-   itself after 8 s of audio on the Pi with no call - once per stretch,
-   because an app call (FaceTime, WhatsApp) can also put audio here
-   without an HFP call and mustn't reset in a loop.
-
-7. **"Move call audio to this PC" hidden for audio stuck on the Pi.** The button was
-   offered only while the audio was on the iPhone. With the audio on the
-   Pi and no page bridging it (bug 6), there was no way to take it. It's
-   offered now whenever the call isn't bridged to a page, and
-   `audio-to-pc` skips `Activate` when the audio is already on the Pi.
-   The same call turned up a second case: a window closed mid-call left
-   the bridge running into nobody, still reporting "bridged", so the
-   reopened window hid the button again. The bridge now stops when its
-   last audio page leaves.
-
-Checked and ruled out on the way: the Broadcom controller's SCO routing
-(`hcitool cmd 0x3f 0x1d` reads back routing `01`, over HCI, not the PCM
-pins), and whether SCO data reached the host at all (~260 packets/s each
-way, as expected for a call).
-
-## Keeping calls on the phone when nobody's listening
-
-iOS sends call audio to a connected hands-free unit by default, like a
-car. With no page open, that would move a call answered on the handset
-to a Pi with no speakers. The bridge sets the transport's `RejectSCO`
-property whenever no page has turned PC audio on, so the audio stays on
-the iPhone until a browser can actually play it. A page that's merely
-open doesn't count; it has to have clicked "Enable PC mic & speakers"
-(or answered).
-
-### "Calls I answer on the iPhone stay on the iPhone"
-
-A switch on the page, stored on the Pi (`~/.config/phone-bridge/settings.json`)
-so it holds for every browser and across restarts. With it on,
-`RejectSCO` stays set even while a page has audio on, except for a call
-the PC claimed: answered, dialed, or moved with "Move call audio to this
-PC". The claim is taken, and `RejectSCO` lifted, *before* the command
-goes to the phone - otherwise the audio link the phone opens in response
-would be refused. It ends when the calls it covered are over, and a dial
-that fails outright drops it, so the next call answered on the handset
-stays there.
-
-## The ring agent
-
-`apps/phone/agent/phone_agent.pyw`, on the desktop, in its own venv with
-pywebview. Polls `/api/agent/ringing` once a second with a bearer token
-(`PHONE_AGENT_TOKEN`). On a new ringing call, if no page has PC audio on,
-it plays the ringtone and shows a small always-on-top window, bottom
-right: the page's compact `/popup?agent=1` view embedded in WebView2
-(Windows' built-in web engine - no browser window opens). The whole call
-happens there: Answer/Decline, then Mute, Keypad and Hang up. The page
-holds the mic and speakers, so it gets the web engine's echo
-cancellation, which is why this embeds a web view rather than doing
-audio natively.
-
-- **No login step.** If the embedded page comes up on the login form,
-  the agent signs it in: a same-origin `fetch` to `/api/agent/session`
-  with the token, run inside the page via `evaluate_js`, then a reload.
-  The token never goes in a URL, and the cookie lands in the agent's
-  own WebView2 profile (`%LOCALAPPDATA%\phone-bridge\webview`). That
-  makes the token equivalent to the password; it lives only in the
-  desktop user's `%APPDATA%`.
-- **Mic only for calls.** The window opens the mic while a call rings
-  (that's what wakes the Samson) or when it's used for one, and closes
-  it 5 s after the last call ends, telling the Pi (`audio-off`) so a
-  call answered on the iPhone isn't sent to a window with no audio. It
-  used to stay open, keeping the mic awake, until the window reloaded.
-- **Mic permission.** pywebview 6.2.1 doesn't handle WebView2's
-  `PermissionRequested`, so the agent does: microphone for
-  `phone.home`, deny everything else.
-- **Every call, not just incoming.** The window shows for a ringing
-  call, one answered on the iPhone, and one dialed from it, so "Move call
-  audio to this PC" is always one click away. It hides when the call
-  ends, and is blanked while hidden so it doesn't count as an open audio
-  page. Closing it hides it for that call - unless this window is the
-  call's mic and speakers, since hiding it then would leave the call
-  silent with no way to hang up. Moving audio *back* to the phone is the
-  iPhone's audio-route button or *Send call audio to iPhone* (see
-  Extras).
-- **Starts at login, restarts after a crash.** The Startup-folder entry
-  runs a small supervisor that runs the real agent (`--child`) and
-  restarts it when it dies, after a short, growing pause. WebView2 and
-  pythonnet are native code and can take the process down in ways Python
-  can't catch; the agent is what makes calls reach the PC. A clean exit
-  (tray *Quit*) ends it; so do 5 crashes in 10 minutes, rather than
-  looping. Both write to `%APPDATA%\phone-bridge\agent.log`, including
-  native crashes (`faulthandler`) and uncaught thread errors - `pythonw`
-  has no console, so these used to vanish.
-- **Pins to the taskbar as Phone** (`agent/taskbar.py`). Windows pins
-  by AppUserModelID; without one the window belonged to `pythonw.exe`,
-  and pinning it pinned Python. The agent sets its own ID
-  (`Homelab.PhoneBridge`) on the process, and on its window together
-  with a relaunch command (`pythonw phone_agent.pyw --show`), name and
-  icon, so the pinned button starts the agent and opens the app.
-- **One copy at a time.** A named mutex (`Local\phone-bridge-agent`)
-  says whether an agent is running; the desktop shortcut's copy then
-  asks it to open its window, over 127.0.0.1 on a port the running agent
-  publishes in `%APPDATA%\phone-bridge\show-port`, and exits. This
-  used to be one fixed port (51871) for both jobs. It is in Windows'
-  ephemeral range, and one afternoon NVIDIA's `nvcontainer` was handed
-  it for an outgoing connection: every start took the busy port for a
-  running agent and exited cleanly - which the supervisor treats as
-  *Quit* - so the shortcut did nothing, with nothing in the log.
-- **Restarts itself if the window freezes.** A watchdog thread asks the
-  UI thread to run a no-op every 5 s (`BeginInvoke`, which needs the
-  message loop and the GIL) and, each time it does, re-arms
-  `faulthandler.dump_traceback_later(45, exit=True)` - a timer in C that
-  fires even if Python is deadlocked. After 45 s with no answer it
-  dumps every thread's stack to `agent.log` and exits, and the
-  supervisor starts a fresh agent. Before it, a frozen window sat "Not
-  responding" for an hour with nothing in the log.
-- **Quit ends the process.** Once, after *Quit*, the window closed but
-  the process never exited - left waiting on its threads or pythonnet's
-  shutdown - and a copy that's still alive holds the mutex: every later
-  start, from the shortcut or the pin, handed over to it and exited, so
-  the app wouldn't open. The agent now calls `os._exit` as soon as the
-  window loop returns, and 5 s after *Quit* if it never does.
-
-## Extras
-
-Added together after the calls themselves were solid. Each is optional
-in the hub (a test Hub has none of them) and none can hold up call
-state: the slow ones run in their own loop.
-
-- **Caller names** (`app/contacts.py`): the iPhone's phonebook over
-  Bluetooth PBAP, via BlueZ's OBEX daemon (`bluez-obexd`). Pulled on
-  connect and every 6 h into `~/.config/phone-bridge/contacts.json`,
-  names and numbers only, matched on the last ten digits. iOS returns
-  an empty phonebook until **Sync Contacts** is on for "joe" in its
-  Bluetooth settings - found by pulling it: the session opened fine and
-  reported size 0.
-- **Call history** (`app/history.py`): SQLite at
-  `~/.local/share/phone-bridge/calls.db`, not the cluster's Postgres -
-  this runs on the host, and Postgres admits only the backend
-  namespace. Missed = incoming and never active. The page lists recent
-  calls with call-back buttons.
-- **Send call audio to iPhone**: PipeWire's API can pull audio onto the
-  Pi but not release it, so `release-sco.sh` sends an HCI Disconnect for
-  the (e)SCO link. It needs root: installed root-owned as
-  `/usr/local/sbin/phone-bridge-release-sco`, with a sudoers rule for
-  exactly that path. `RejectSCO` stays on until the call ends or the PC
-  asks for the audio back.
-- **Auto-reconnect** (`app/reconnect.py`): while no phone is connected,
-  `Device1.ConnectProfile` for the hands-free gateway on each paired,
-  trusted device offering it, every 30 s. It used to be
-  `Device1.Connect`, and the phone never came back on its own: BlueZ ran
-  that over Bluetooth LE for the dual-mode iPhone, scanning 30 s for a
-  public address the iPhone never advertises. `btmon` showed no classic
-  page in 168 attempts with the phone in the room; `ConnectProfile`,
-  classic-only, connected in 2 s. A connect that hangs is
-  given up after 30 s and followed by `Disconnect`, or BlueZ answers
-  every later attempt with `InProgress` without paging the phone. The
-  same module resets the hands-free profile for bug 6.
-- **Only while the PC is on**: with the desktop off, the Pi is a
-  hands-free unit with no speaker or mic, and the iPhone still connected
-  to it - it could send a call's audio there. The agent polls every
-  second while it runs, so when nothing on the PC has checked in for
-  2 minutes (`PC_GONE_SECONDS`; an open page counts too) the reconnector
-  sets the phone's BlueZ `Blocked` property. That disconnects it and
-  refuses its own connection attempts, but keeps the pairing - checked
-  live: still paired, bonded and trusted, and no reconnect in 20 s. When
-  the agent polls again the phone is unblocked and connected on the next
-  5 s check: 12 s after a service restart, in the test. Two minutes is
-  room for the agent's crash restart or a quick reboot without dropping
-  the phone. `phone_pc_present` in the metrics shows which state it's in.
-- **Mic noise filter**: RNNoise, a small neural-network noise
-  suppressor, runs on the mic in an AudioWorklet, between the mic and
-  the capture that resamples to 16 kHz. Vendored as three static files
-  from `@sapphi-red/web-noise-suppressor` 0.4.1 (MIT,
-  `static/rnnoise-LICENSE.txt`), the SIMD build where WebAssembly SIMD
-  is available. It needs 48 kHz, so the page's AudioContext runs at
-  48 kHz. The browser's own `noiseSuppression` stays on under it.
-  - **Off / Normal / Strong**, per window. Strong adds a gate after
-    RNNoise (`worklets.js`: open at -50 dBFS, close at -56, 200 ms hold,
-    eased 5 ms up / 60 ms down) that mutes what's left between words.
-    Not a wet/dry slider: RNNoise delays its output, and mixing it with
-    the dry mic would comb-filter the voice.
-  - **A status dot and "removing N dB"**, from the level before and
-    after the filter, while the mic is on (during a call). On synthetic fan noise
-    (brown noise plus a 120 Hz hum, -31 dB): Off -31 dB out, Normal
-    -79 dB (47 dB removed), Strong silent.
-  - **Mono before the filter.** RNNoise here processes only its first
-    channel and its output took the input's channel count, so a stereo
-    mic (the Samson can be one) left a second, unfiltered or silent
-    channel for the capture to mix in. The mic is downmixed to one
-    channel first, and the filter's output is fixed at one.
-  - If it can't load, the call goes ahead unfiltered, and the dot says so.
-- **Metrics and alerts**: `phone_bridge.prom` in node_exporter's
-  textfile directory, the same route as the backup metrics, so no new
-  scrape target. Rules in `kubernetes/monitoring/alertmanager.yaml`:
-  bridge down or silent, and the two silent-call cases (caller silent,
-  PC mic silent) that each took a live call to find. No alert for the
-  phone being away - it leaves the house with its owner.
-- **The whole app in the agent's window**: the tray's *Open phone* and
-  the desktop shortcut open the full page (dial pad, recent calls, mic,
-  settings) in the agent's WebView2 window; it stays until closed, and a
-  call brings it forward. The compact popup is still what appears for a
-  call when it isn't open. Opening it doesn't take calls' audio: the
-  window only announces audio once Answer, a dial or "Move call audio"
-  is used there, so a call answered on the iPhone stays on the iPhone.
-- **Tray icon and hotkeys** (`agent/tray.py`, `agent/hotkeys.py`): the
-  icon shows connected / on a call / not connected, opens the page,
-  pauses popups, and raises a notification for missed calls. Ctrl+Alt+A answers (or moves audio to the PC), Ctrl+Alt+H
-  declines or hangs up, Ctrl+Alt+M mutes - by clicking the popup's own
-  buttons. A hotkey isn't a user gesture to the page, so the agent adds
-  `--autoplay-policy=no-user-gesture-required` to its own WebView2 only.
-
-## Music and videos on the PC too
-
-*Music and videos on this PC* in the page (on by default, stored on the
-Pi) says where media plays; calls come to the PC either way.
-
-- **Pi**: the service writes a WirePlumber drop-in,
-  `52-phone-media.conf`, that adds `a2dp_sink` to the roles, so the Pi
-  is also a Bluetooth speaker. The later file wins for the same key -
-  checked live, the Pi advertised *Audio Sink* and the phone opened an
-  A2DP transport as soon as it reconnected. Only the first start with it
-  restarts WirePlumber.
-- **The switch moves the media link, not the roles.** Off, the
-  reconnector drops just the phone's A2DP profile (`DisconnectProfile`)
-  and the iPhone plays media itself; on, it connects it again. That
-  takes a second or two, keeps the calls link up, and works mid-call.
-  Checked live: with A2DP dropped the iPhone didn't bring it back on its
-  own in 30 s, and the calls link stayed. The reconnector checks every
-  5 s, so the switch also holds after the phone reconnects. This
-  replaced a first version that switched the roles instead: each switch
-  restarted WirePlumber (~10 s of the phone dropping, refused during a
-  call) - and one froze the window, below.
-- **Stream**: `pw-record` takes the phone's A2DP node at 48 kHz stereo
-  in 10 ms chunks, with a 10 ms node latency (the default, 100 ms, would
-  be half the budget), and `/api/agent/media` streams it as raw PCM to
-  the desktop agent. A slow listener loses the oldest audio, never
-  builds up delay.
-- **PC**: `agent/media_player.py` plays it through Windows' `waveOut`,
-  from plain ctypes, in a process of its own that the agent starts -
-  the call window is blanked while hidden, so it can't be the player.
-  Playback starts with 60 ms queued and drops a chunk rather than queue
-  past 120 ms. Its config goes over stdin (the token stays out of the
-  process list); the agent restarts it if it dies, and it exits when the
-  agent's process is gone. It started as a thread in the agent, and the
-  agent froze twice within two hours of music playing (Windows AppHang,
-  the window "Not responding" until closed by hand) and not in the hour
-  after media was turned off. The mechanism wasn't found; in its own
-  process it can't take the call window down with it.
-- **The call bridge ignores it**: it used to take the first
-  `bluez_input` node, which with media on can be the music. It now skips
-  A2DP nodes.
-
-Found on the first try, and fixed:
-
-- **Far too loud.** The iPhone sends media at full scale and sets the
-  speaker's volume over AVRCP; `bluez5.enable-hw-volume = false` (for
-  calls, bug 3) threw that away. The drop-in enables hardware volume for
-  `a2dp_sink` only, so the phone's buttons work (47 of 127 on the phone
-  set the node to 0.0507) and call streams still ignore the phone.
-- **A switch that froze the window.** With the role switch, a
-  WirePlumber restart could catch a telephony D-Bus call in flight, and
-  D-Bus has no deadline short of the daemon's ~25 s: every tick waited,
-  so pages got no state for up to a minute and the agent's window,
-  still showing an ended call as its own, wouldn't close. Every
-  telephony call now has a limit (5 s; 20 s for answer and dial, which
-  wait on the phone), and a timeout reads as "no phone right now".
-- **Video sync.** A2DP delay reporting lets the phone hold video back
-  by the speaker's delay, but the Pi only reported its own 80 ms. A
-  `latencyOffsetNsec` prop doesn't exist on this node; `ProcessLatency`
-  moved the report to ~100 ms but no further. It's set to an estimated
-  180 ms for the whole trip, and on a real video there was no visible
-  lag. Not measured beyond that.
+| Symptom | Cause | Fix |
+|---|---|---|
+| Call silent | The phone's call volume (0.019, -34 dB) applied to the stream - in the node's *master* volume, which `wpctl` doesn't touch. `btmon` showed the audio arriving at ~30x the level PipeWire output | Ignore the phone's volume for calls; set both volumes to 1.0 |
+| HD voice blamed for the silence | Two "decode failed" lines in a whole call, read as every frame failing | Counted: 400 of 400 packets intact. mSBC (HD) back on |
+| Caller heard an echo | WirePlumber linked the call into the Pi's dummy speaker and back | Auto-linking off; the bridge links its own ports |
+| Audio sat on the Pi, heard by nobody | The bridge waited for "active", which only comes once something reads the stream | "pending" counts as audio on the Pi |
+| Silent recording, no error | `pw-record` with a missing target records the default sink | Link explicitly, fail loudly |
+| A call the Pi never showed | The Bluetooth link dropped and came back mid-call; PipeWire doesn't pick up a call in progress | After 8 s of audio with no call, reset the hands-free profile once - the phone re-announces it |
+| *Move call audio* missing | Offered only while audio was on the iPhone, not stuck on the Pi | Offered whenever the call isn't reaching a window |
+| Phone never reconnected | BlueZ's `Connect` ran over Bluetooth LE, looking for an address an iPhone never shows - 168 failures with the phone in the room | `ConnectProfile` (classic Bluetooth): 2 s |
+| Music far too loud | The phone's volume ignored (the call fix above) | Honour it for media only |
+| Window froze on a mode switch | A D-Bus call caught by a WirePlumber restart waited ~25 s, stalling updates | D-Bus time limits |
+| Phone icon did nothing | Its "already running" check used a fixed port that NVIDIA's service happened to hold | A named mutex |
+| Wouldn't reopen after *Quit* | The quit process lingered, holding that mutex | Force the exit |
+| Window froze with music playing | Not pinned down; only while media played in the agent's process | Media player moved to its own process; a watchdog restarts a frozen window and logs every thread's stack |
+| Noise filter seemed not to work | RNNoise filters one channel; the Samson can be stereo | Mix the mic to mono first |
 
 ## Setup
 
 Pi (as joe):
 
 ```bash
-python3 apps/phone/pair.py      # opens a 2-minute pairing window; pair from the phone
+python3 apps/phone/pair.py      # 2-minute pairing window - pair from the phone
 bash apps/phone/install.sh      # venv, WirePlumber config, user unit, linger
 ```
 
-`install.sh` prints the login password and agent token the first time;
-both live in `~/.config/phone-bridge/env` (mode 600). It restarts
-WirePlumber only when its config changed - that drops a call's audio if
-one is on the Pi.
+`install.sh` prints the login password and agent token the first time
+(kept in `~/.config/phone-bridge/env`). On the iPhone, turn on **Sync
+Contacts** for "joe" in Bluetooth settings, or caller names stay empty.
 
-Certificate (desktop, needs the CA key):
+Certificate (desktop, needs the CA key), then copy the pair to
+`~/.config/phone-bridge/tls.{crt,key}` on the Pi and delete the local key:
 
 ```bash
 uv run --no-project --with cryptography python certificates/issue-phone.py
 ```
 
-then copy the pair to `~/.config/phone-bridge/tls.{crt,key}` on the Pi
-and delete the local key.
-
-Desktop:
+Desktop - run in your own PowerShell window (installers run from inside
+sandboxed apps can have their AppData writes redirected):
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File apps\phone\agent\install-agent.ps1 -Token <PHONE_AGENT_TOKEN>
 ```
 
-It also puts a **Phone** shortcut on the desktop that opens the agent's
-own window as the full app (`phone_agent.pyw --show`) - no browser.
+That adds the Startup entry and a **Phone** desktop shortcut. To pin it,
+open the app and pin its taskbar button.
 
-No browser setup is needed: the agent's window signs itself in and is
-granted the microphone by the agent. (The page still works in a browser
-at `https://phone.home:8443` - that needs the homelab root trusted, a
-login, and the site's mic and autoplay allowed.)
+## Troubleshooting
+
+| Problem | Look at |
+|---|---|
+| App won't open | `%APPDATA%\phone-bridge\agent.log`; a leftover `pythonw.exe` in Task Manager |
+| No call audio | The Audio card's status; `phone_bridge_running` and the peak metrics |
+| Phone not connecting | `journalctl --user -u phone-bridge` on the Pi (reconnect lines); is the PC's agent running? |
+| Metrics | `/var/lib/node_exporter/textfile/phone_bridge.prom`; alerts in `kubernetes/monitoring/alertmanager.yaml` |
 
 ## Limits
 
-- Wideband (mSBC, 16 kHz) is verified in the phone-to-Pi direction by
-  packet capture and by ear. Pi-to-phone is judged by ear only: these
-  Broadcom controllers have no SCO flow control over UART, which is
-  where outgoing audio would break (choppy/robotic) if it's going to.
-- One phone. If two ever pair, the first gateway on the bus wins.
-- Echo: the page asks the browser for echo cancellation, but a headset
-  is still the reliable way to keep speaker audio out of the mic.
-- If the page closes mid-call, the call's audio stays on the Pi. The
-  bridge stops, and a reopened window offers *Move call audio to this PC* for it;
-  otherwise move it back from the iPhone's audio-route button.
-- The reset for bug 6 cuts the call's audio for a few seconds; the call
-  itself stays up on the phone.
-- Only one phone can be the iPhone's hands-free unit at a time, so the
-  car or earbuds compete with the Pi.
-- With the PC off (or the agent quit) for 2 minutes, calls ring only on
-  the iPhone: the Pi keeps it disconnected on purpose. The earbuds or the
-  car get it to themselves.
-- Media uses SBC: Debian's PipeWire has no AAC codec, the iPhone's
-  best. Media reaches the PC roughly 0.2 s after the phone plays it.
-- Coming back into range, the phone reconnects on the next 30 s check,
-  not instantly. Measured: 26 s after a forced disconnect.
+- One phone, and only one hands-free unit per phone - the car or earbuds
+  compete with the Pi.
+- With the PC off (or the app quit) for 2 minutes, calls ring only on the
+  iPhone, on purpose.
+- Coming back into range takes up to ~30 s to reconnect.
+- Media uses SBC (no AAC on Debian's PipeWire) and arrives ~0.2 s after the
+  phone plays it; the phone delays video to match.
+- HD voice is verified phone-to-Pi by packet capture; Pi-to-phone by ear only.
+- Echo cancellation is the browser's; a headset is still the surest way to
+  keep speaker audio out of the mic.
