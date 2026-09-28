@@ -16,7 +16,11 @@ let ws = null;
 let state = null;
 let audio = null; // { ctx, capture, player, gain, stream, mic, micBus, denoise, gate, rawAnalyser, analyser }
 
-const MIC_OPTIONS = { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 };
+// No automatic gain control: the Samson has a hardware gain knob, and AGC
+// fighting it turned the mic down while talking and up in pauses, lifting
+// the room's echo between sentences - callers said it sounded like a
+// bathroom. The knob sets the level; nothing re-levels it.
+const MIC_OPTIONS = { echoCancellation: true, noiseSuppression: true, autoGainControl: false, channelCount: 1 };
 
 // Which mic to use. Saved on the Pi as the device's *label* - Firefox and
 // the ring agent's window give the same device different IDs, but the

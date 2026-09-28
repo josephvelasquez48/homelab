@@ -88,6 +88,9 @@ Ctrl+Alt+M mutes. The X hides the window; *Quit* in the tray stops the app.
 - **The media switch moves one link.** The Pi is always registered as a
   speaker; the switch connects or drops just the phone's A2DP profile. That
   takes a second or two and never touches the calls link.
+- **No automatic gain control on the mic.** The Samson has a hardware gain
+  knob; the browser's AGC fought it, lifting the room's echo between
+  sentences ("sounds like a bathroom"). The knob alone sets the level.
 - **Mic only during calls.** The window opens the mic while a call rings
   (that also wakes the Samson, which sleeps) and closes it 5 s after the
   call ends.
