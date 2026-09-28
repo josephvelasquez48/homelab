@@ -30,11 +30,12 @@ third tool on the same resources would blur who owns what.
   branch protection needs a public repo, and the repo was private then. It
   was kept private and the resource removed.
 
-## Out of date: visibility
+## Visibility
 
-**The repo is now public, but `repository.tf` still says
-`visibility = "private"`.** A `terraform apply` would try to make it
-private again. Update the file to `"public"` (and run `terraform plan` to
-confirm no other drift) before applying anything. Being public also makes
-the branch protection above possible now - though it must still let CI's
-deploy jobs commit to `main` ([cicd.md](cicd.md)).
+The repo was later made public, which left `repository.tf` saying
+`visibility = "private"` - an apply would have tried to make it private
+again. Fixed on 2026-09-27: now `"public"`, and `terraform plan` reports
+**no changes**. Being public also makes branch protection available now
+(it must still let CI's deploy jobs commit to `main` - [cicd.md](cicd.md)).
+
+Run `terraform plan` before any apply; it's the check for drift like this.
