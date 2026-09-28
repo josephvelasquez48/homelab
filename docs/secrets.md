@@ -1,206 +1,90 @@
-# Secrets management
+# Secrets
 
-Roadmap step 15 (Security). The cluster's `Secret` objects
-(`postgres-credentials`, `api-secrets`, `grafana-admin`) used to live as
-plaintext manifests alongside everything else in `kubernetes/`, committed to
-a public GitHub repo. Moved them to SOPS-encrypted files, applied out-of-band
-instead of through Argo CD.
+Roadmap step 15 (Security). Kubernetes Secrets used to be plaintext
+manifests in a public repo. They're now encrypted with SOPS + age in
+`kubernetes/secrets/*.enc.yaml` and applied by hand, outside Argo CD.
 
-## Why SOPS + age, and why not KSOPS
+## How it works
 
-[SOPS](https://github.com/getsops/sops) encrypts individual YAML/JSON values
-in place, keyed by [age](https://github.com/FiloSottile/age) - the file
-stays diffable and reviewable in git (keys visible, values encrypted), and
-`sops --decrypt` is a single dependency-free binary. Chosen over
-alternatives like Sealed Secrets or full Vault because the cluster is a
-single small homelab, not something that needs a running secrets-management
-service of its own.
+- **SOPS + age** encrypts just the values, so files stay readable and
+  diffable in git. The age private key lives outside the repo
+  (`~/.config/sops/age/keys.txt`, `%APPDATA%\sops\age\keys.txt` on
+  Windows); the public key is in `.sops.yaml`.
+- **Applied with `kubernetes/secrets/apply.sh`**, which decrypts every
+  `*.enc.yaml` there and `kubectl apply`s it. Run by hand when a secret
+  changes - never from CI or Argo CD.
+- **Why not KSOPS** (Argo CD decrypting them itself): it needs a custom
+  Argo CD image, which is too much machinery for a handful of secrets
+  that rarely change.
 
-Argo CD has a plugin path for this - **KSOPS** - that would let it decrypt
-and sync `Secret` manifests directly, keeping them in the normal GitOps
-flow. Deliberately not set up: KSOPS needs a custom Argo CD repo-server
-image (a plugin sidecar baked in), which is real extra surface area and
-maintenance for three secrets that rotate rarely. Instead, encrypted files
-live in `kubernetes/secrets/*.enc.yaml`, decrypted and applied by hand (or
-via `kubernetes/secrets/apply.sh`) whenever they change, and are explicitly
-**excluded** from anything Argo CD tracks - see "The ordering rule" below
-for why that exclusion has to be real, not just a convention.
+Encrypted secrets: `postgres-credentials`, `api-secrets`, `grafana-admin`,
+`chat-secrets`, `dashboard-auth`, `homelab-tls`, `alertmanager-config`,
+`adguard-exporter`.
 
-## Setup
+## The ordering rule
 
-- Age keypair generated once, private key kept at
-  `~/.config/sops/age/keys.txt` (Linux) / `%APPDATA%\sops\age\keys.txt`
-  (Windows) - never committed. Public key
-  (`age1tsns9fmhenrdl5ufs2vs28gut2m464xlcp23440uxp4x3aqvdgzsytyjwx`) is safe
-  to commit and lives in `.sops.yaml`:
+**Take a secret out of Argo CD's manifests first, and wait for that sync,
+before applying a new value.**
 
-  ```yaml
-  creation_rules:
-    - path_regex: kubernetes/secrets/.*\.enc\.yaml$
-      key_groups:
-        - age:
-            - age1tsns9fmhenrdl5ufs2vs28gut2m464xlcp23440uxp4x3aqvdgzsytyjwx
-  ```
+Learned the hard way: all three passwords were rotated and applied
+*before* the commit that removed the plaintext Secrets from git. Argo CD
+still considered the old Secret its desired state, so `selfHeal` put the
+old password back. Postgres already had the new one, so every restarted
+`api` pod failed to log in. The failing migration hook then blocked the
+whole sync, which kept other Secrets missing longer.
 
-- **Gotcha**: the creation rule matches against the *input* file's path,
-  not wherever the output gets redirected to. Encrypting a scratch file
-  into `kubernetes/secrets/foo.enc.yaml` via `sops --encrypt scratch.yaml >
-  kubernetes/secrets/foo.enc.yaml` doesn't trigger the rule, since as far
-  as SOPS is concerned the input path is `scratch.yaml`. Worked around by
-  passing `--config /dev/null --age <pubkey>` explicitly instead of relying
-  on path-based rule matching for anything not already sitting at its
-  final path.
+Once a Secret isn't in any manifest, Argo CD doesn't own it: applied
+with plain `kubectl apply`, it has no Argo tracking annotation, so Argo
+can neither revert nor prune it.
 
-- **Gotcha, Windows sops.exe**: even with the file already sitting at its
-  final path, path-regex matching failed outright (`error loading config:
-  no matching creation rules found`) for a rule that works fine elsewhere -
-  reproduced against the pre-existing `kubernetes/secrets/` rule too, so
-  not specific to a new rule being wrong. `--age <pubkey>` alone didn't
-  fix it either - this build still attempts config-based rule discovery
-  first regardless. Only `--config /dev/null --age <pubkey>` together
-  actually bypassed rule matching entirely and worked. If path-based
-  matching ever needs to work on Windows, this needs isolating properly;
-  for now, always pass both flags explicitly there.
+## Rotating a credential
 
-- `kubernetes/secrets/apply.sh` decrypts and `kubectl apply`s every
-  `*.enc.yaml` in the directory:
+Changing the Secret isn't enough where a service only reads its password
+on first start:
 
-  ```bash
-  for f in "$SCRIPT_DIR"/*.enc.yaml; do
-      sops --decrypt "$f" | kubectl apply -f -
-  done
-  ```
+| Credential | After updating the Secret |
+|---|---|
+| Postgres | `ALTER USER homelab WITH PASSWORD '...'` in the running pod |
+| Grafana | The admin API: `PUT /api/admin/users/1/password` (the `grafana cli` reset OOM-killed itself) |
+| API secrets | `kubectl rollout restart` - read on every start |
 
-  Deliberately **not** wired into Argo CD or CI - it's a manual/on-call
-  action, not something that should run unattended against production
-  credentials.
+After each rotation, check that the old password is *rejected* and the
+new one works through the real endpoint.
 
-## The ordering rule (learned the hard way)
+## Reference copies
 
-The plaintext `Secret` blocks were removed from
-`kubernetes/{data/postgres,backend/api,monitoring/grafana}.yaml`, replaced
-with a comment pointing at the encrypted file. That removal is itself a git
-change Argo CD's `selfHeal` will act on - which creates a real ordering
-hazard when rotating a live credential at the same time:
+Some credentials can't be applied from a file, because the service keeps
+its own hash. Their encrypted copies just record the credential, for a
+rebuild:
 
-**What happened**: rotated all three passwords, ran `apply.sh` to push the
-new values into the cluster - *before* pushing the manifest change that
-removes the plaintext `Secret` from git. From Argo CD's point of view,
-nothing had changed yet: the old plaintext `Secret` was still the tracked
-desired state, so `selfHeal: true` silently reverted `api-secrets` back to
-the old password within its next reconcile. Postgres's actual password
-*had* rotated (`ALTER USER` had already run - see below), so the live
-credential and the reverted `Secret` now disagreed, and the next
-`kubectl rollout restart` crash-looped every new `api`/`worker` pod with
-`password authentication failed for user "homelab"`.
+| File | What |
+|---|---|
+| `kubernetes/secrets/reference/argocd-admin.enc.yaml` | Argo CD admin (password and bcrypt hash) |
+| `kubernetes/secrets/reference/homelab-ca.enc.yaml` | The homelab CA key ([https.md](https.md)) |
+| `docker/dns/secrets/adguard-admin.enc.yaml` | AdGuard Home admin |
 
-**The fix is sequencing, not tooling**: push the manifest change (removing
-the `Secret` from what Argo CD tracks) *first*, confirm Argo CD has
-actually synced that commit, and only then apply the new secret values.
-Once `api-secrets` is no longer in the desired manifests at all, Argo CD
-stops treating it as a resource it owns - re-applying it via `apply.sh`
-(plain `kubectl apply`, no Argo CD annotations in the payload) leaves it
-with no `argocd.argoproj.io/tracking-id` annotation, confirmed by diffing
-`kubectl get secret api-secrets -o yaml` before and after. Without that
-annotation Argo CD can neither revert it via `selfHeal` nor flag it for
-pruning - which is the actual mechanism keeping "applied out-of-band" true
-going forward, not just a one-time fix.
-
-This one mistake cascaded into a second, unrelated-looking failure: the
-`api-migrate` `PreSync` hook `Job` kept retrying against the stale
-credential until it hit `backoffLimit`, which blocked the *entire* sync
-(hooks run before the main sync resources) - so `data`/`monitoring`'s
-already-pruned `postgres-credentials`/`grafana-admin` `Secret`s stayed
-missing from the live cluster far longer than intended, and `backend`
-stayed `OutOfSync` even after the credential itself was fixed, until the
-Job was deleted so the hook could recreate it. Full incident, including a
-second, genuinely unrelated networking bug uncovered along the way, is in
-[docs/kubernetes.md](kubernetes.md).
-
-## Rotating a live credential
-
-Rotating the `Secret` object is necessary but not sufficient. Postgres and
-Grafana both only apply their admin-password environment variable on
-**first initialization** - once the data volume exists, changing the env
-var does nothing to the already-running service:
-
-- **Postgres**: `ALTER USER homelab WITH PASSWORD '<new>';` via `psql`
-  against the live pod.
-- **Grafana**: `grafana cli admin reset-admin-password` looks like the
-  obvious tool, but it spawns a second process alongside the running
-  server and OOM-killed itself against the container's 256Mi limit (exit
-  137). Used the HTTP Admin API instead -
-  `PUT /api/admin/users/1/password`, authenticated with the still-valid
-  *old* password - which doesn't need extra memory since it runs in the
-  existing server process.
-- **API secrets** (`API_KEY`, `DATABASE_URL`, `REDIS_URL`): these are
-  read fresh from the environment on every pod start, so rotating the
-  `Secret` and doing a `kubectl rollout restart` is sufficient - no
-  service-side "first init only" quirk to work around.
-
-Verified after each rotation: old credential explicitly rejected (not just
-"didn't check"), new credential works end-to-end through the real
-endpoint - `grafana.home` login, `api.home/health` reporting
-`"postgres":"ok"`.
-
-## Reference copies (encrypted, never applied)
-
-Two credentials here cannot be `kubectl apply`ed from an encrypted
-manifest, because the live source of truth is a bcrypt hash the service
-manages itself. For those the encrypted file is a **reference copy**: it
-records what the credential is, so a rebuild does not mean losing access,
-but nothing reads it automatically.
-
-| File | Credential | Live source of truth |
-|---|---|---|
-| `docker/dns/secrets/adguard-admin.enc.yaml` | AdGuard Home admin | bcrypt hash in `adguard/conf/AdGuardHome.yaml` |
-| `kubernetes/secrets/reference/argocd-admin.enc.yaml` | Argo CD admin | `admin.password` in the `argocd-secret` Secret |
-
-**Argo CD's is the one with a real trap in it.** `argocd-secret` does not
-only hold the admin password - it also holds `server.secretkey`, which
-signs every session token, plus `tls.crt` and `tls.key`. A `kubectl apply`
-of a partial Secret carrying just `admin.password` would strip the other
-three, invalidating every session and Argo CD's own TLS material. So this
-file is deliberately not a Secret manifest, and deliberately not in
-`kubernetes/secrets/` proper: `apply.sh` globs that directory
-non-recursively, which puts the `reference/` subdirectory out of its reach
-by construction rather than by convention.
-
-Read it with:
-
-```bash
-sops --decrypt kubernetes/secrets/reference/argocd-admin.enc.yaml
-```
-
-Four fields: `username`, `password` (plaintext, for logging in),
-`bcrypt_hash`, and `password_mtime`. The hash is stored so the credential
-can be restored into a rebuilt cluster without regenerating it:
+`apply.sh` doesn't read `reference/`, on purpose. Argo CD's `argocd-secret`
+also holds the session-signing key and TLS material, so applying a
+partial copy would wipe them. Restore the password with a *patch*
+instead:
 
 ```bash
 HASH=$(sops --decrypt kubernetes/secrets/reference/argocd-admin.enc.yaml | awk '/^bcrypt_hash:/{print $2}')
-NOW=$(date -u +%FT%TZ)
-kubectl -n argocd patch secret argocd-secret --type merge -p "{\"stringData\":{\"admin.password\":\"$HASH\",\"admin.passwordMtime\":\"$NOW\"}}"
+kubectl -n argocd patch secret argocd-secret --type merge \
+  -p "{\"stringData\":{\"admin.password\":\"$HASH\",\"admin.passwordMtime\":\"$(date -u +%FT%TZ)\"}}"
 kubectl -n argocd rollout restart deploy argocd-server
 ```
 
-`patch` merges and `apply` replaces, which is the entire reason this one
-is not wired into `apply.sh`.
+## Gotchas
 
-This password was still Argo CD's install-time generated value, living
-only in `argocd-initial-admin-secret` in the cluster and nowhere else -
-on a service that runs `--insecure` over plain HTTP with
-cluster-admin-equivalent write access. Upstream recommends deleting that
-Secret once you have logged in; safe to do now that this copy exists and
-has been confirmed to decrypt.
+- SOPS matches `.sops.yaml` rules against the *input* path, so encrypting
+  a scratch file into place doesn't pick up the rule. On Windows, rule
+  matching failed outright. Both are avoided by passing
+  `--config /dev/null --age <public key>` explicitly.
 
 ## Known gaps
 
-- No KSOPS - secrets are outside Argo CD's normal reconciliation entirely,
-  which means a `kubectl apply -f kubernetes/` from a clean checkout
-  doesn't produce a working cluster on its own; `apply.sh` has to be run
-  too. Acceptable for a single-operator homelab, would need KSOPS (or
-  equivalent) to be a real multi-operator GitOps setup.
-- No automatic drift detection on the encrypted secrets themselves - if
-  someone changes a live `Secret` by hand and forgets to re-encrypt/update
-  `kubernetes/secrets/*.enc.yaml`, the two silently diverge with nothing
-  flagging it.
+- A fresh cluster needs `apply.sh` as well as Argo CD; the secrets aren't
+  in the GitOps loop.
+- Nothing notices if a live Secret is changed by hand and the encrypted
+  file isn't updated.
