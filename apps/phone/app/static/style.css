@@ -86,6 +86,7 @@ button.round span {
   font-size: 12px; font-weight: 500; color: var(--muted); white-space: nowrap;
 }
 button.round[aria-pressed="true"] { background: var(--text); color: var(--bg); }
+button.round.pending { opacity: .55; transform: scale(.94); cursor: default; }
 .call-card .row button { flex: 1; }
 .ringing { animation: ring 1.2s ease-in-out infinite; }
 .ringing .avatar { animation: pulse 1.2s ease-in-out infinite; }

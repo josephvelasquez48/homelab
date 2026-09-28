@@ -87,6 +87,7 @@ function send(msg) {
 function showError(text) {
   $("error").textContent = text || "";
   if (text) setTimeout(() => { if ($("error").textContent === text) $("error").textContent = ""; }, 6000);
+  if (text) PRESSABLE.forEach(clearPressed); // a failed action shouldn't leave a button stuck
 }
 
 // First letters of the first two words of a contact name ("Caroline" ->
@@ -310,6 +311,7 @@ async function stopAudio() {
 // was clicked there - otherwise answering on the iPhone would pull the
 // call's audio to the PC.
 let answeredHere = false;
+let lastCallKey = "";
 function announceAudio() {
   if (AGENT && !answeredHere) return;
   if (audio && audio.ctx.state === "running") send({ action: "audio-ready" });
@@ -484,6 +486,13 @@ function render(s) {
   renderAudioSummary();
 
   const call = pickCall(s.calls);
+  // The call moved on (answered, ended, or a different call): any
+  // "Answering…" / "Ending…" feedback is done.
+  const callKey = call ? `${call.path}:${call.state}` : "";
+  if (callKey !== lastCallKey) {
+    lastCallKey = callKey;
+    PRESSABLE.forEach(clearPressed);
+  }
   // Answered on the Pi's touchscreen: this window (the PC's) takes the audio,
   // as if Answer had been clicked here. The Pi answers once we announce.
   if (AGENT && call && s.handoff === call.path && !answeredHere) {
@@ -663,7 +672,30 @@ $("volume").oninput = (e) => {
   try { localStorage.setItem("phone-volume", e.target.value); } catch {}
 };
 
+// Instant feedback on a tap: the button dims and says what's happening,
+// and repeat taps are ignored, until the call's next state arrives (render
+// clears it) or 8 s pass. Without it, a tap looked like nothing happened
+// until the phone responded.
+const PRESSABLE = ["answer", "decline", "hangup"];
+function pressed(id, label) {
+  const b = $(id);
+  if (!b.dataset.label) b.dataset.label = b.querySelector("span").textContent;
+  b.querySelector("span").textContent = label;
+  b.classList.add("pending");
+  b.disabled = true;
+  clearTimeout(b._pendingTimer);
+  b._pendingTimer = setTimeout(() => clearPressed(id), 8000);
+}
+function clearPressed(id) {
+  const b = $(id);
+  if (!b.classList.contains("pending")) return;
+  b.classList.remove("pending");
+  b.disabled = false;
+  if (b.dataset.label) b.querySelector("span").textContent = b.dataset.label;
+}
+
 $("answer").onclick = async () => {
+  pressed("answer", "Answering…");
   if (TOUCH) {
     // The Pi's screen: the PC's window takes the audio, then the Pi answers.
     send({ action: "answer-on-pc", call: currentCall().path });
@@ -676,8 +708,8 @@ $("answer").onclick = async () => {
   announceAudio();
   send({ action: "answer", call: currentCall().path });
 };
-$("decline").onclick = () => send({ action: "hangup", call: currentCall().path });
-$("hangup").onclick = () => send({ action: "hangup", call: currentCall().path });
+$("decline").onclick = () => { pressed("decline", "Declining…"); send({ action: "hangup", call: currentCall().path }); };
+$("hangup").onclick = () => { pressed("hangup", "Ending…"); send({ action: "hangup", call: currentCall().path }); };
 $("to-phone").onclick = () => send({ action: "audio-to-phone" });
 $("refresh-contacts").onclick = () => send({ action: "refresh-contacts" });
 $("recent-more").onclick = () => {
