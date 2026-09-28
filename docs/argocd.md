@@ -1,148 +1,56 @@
 # Argo CD
 
-Roadmap step 12: "Eventually introduce Argo CD so Git becomes the source
-of truth for Kubernetes" - directly closes the gap documented in
-[docs/cicd.md](cicd.md), where `kubectl set image` changed the running
-cluster without touching the checked-in manifest.
+Roadmap step 12: git is the source of truth for the cluster. CI commits
+new image tags; Argo CD applies whatever is in git and reverts anything
+changed by hand.
 
-## Setup
+## How it's set up
 
-- Installed via the official manifest, `--server-side` (the plain
-  `kubectl apply` failed outright - one CRD, `applicationsets.argoproj.io`,
-  exceeds the 262144-byte annotation limit client-side apply hits on large
-  CRDs; server-side apply doesn't have that problem).
-- `argocd-server` patched to run `--insecure` (plain HTTP, matching every
-  other LAN-only service here) - confirmed with the user first, given
-  Argo CD's broad cluster-admin-equivalent write access.
-- **App of apps**: `kubernetes/argocd/root-app.yaml` is the only manifest
-  ever applied by hand. It points at `kubernetes/argocd/apps/`, so every
-  actual Application (`namespaces`, `data`, `backend`, `ai`, `monitoring`)
-  is itself git-managed - adding or removing a file there is enough to
-  have Argo CD take over (or drop) a whole component.
-- All Applications use `automated: {prune: true, selfHeal: true}` - this
-  is the actual point of the exercise. `selfHeal` means imperative drift
-  (anything changed directly against the cluster, bypassing git) gets
-  reverted automatically, not just detected.
+- **App of apps.** `kubernetes/argocd/root-app.yaml` is the only manifest
+  applied by hand. It points at `kubernetes/argocd/apps/`, one Application
+  per area: `namespaces`, `data`, `backend`, `ai`, `monitoring`, `chat`,
+  `dashboard`, `kiwix`. Adding a file there is all it takes to put a
+  component under GitOps.
+- **Automated sync with `prune` and `selfHeal`**, so drift is reverted,
+  not just reported. Self-heal measured at ~11 s
+  ([failure-testing.md](failure-testing.md)).
+- **Installed with `kubectl apply --server-side`**: one CRD is too big for
+  client-side apply's annotation limit.
+- **Repo access** with the Pi's existing read-only deploy key.
+- **`argocd-server --insecure`**: TLS ends at Traefik (`argocd.home`,
+  [https.md](https.md)); only the hop inside the cluster is HTTP.
+- **Not managed by Argo CD:** Argo CD's own install, the Traefik overrides
+  in `kubernetes/argocd/traefik-security.yaml`, and the secrets
+  ([secrets.md](secrets.md)).
 
-## Problems hit and fixed
-
-- **Private repo, no credentials**: the first sync attempt failed with
-  `authentication required: Repository not found` over HTTPS. Reused the
-  read-only deploy key already set up for the Pi's own `git pull` access
-  (SSH form, `git@github.com:...`) rather than creating a separate
-  credential - same trust boundary, one less thing to manage.
-
-- **`api-migrate` permanently `OutOfSync`**: every other resource in
-  `kubernetes/backend/api.yaml` reached `Synced`, but the migration Job
-  never would. Root cause: Jobs are immutable once created, so Argo CD
-  can't apply an image-tag change to an already-completed Job in place.
-  Fixed by making it a `PreSync` hook (`argocd.argoproj.io/hook: PreSync`,
-  `hook-delete-policy: BeforeHookCreation`) - Argo CD deletes and recreates
-  it fresh on every sync instead of trying to reconcile it, which is the
-  correct pattern for one-off Jobs under GitOps generally, not specific to
-  this project.
-
-- **ufw's LAN-only rules never applied to K3s at all** - found while
-  verifying the deploy loop, not something anticipated going in. `ufw
-  status` had no rule for port 80, yet Traefik (fronting `api.home`,
-  `grafana.home`, and **`argocd.home`**) worked fine. Checked
-  `iptables -L INPUT` and found `KUBE-ROUTER-INPUT`, `KUBE-NODEPORTS`, and
-  related chains positioned *before* ufw's own chains - kube-router/
-  kube-proxy accept the traffic before ufw's rules ever get evaluated.
-  Argo CD specifically being reachable from the whole home network
-  (not just conceptually - actually reachable, verified) rather than
-  the LAN-scoped access documented and believed to be real was worth
-  fixing before moving on, not filing away for the Security phase.
-
-  Fixed with `externalTrafficPolicy: Local` on Traefik's Service (so the
-  real client IP survives instead of being SNAT'd to a cluster-internal
-  address by `Cluster` policy, the default) plus a `NetworkPolicy`
-  restricting Traefik ingress to `192.168.1.0/24` and the IPv6 ULA prefix.
-  Applied via `HelmChartConfig` - K3s's supported way to override its
-  bundled Traefik chart - not a raw `kubectl patch`, which K3s's own Helm
-  controller would silently revert on the next reconcile.
-
-  **Verified enforcement, not just that the resources applied**: spun up a
-  throwaway pod on the cluster network (`10.42.x.x`, deliberately outside
-  the allowed CIDR) and confirmed it got blocked (`HTTP 000`, connection
-  refused/timed out) reaching Traefik's in-cluster Service address, while
-  real LAN traffic (`api.home`, `grafana.home`, `argocd.home` from the
-  desktop) kept working throughout with zero regression.
-
-  This fix (`kubernetes/argocd/traefik-security.yaml`) is deliberately
-  **not** part of the app-of-apps - it configures K3s's own bundled
-  Traefik, applied once directly like Argo CD's own install, not
-  something that belongs to any of the four workload namespaces.
-
-## The closed loop
+## The deploy loop
 
 ```
-git push -> GitHub Actions tests -> builds multi-arch image -> pushes to
-ghcr.io -> commits the new tag into kubernetes/backend/*.yaml [skip ci]
--> Argo CD's next poll (~3 min, no webhook configured) sees the git
-change -> applies it -> selfHeal keeps it that way until the next
-legitimate git change
+git push -> CI tests -> builds the image -> pushes to ghcr.io
+         -> commits the new tag to kubernetes/ [skip ci]
+         -> Argo CD sees it on its next poll (~3 min) -> applies it
 ```
 
-Verified for real, not just described: pushed a trivial change, watched
-CI build and commit a new SHA tag, watched Argo CD's `backend` Application
-go `OutOfSync` -> `Synced` on its own polling cycle, and confirmed the
-running pods' image matched the new tag - with zero `kubectl` commands run
-by hand and zero use of the self-hosted runner (CI's deploy job now only
-needs to write to git, so it moved back to a GitHub-hosted runner).
+Verified end to end: a trivial change went from push to running pods
+with no `kubectl` by hand. CI only writes to git, so it needs no cluster
+access.
+
+## Problems found and fixed
+
+| Problem | Cause | Fix |
+|---|---|---|
+| Traefik (and so Argo CD) reachable from the whole network, despite ufw's LAN-only rules | K3s's iptables chains run *before* ufw's, so ufw never saw the traffic | `externalTrafficPolicy: Local` (keeps the client IP) and a NetworkPolicy allowing only the LAN, via K3s's `HelmChartConfig`. Verified with a pod outside the allowed range: blocked, while the LAN kept working |
+| `api-migrate` Job stuck `OutOfSync` | Jobs are immutable, so a new image tag can't be applied | Made it a `PreSync` hook, recreated on every sync |
+| Every Application failing with `DeadlineExceeded` | A wedged git fetch holds the per-repo lock; restarted, repo-server landed on the flaky WSL2 node and failed its liveness probe | Pinned repo-server to the Pi (a live patch - reapply after a reinstall) |
+| Changed Endpoints never applied, while showing `Synced` | Argo CD excludes `Endpoints` by default | See [kubernetes.md](kubernetes.md) |
 
 ## Known gaps
 
-- No webhook configured - Argo CD relies on its default ~3-minute polling
-  interval to notice git changes, rather than reacting immediately to a
-  push. A webhook would need an inbound path from GitHub to the cluster,
-  which is exactly the kind of exposure this project has otherwise
-  avoided; polling is the trade-off for staying push-free inbound.
-- Argo CD's own install (`kubectl apply --server-side -f <upstream URL>`)
-  isn't itself tracked as a versioned manifest in this repo - reinstalling
-  from scratch means re-running that command with whatever `stable` points
-  to at the time, not a pinned version. Fine for a homelab, worth pinning
-  a version if this were closer to production.
-- The `admin` credential is Argo CD's install-time generated password and
-  has never been rotated. It lived only in `argocd-initial-admin-secret`
-  inside the cluster until it was backed up to
-  `kubernetes/secrets/reference/argocd-admin.enc.yaml` - SOPS-encrypted,
-  and a reference copy only, since `argocd-secret` also holds
-  `server.secretkey` and the server's TLS material that a partial
-  `kubectl apply` would strip. See [docs/secrets.md](secrets.md).
-
-## Log
-
-- 2026-09-05: **`repo-server` rescheduled onto the desktop node and took
-  every Application down with it.** A `kubectl rollout restart` of
-  `argocd-repo-server` (to clear a wedged `git` process holding its
-  internal per-repo lock - one stuck fetch blocks every other app's
-  manifest generation, since Argo CD serializes git operations per repo
-  URL, which is why all 7 apps failed together with `DeadlineExceeded`
-  instead of just one) came back up on `desktop-j1grrmu` instead of
-  `joe`, since nothing pins it - every other Argo CD component happened
-  to already be on `joe` from whenever they were first scheduled, so this
-  had never come up before. On desktop, its liveness probe
-  (`/healthz?full=true`) started timing out (`context deadline
-  exceeded`) - almost certainly the same WSL2 mirrored-networking
-  cross-node flakiness this whole session was already fighting, this
-  time hitting Argo CD's own control plane (reaching `argocd-redis` on
-  `joe`) rather than a workload pod - and it got killed and restarted by
-  its own liveness probe roughly every 90 seconds, repeatedly, with the
-  replacement landing on desktop again each time.
-
-  **Fix**: `kubectl patch deployment argocd-repo-server -n argocd`
-  adding `nodeSelector: {kubernetes.io/hostname: joe}` - same reasoning
-  already applied to the dashboard app (`kubernetes/dashboard/
-  dashboard.yaml`): critical infrastructure that needs to stay reliable
-  shouldn't be schedulable onto the optional, removable, and
-  networking-flaky desktop node. This is a live patch, not a git change -
-  Argo CD's own install isn't tracked in this repo (see above), so this
-  won't survive a from-scratch reinstall and should be re-applied if that
-  ever happens.
-
-  Confirmed fixed: pod stable on `joe` past the ~90s mark where every
-  desktop-scheduled instance had been dying, and all 7 Applications
-  recovered `Synced`/`Healthy` within about 3 minutes (Argo's normal
-  staggered reconciliation cadence) once repo-server itself was stable -
-  no other intervention needed once it was on the right node.
+- **Polling, no webhook.** Changes take up to ~3 minutes. A webhook would
+  need a path from GitHub into the LAN, which nothing else here has.
+- **Argo CD's install isn't pinned** in this repo; a reinstall takes
+  whatever `stable` is at the time.
+- **The admin password** is still the install-time one. It's backed up,
+  encrypted, in `kubernetes/secrets/reference/argocd-admin.enc.yaml`
+  ([secrets.md](secrets.md)); `argocd-initial-admin-secret` still exists
+  and can be deleted.

@@ -1,850 +1,95 @@
-# Kubernetes / K3s
+# Kubernetes (K3s)
 
-Roadmap step 10. Multi-node cluster: Pi as control plane, desktop as a worker
-node via WSL2. Bigger commitment than the single-node-on-Pi alternative, but
-gets closer to the full namespace layout (ai/backend/data/monitoring all in
-one cluster) from the original plan.
-
-## Log
-
-- 2026-09-03: **K3s control plane on the Pi.** First install attempt failed
-  outright - Raspberry Pi OS doesn't enable the memory cgroup controller by
-  default, which every container runtime needs. Fixed by appending
-  `cgroup_memory=1 cgroup_enable=memory` to `/boot/firmware/cmdline.txt`
-  (backed up first) and rebooting; confirmed the memory cgroup controller
-  was live afterward, not just assumed. Second install succeeded - node
-  `joe` came up `Ready` as `control-plane` immediately.
-
-  Set up passwordless `kubectl` for the `joe` user by copying
-  `/etc/rancher/k3s/k3s.yaml` to `~/.kube/config`. Note: `KUBECONFIG` needs
-  to go in `~/.zshenv`, not just `~/.zshrc` - `.zshrc` only loads for
-  interactive shells, and SSH-executed one-off commands (`ssh host "cmd"`,
-  which is how this session runs everything) are non-interactive. Discovered
-  this by testing a fresh `ssh ... "kubectl get nodes"` and watching it fail
-  even though the interactive session moments earlier had it working.
-
-- 2026-09-03: **Desktop as a worker node via WSL2 - the hard part.** WSL2
-  defaults to NAT networking, where the VM's IP is only reachable from the
-  Windows host itself - the Pi's control plane can't reach back into a NAT'd
-  node for scheduling, logs, or exec. Fixed by enabling WSL2's **mirrored**
-  networking mode (`networkingMode=mirrored` in `.wslconfig`), which makes
-  the WSL2 VM share the host's real LAN IP directly - confirmed by checking
-  the new distro's own `ip addr` and seeing `192.168.1.131` (the desktop's
-  actual IP), not a NAT range.
-
-  **This caused three separate Docker Desktop outages** while getting there,
-  since mirrored mode changes networking for every WSL2 distro on the
-  machine, including Docker Desktop's own:
-  1. A `wsl --shutdown` mid-restart left stale Docker Desktop processes
-     holding old port bindings, so the fresh instance failed to rebind
-     `5432`/`8000` ("address already in use"). Fixed by force-killing every
-     Docker-related process and doing a clean `down`/`up` instead of relying
-     on `restart: unless-stopped` to recover stale state on its own.
-  2. A stuck WSL2 reparse-point socket file
-     (`sailor-ingest.sock`) blocked Docker Desktop's ingest server from
-     starting, twice - not a process holding a lock, but a Windows-side
-     filesystem object even `fsutil` (admin-only) initially couldn't clear
-     cleanly. Needed the user to force-remove it from an elevated
-     PowerShell.
-  3. General lesson: **interrupting a Docker Desktop restart mid-boot
-     (e.g. another `wsl --shutdown`) compounds the corruption** rather than
-     fixing it. The recovery that actually stuck was: kill everything,
-     wait several seconds for full tear-down, restart once, then wait it
-     out fully without touching anything.
-
-  This instability was significant enough to explicitly flag and confirm
-  with the user before continuing, rather than assuming the chosen
-  architecture (multi-node via WSL2 mirrored networking) was worth the risk
-  - they chose to continue.
-
-  Installed Ubuntu 24.04 as the WSL2 distro itself hit a snag too: `wsl
-  --install -d Ubuntu` hung indefinitely with near-zero CPU usage - it
-  depends on the Microsoft Store app, which doesn't complete its interactive
-  flow in a non-interactive/automated context. Killed the stuck process and
-  installed via `winget install Canonical.Ubuntu.2404` instead (bypasses the
-  Store), then `ubuntu2404.exe install --root` for non-interactive first-run
-  setup (root-only, no interactive user/password prompt - fine for a
-  dedicated infra node, not a general dev environment).
-
-  Once the agent was installed (`K3S_URL`/`K3S_TOKEN` env vars pointing at
-  the Pi), it still couldn't join - `journalctl -u k3s-agent` showed
-  consistent timeouts reaching `192.168.1.253:6443`, not a certificate or
-  auth error. Root cause: the Pi's `ufw` never had rules for K3s's own
-  cluster networking ports - only SSH/DNS/Grafana had been opened
-  previously. Added `6443/tcp` (API server), `8472/udp` (Flannel VXLAN,
-  pod-to-pod networking), and `10250/tcp` (kubelet), all scoped to
-  `192.168.1.0/24` like every other rule on this Pi. Agent joined within
-  seconds of the firewall fix - confirming the firewall, not WSL2 or K3s
-  itself, was the actual blocker.
-
-  **Verified the full cluster, not just that install commands succeeded**:
-  `kubectl get nodes` from the Pi shows both `joe` (control-plane,
-  `192.168.1.253`, Debian 13/arm64) and `desktop-j1grrmu` (worker,
-  `192.168.1.131`, Ubuntu 24.04/amd64 via WSL2) as `Ready`. Confirmed
-  Docker Desktop's existing stack (FastAPI/Postgres/Redis/worker, DNS,
-  metrics) still fully functional after all of the above.
-
-## Next
-
-Namespaces (`ai`, `backend`, `data`, `monitoring`) and migrating the
-existing Docker Compose workloads onto the cluster: Deployments, Services,
-ConfigMaps, Secrets, PersistentVolumes, RBAC, health probes, resource
-limits.
-
-## Log (continued) - workload migration
-
-- 2026-09-03: Migrated everything onto the cluster: `data/postgres`,
-  `backend/{redis,api,worker}`, `ai/inference`, `monitoring/{prometheus,
-  grafana}`. Manifests in `kubernetes/`, one file per component.
-
-  **Getting images into the cluster at all was the first real problem.**
-  K3s's containerd is a separate image store from Docker Desktop - an
-  image built with `docker build` isn't visible to it. Pushed
-  `apps/api`'s image to `ghcr.io/josephvelasquez48/homelab-api` instead
-  (made the package public after confirming with the user, since pull
-  secrets add real complexity for a personal project with no sensitive
-  code). The cluster is also mixed-architecture (Pi = arm64, desktop
-  worker = amd64), so a single-platform build wouldn't run on both nodes -
-  built with `docker buildx build --platform linux/amd64,linux/arm64
-  --push`, which needed a `docker-container` driver builder first (the
-  default `docker` driver can't do multi-platform pushes at all - found
-  this out from the build simply refusing to run, not a vague failure).
-
-  **Design decisions, not just mechanical migration:**
-  - `postgres` and `redis` are pinned to the Pi (`nodeSelector:
-    kubernetes.io/hostname: joe`) with `local-path` PVCs. local-path PVs
-    are tied to whichever node first hosts them - without pinning, a
-    reschedule to the other node would leave the pod unable to find its
-    own data. The Pi is also just the more "always-on" node; the desktop
-    gets rebooted for normal use in a way a dedicated Pi doesn't.
-  - `ai/inference` is a Service+Endpoints pair (no selector, manually
-    specified IP) rather than an ExternalName Service - it points at
-    native Ollama on the desktop (still not containerized, same reasoning
-    as Milestone 1) by IP directly instead of depending on a pod's own
-    external DNS resolution working for a hostname.
-  - Prometheus uses `kubernetes_sd_configs` (pods annotated
-    `prometheus.io/scrape: "true"`) instead of a static target list, which
-    is what gives the RBAC ClusterRole/ClusterRoleBinding an actual
-    purpose - Prometheus needs to query the API server to discover pods,
-    it's not a token unused example.
-  - The `ai`/`embeddings`/`rag-api` split from the original plan's example
-    namespace layout isn't implemented as separate services - the FastAPI
-    app already serves `/v1/embed` and `/v1/rag/query` from the same
-    codebase as everything else in `backend/api`, and deploying the exact
-    same image three times under different names would be namespace
-    theater, not a real architectural split. It would take an actual code
-    split to be honest, which wasn't done here.
-  - CoreDNS (whole-LAN DNS, `hostNetwork`, port 53) was **not** migrated -
-    it wasn't in the plan's own namespace example, and a botched rollout
-    of something that critical is a worse failure mode than the modest
-    benefit of having it in the cluster too. Stays on Docker Compose.
-
-  **Blocked on Ollama being `127.0.0.1`-only.** Docker containers could
-  always reach it via `host.docker.internal`'s special host-loopback
-  routing, but a real pod on a different machine (the Pi) needs a genuine
-  network path - `127.0.0.1` inside Ollama's own bind address isn't
-  reachable from anywhere else no matter what the cluster networking
-  looks like. This has a real security trade-off (opening Ollama to the
-  LAN means any device on the network can call it directly, bypassing the
-  gateway's auth/rate-limiting - explicitly against the "apps talk to the
-  gateway, never straight to Ollama" design goal), so it was surfaced and
-  confirmed rather than just done. Fixed with `OLLAMA_HOST=0.0.0.0:11434`
-  plus a Windows Firewall rule scoping inbound `11434` to
-  `192.168.1.0/24` - narrows the trade-off to "reachable within the LAN"
-  rather than "reachable from anywhere."
-
-  **The WSL2 idle-timeout gotcha came back.** The worker node went
-  `NotReady` on its own, ~15 minutes after joining, with nothing having
-  touched it - turned out WSL2 stops idle VMs after a period of no
-  foreground activity, killing `k3s-agent` along with it, even though it
-  was a live systemd service. Fixed with `vmIdleTimeout=-1` in
-  `.wslconfig`. This needed another `wsl --shutdown` to take effect,
-  applied deliberately while the cluster had zero real workloads on it
-  yet - the lowest-risk moment available, given how disruptive that
-  command had already proven to be.
-
-  **`vmIdleTimeout=-1` didn't fully fix it** - the worker node went
-  `NotReady` again roughly 45 minutes into the session, after real
-  workloads existed. Waking the WSL2 distro with any command
-  (`wsl -d Ubuntu-24.04 -- ...`) reliably brought `k3s-agent` back within
-  15-30s and the node rejoined as `Ready` on its own, so this isn't
-  data-loss-risky, just an open annoyance - worth a proper fix (a
-  scheduled task pinging the distro, or investigating why the config
-  isn't sticking) before this cluster is depended on for anything that
-  needs to survive an unattended stretch of idle time.
-
-  **Verified real functionality throughout, not just `kubectl apply`
-  succeeding:** a rolling update on `api` (`maxUnavailable: 0`) replaced
-  both pods with zero dropped requests; `/health`, `/v1/chat`, `/v1/embed`,
-  `/v1/documents` + `/v1/rag/query`, and `/jobs` all tested through the
-  real `api.home` Ingress hostname (not `kubectl exec` shortcuts) with
-  fresh, never-cached responses; a rag query correctly retrieved a
-  freshly-ingested document and answered from it; Prometheus showed every
-  target - including dynamically-discovered pods - `up`; Grafana's
-  dashboard and datasource were confirmed actually provisioned via its
-  API, not just that the pod was healthy. Only after all of that did the
-  old Docker Compose backend stack (api/worker/postgres/redis) and the old
-  Docker Compose Prometheus/Grafana get torn down.
+Roadmap step 10. A two-node K3s cluster runs every homelab service except
+DNS and the phone bridge: the Raspberry Pi 5 is the control plane, and a
+Linux VM on an M1 MacBook is the worker. The Windows desktop is not in the
+cluster; it only runs Ollama on its GPU.
 
 ## Current state
 
-| Namespace | Workload | Node | Notes |
+| Node | Role | Hardware | Address |
 |---|---|---|---|
-| `data` | `postgres` | Pi | pgvector, `local-path` PVC |
-| `backend` | `redis` | Pi | `local-path` PVC |
-| `backend` | `api` (2 replicas) | either | Ingress: `api.home`, `ai.home` |
-| `backend` | `worker` | either | processes the Redis job queue |
-| `ai` | `inference` | - | Endpoints -> Ollama in WSL, `192.168.1.133:11434` |
-| `monitoring` | `prometheus` | Pi | K8s SD + RBAC for pod discovery |
-| `monitoring` | `grafana` | Pi | Ingress: `grafana.home` |
-
-Not migrated, staying on Docker Compose: CoreDNS (whole-LAN DNS, too
-critical to risk on a first K8s pass) and node-exporter (needs host
-`/proc`/`/sys`, simpler to leave where it already works).
-
-## Next
-
-CI/CD (roadmap step 11) is the natural next step now that there's an
-image registry and a real deployment target - `git push` -> tests -> build
--> push to ghcr.io -> `kubectl apply`/rollout, replacing the manual
-build-and-push done by hand in this phase.
-
-## Log (continued) - flannel VXLAN silently dropped on the WSL2 worker
-
-- 2026-09-03: Triggered by, but ultimately unrelated to, the secrets
-  rotation incident in [docs/secrets.md](secrets.md) - fixing that
-  exposed a second, genuinely separate bug: any pod scheduled onto
-  `desktop-j1grrmu` (the WSL2 worker) couldn't reach *any* ClusterIP
-  service, including CoreDNS itself. `api-migrate` and rolled-out
-  `api`/`worker` pods crash-looped there with
-  `Temporary failure in name resolution` even after the credential
-  problem was fixed - a fresh, unrelated failure mode, not a symptom of
-  the same root cause.
-
-  **Isolating it**: raw LAN ping between the two hosts (`192.168.1.253` <->
-  `192.168.1.131`) was fine, 5-7ms - so this wasn't the underlying network,
-  it was specifically the flannel VXLAN overlay (UDP 8472) between nodes.
-  `ping` to the peer's `flannel.1` gateway address failed 100% in both
-  directions. Packet captures on both ends nailed down exactly where:
-  the Pi received the WSL2 side's outbound VXLAN-encapsulated ping and
-  sent a reply (visible leaving on `wlan0`) - but that reply never showed
-  up in a capture taken on the WSL2 side, even though the flannel kernel
-  socket was confirmed listening (`ss -lun` showed `UNCONN 0.0.0.0:8472`).
-  Something in the Windows host network stack was dropping inbound VXLAN
-  traffic before it ever reached the WSL2 VM.
-
-  **Ruled out, in order, each with real evidence rather than assumption:**
-  1. `ufw` on the Pi - already explicitly `ALLOW`s `8472/udp` from
-     `192.168.1.0/24`, and its logs showed zero blocked packets matching
-     that traffic.
-  2. Classic Windows Firewall (`New-NetFirewallRule`) - added an explicit
-     inbound allow for UDP 8472 from the LAN; no change. Restarting
-     `k3s-agent` to force flannel to re-establish its VXLAN state also
-     made no difference, ruling out stale routes/FDB entries.
-  3. The **Hyper-V firewall** - a separate rule store from the classic
-     Windows Firewall that specifically governs WSL2/Hyper-V VM traffic
-     (`New-NetFirewallHyperVRule`, keyed by a `VMCreatorId` GUID). Easy to
-     miss since `Get-NetFirewallHyperVRule` lists classic host rules
-     alongside real Hyper-V-layer ones, so a rule showing up there doesn't
-     mean it's actually enforced at that layer. Added the equivalent rule
-     here too (`VMCreatorId {40E0AC32-46A5-438A-A0B2-2B479E8F2E90}`,
-     confirmed as WSL's own ID via `Get-NetFirewallHyperVProfile`) -
-     `EnforcementStatus: OK`, still no change.
-  4. Confirmed WSL2's mirrored networking mode was genuinely active, not
-     silently falling back to NAT (a known failure mode for that
-     setting) - `ip addr` inside WSL2 showed the exact same IP
-     (`192.168.1.131`) as the Windows host's physical adapter, ruling
-     out NAT as the explanation for unsolicited inbound traffic being
-     dropped.
-
-  With both firewall layers confirmed open and mirrored mode confirmed
-  genuinely active, the packet was still being dropped somewhere in the
-  Windows host's own network stack before reaching the WSL2 VM - most
-  likely Windows Defender's Network Inspection System, which does deep
-  packet inspection and could plausibly flag an unusual UDP encapsulation
-  pattern (VXLAN/OTV) on a mirrored interface. Given the choice between
-  disabling part of Defender's real-time protection to confirm that, or
-  removing the encapsulation from the equation entirely, chose the
-  latter.
-
-  **Fix: switched K3s's flannel backend from `vxlan` to `host-gw`.**
-  Both nodes are on the same LAN segment, so flannel doesn't need UDP
-  encapsulation at all here - `host-gw` just adds a direct kernel route
-  to each peer's pod subnet via the peer's real LAN IP (`ip route` showed
-  `10.42.0.0/24 via 192.168.1.253 dev eth1` on the desktop node after the
-  switch) and lets normal IP routing do the rest. Changed via
-  `--flannel-backend=host-gw` on the k3s **server** (control plane only -
-  `/etc/systemd/system/k3s.service` on the Pi), confirmed the change
-  propagated to both nodes' `net-conf.json`, then restarted `k3s-agent`
-  on the desktop worker to pick it up. Rollback is symmetric: remove the
-  flag, restart both, flannel falls back to `vxlan` on its own.
-
-  **Verified with real traffic, not just ping**: after the switch,
-  `ping` to actual pod IPs across nodes (CoreDNS, Postgres) succeeded
-  with 0% loss, and a subsequent Argo CD sync scheduled one `api` replica
-  onto each node - both came up healthy, proving real Kubernetes
-  workloads (not just ICMP) now route correctly between them.
-
-  Worth noting since it's easy to read backwards: this was never a K3s,
-  ufw, or Kubernetes NetworkPolicy problem - every layer this project
-  controls directly was already correctly configured. It was a Windows
-  host networking quirk specific to WSL2 mirrored mode plus VXLAN, and
-  `host-gw` sidesteps it rather than fixing it - worth remembering if a
-  third node is ever added that *isn't* on the same L2 segment, since
-  `host-gw` requires that and `vxlan` doesn't.
-
-## Log (continued) - actually fixing the WSL2 idle-timeout flakiness
-
-- 2026-09-03: The `vmIdleTimeout=-1` fix noted above kept resurfacing -
-  most recently, the desktop node sat `NotReady` for several minutes
-  and cycled through at least one full `k3s-agent` restart before
-  recovering, well past the "15-30s" pattern seen earlier. Worth
-  actually root-causing rather than continuing to just wake it by hand
-  each time it's needed.
-
-  **Ruled out, with evidence, before reaching for a workaround:**
-  - The whole machine sleeping - `powercfg /query SCHEME_CURRENT
-    SUB_SLEEP` showed `Sleep after` = 0 (never) on both AC and DC.
-  - `.wslconfig` losing the earlier fix - `vmIdleTimeout=-1` was still
-    present, unchanged.
-  - An obvious Windows power-throttling policy override - none found.
-
-  With the machine confirmed not sleeping and the existing config fix
-  confirmed still in place, this is WSL2's own idle/suspend heuristic
-  triggering on *something* Microsoft doesn't document precisely enough
-  to keep chasing with more configuration alone - `vmIdleTimeout`
-  governs the shared utility VM's teardown, not necessarily every path
-  that can pause an individual distro's own state.
-
-  **Fix: a Scheduled Task that touches the distro every minute**
-  (`wsl.exe -d Ubuntu-24.04 -e /bin/true`), triggered both at logon and
-  on a 1-minute repeating interval. Turns "figure out Microsoft's exact
-  undocumented idle heuristic" into "never let the gap between real
-  activity get long enough for any heuristic to matter" - a heartbeat
-  is the standard fix for exactly this class of WSL2 problem across the
-  community, and it sidesteps needing to reverse-engineer internals
-  this project doesn't control.
-
-  Verified the task itself actually runs, not just that it registered:
-  `Get-ScheduledTaskInfo` showed `LastTaskResult: 0` (success) with
-  `NextRunTime` exactly one minute later, confirming the repetition
-  trigger is real. Full confirmation that this fixes the underlying
-  flakiness - the node staying `Ready` over a real unattended idle
-  stretch, without anyone manually touching WSL2 in the meantime - is a
-  longer-running check; see the dated follow-up note once that window
-  has actually elapsed, not just "the task exists."
-
-  **Immediately caused a new, obvious problem**: `wsl.exe` is a console
-  application, so a Scheduled Task invoking it directly pops a real,
-  visible console window every single time it fires - once a minute,
-  on a desktop someone actually sits at and uses for gaming. Not a
-  subtle bug; noticed immediately. Fixed by wrapping the call in
-  `scripts/wsl-keepalive.vbs`, invoked via `wscript.exe //B` instead of
-  calling `wsl.exe` directly - `WScript.Shell.Run`'s hidden-window
-  argument is the standard, reliable way to make Task Scheduler run
-  something with zero visible window (more robust than `cmd.exe /min`
-  tricks, which can still flash briefly). Confirmed the task still
-  succeeds through the wrapper (`LastTaskResult: 0`, firing on
-  schedule, no missed runs).
-
-  **Confirmed fixed, not just "the task exists and fires"**: checked
-  back after a real ~25-minute unattended idle stretch, with the only
-  thing touching WSL2 in that window being the keepalive task's own
-  automated schedule - no manual `wsl` command run by anyone in
-  between, which would have masked the exact failure mode being tested.
-  `kubectl get nodes` showed `desktop-j1grrmu` still `Ready`, and
-  `Get-ScheduledTaskInfo` confirmed the task had fired every minute the
-  whole time with `NumberOfMissedRuns: 0`. This is the first time this
-  session the node has stayed `Ready` across a real idle window without
-  needing to be woken by hand.
-
-## Log (continued) - a routine Pi reboot that cascaded into three separate problems
-
-- 2026-09-04: Rebooted `joe` for a pending kernel update
-  (`6.12.47+rpt-rpi-2712` -> `6.18.39+rpt-rpi-2712`). The reboot itself
-  was clean - node back `Ready` within about a minute, every pod that
-  restarted because of it recovered on its own. Everything after this
-  point was **triggered by** the reboot but not an inherent part of it.
-
-  **Problem 1: a stuck `svclb-traefik` pod turned into a desktop-wide
-  crash loop.** One `svclb-traefik` pod (k3s's built-in ServiceLB
-  sidecar) came back from the reboot in `Unknown` with 54 restarts and
-  no events at all - looked like simple kubelet/API desync, so it got
-  deleted to let the DaemonSet recreate it. The replacement scheduled
-  onto `desktop-j1grrmu` and sat `Pending` for 5+ minutes with *zero*
-  kubelet activity, not even an image pull attempt - despite the node
-  showing `Ready` and its Lease renewing normally seconds apart. That
-  split (Lease healthy, NodeStatus/pod-processing not) was the first
-  sign this wasn't the already-solved idle-timeout bug from the log
-  above.
-
-  **Ruled out before finding the real cause:**
-  - Idle-timeout recurring - the `WSL2-K3s-Keepalive` scheduled task
-    was still firing every minute exactly as designed
-    (`Get-ScheduledTaskInfo` showed `LastRunTime`/`NextRunTime` a
-    minute apart).
-  - The whole machine sleeping - `Get-WinEvent` against
-    `Microsoft-Windows-Kernel-Power` showed no sleep/wake events
-    anywhere near the incident window.
-  - Docker Desktop restarting the shared WSL2 utility VM - Docker
-    Desktop wasn't even running at the time.
-
-  **Actual cause**: `journalctl -u k3s-agent` showed repeated `PLEG is
-  not healthy` and `Failed to create existing container: ... task
-  <id> not found` errors, all referencing the *same* pod UID across
-  multiple separate crash cycles - the recreated `svclb-traefik` pod
-  itself. Its `lb-tcp-80`/`lb-tcp-443` sidecar containers
-  (`crictl ps -a`) were exiting with code 255 within seconds of
-  starting, every single time, and each failed reconciliation attempt
-  was severe enough to take the entire `k3s-agent` process down with
-  it - not a hung agent causing a stuck pod, but a broken pod crashing
-  a healthy agent. Confirmed no port conflict at the OS level
-  (`ss -tlnp` showed nothing bound to 80/443) - this looks like the
-  ServiceLB pause-FIFO mechanism itself failing in this specific WSL2
-  environment, not a resource or config problem.
-
-  **Where this landed**: deleting the pod cleanly (not force-deleted
-  this time) bought a stable, healthy `2/2 Running` replacement and a
-  `k3s-agent` that settled into `active/running` - but it recurred
-  again about 7 minutes later. Left as a **known, unresolved, recurring
-  issue** rather than force-fixed blind: the pod is not required for
-  the cluster's actual routing (the `joe`-side `svclb-traefik` replica
-  stays healthy throughout, and every ingress hostname resolves through
-  it fine), so the practical impact is limited to `kubectl get pods`
-  showing one flapping pod. Next step, if this needs a real fix rather
-  than tolerance: either exclude `desktop-j1grrmu` from this specific
-  DaemonSet, or trace the pause-FIFO exec failure inside the WSL2
-  container runtime directly (`strace`-level, not attempted here).
-
-  **Problem 2 (separate, unrelated): Grafana's own metrics scrape
-  target came back down.** `kubernetes-pods` job showed
-  `10.42.0.91:9100/metrics` (Traefik, on `joe`) as connection-refused
-  in Prometheus. Traefik's config is verified correct -
-  `--metrics.prometheus=true`, `--entryPoints.metrics.address=:9100`,
-  and `kubectl exec ... wget localhost:9100/metrics` returns real
-  metrics from inside the pod - yet Prometheus, on the *same node*,
-  gets refused hitting the pod IP on that port. Points to Traefik only
-  binding its metrics listener to loopback rather than all interfaces.
-  Confirmed this predates today entirely (restart count on the pod was
-  1, from today's reboot, and the annotation/config have clearly been
-  there longer) - **left unresolved**, cosmetic only, doesn't affect
-  Traefik's actual routing or any other Grafana panel.
-
-  **Follow-up, same day - the loopback theory was wrong.** `netstat
-  -tlnp` inside the Traefik pod showed `:::9100 LISTEN` - a real
-  dual-stack bind, not loopback-only. `wget http://localhost:9100`
-  had been succeeding via `::1` (confirmed via `getent hosts
-  localhost`), which masked the actual cause: curling the pod's own
-  IPv4 address *from inside the same pod* also worked fine, but the
-  identical request from Prometheus - a different pod - was refused.
-  That pointed at something enforcing traffic *between* pods rather
-  than anything about the listening socket, and `kubectl get
-  networkpolicy -A` found it immediately: `traefik-lan-only`
-  (`kubernetes/argocd/traefik-security.yaml`), a deliberate policy
-  restricting Traefik ingress to the LAN CIDR only. Not a bug at all -
-  the policy was doing exactly what it was written to do, it just had
-  no exception for legitimate in-cluster traffic like Prometheus's own
-  scrape. Fixed with a second, narrowly-scoped `ingress` rule limited
-  to the `monitoring` namespace's `app: prometheus` pod, on port 9100
-  only - every other port and every other source stays LAN-restricted
-  exactly as before. Applied directly (this file is explicitly
-  not-Argo-managed, same as the rest of `traefik-security.yaml`).
-  Confirmed both ways: `wget` from the Prometheus pod to Traefik's pod
-  IP succeeded immediately after applying, and Prometheus's own
-  `/api/v1/targets` flipped this target to `up` on its next scrape.
-
-  **Problem 3 (separate, unrelated): Grafana OOMKilled again, past the
-  previous 512Mi fix.** The memory-limit fix from the original
-  OOMKilled incident (`docs/secrets.md`-adjacent Grafana notes) held
-  for hours, but OOMKilled again (exit 137) during this reboot's
-  recovery churn - many pods rescheduling/restarting simultaneously
-  across the cluster. `joe` had ample headroom throughout (55% of 8Gi
-  used, never memory-pressured node-wide), so this was Grafana's own
-  container hitting its cgroup limit, not the node running out.
-  Bumped `512Mi` -> `1Gi` (real breathing room, not another marginal
-  nudge) - confirmed stable afterward with 0 restarts.
-
-  **Net result**: reboot succeeded; Grafana OOM fixed properly this
-  time; the Traefik metrics scrape and the desktop `svclb-traefik` flap
-  are both pre-existing/recurring issues that were root-caused but
-  deliberately left open rather than papered over, since neither
-  affects real functionality and both would need deeper environment-
-  specific debugging (WSL2 container runtime internals; Traefik's
-  metrics-server bind address) to actually close out.
-
-## Log (continued) - the keepalive task was masking the real WSL2 bug, not fixing it
-
-- 2026-09-04, later the same day: chasing the `svclb-traefik` flap above
-  led somewhere the "confirmed fixed" idle-timeout entry from
-  2026-09-03 turned out to be wrong about. `dmesg -T` on the desktop's
-  Ubuntu-24.04 instance showed `WaitForBootProcess: /sbin/init failed
-  to start within 10000ms` plus an EXT4 unmount/remount cycle, **every
-  single minute, over 100 times in a row** (`15:08` through at least
-  `16:49`) - predating today's Pi reboot entirely, so this had been
-  running the whole time, not something today's work triggered.
-
-  **What the previous fix actually did vs. what it looked like it did**:
-  the keepalive task doesn't keep the instance warm between pings - each
-  `/bin/true` invocation was forcing a full cold mount+boot of the
-  distro from scratch, every single time, because `vmIdleTimeout`
-  governs only the shared WSL2 utility VM (confirmed separately still
-  running continuously via `uptime -s`, up since 06:14 the whole day) -
-  it does nothing for an individual distro's own idle detection. The
-  2026-09-03 "confirmed fixed" test wasn't wrong that the node stayed
-  `Ready` - it just didn't know a full cold-boot was happening under the
-  hood every 60 seconds anyway, fast enough each time (~15-30s) to not
-  trip the `NotReady` grace period. Today's heavier concurrent load
-  (reboot recovery, multiple manual `wsl.exe` invocations while
-  debugging) pushed some of those cold-boots slow enough to actually
-  surface as visible cluster flapping - the keepalive task didn't cause
-  today's instability, it had been silently papering over a real bug
-  the entire time.
-
-  **Nearly disabled the keepalive task as "the fix"** based on the
-  crash-pattern evidence alone, before checking what it would actually
-  do: since it's the thing *reviving* the instance each cycle rather
-  than what's crashing it, disabling it would have left the node
-  permanently dead the next time WSL idled the instance out, not fixed
-  anything. Caught before doing it, not after.
-
-  **Actual fix**: `instanceIdleTimeout=-1` under `[general]` in
-  `.wslconfig` - the documented, correct setting for per-instance idle
-  detection, as distinct from `[wsl2]`'s `vmIdleTimeout` which only
-  ever covered the shared VM. Needed `wsl --shutdown` to take effect
-  (same requirement as the original `vmIdleTimeout` fix), applied while
-  the cluster was healthy and idle - lowest-risk moment, same reasoning
-  as the first time this command was needed.
-
-  **Confirmed fixed, not just "the setting is present"**: after the
-  `wsl --shutdown` + `k3s-agent` restart, watched `dmesg` across
-  multiple keepalive cycles (4+ minutes, several 60s ticks) with zero
-  `WaitForBootProcess` or unmount events - a first, given every single
-  prior minute for the past two hours had produced one. `k3s-agent`
-  held `active` continuously across the same window instead of
-  restarting on its usual cadence.
-
-  **The keepalive task itself is now redundant but harmless** - with
-  the instance no longer idling out, its once-a-minute `/bin/true` ping
-  just touches an already-running distro instead of forcing a cold
-  boot. Left in place rather than removed: it's a no-op now, and having
-  it there as a backstop costs nothing if `instanceIdleTimeout` ever
-  stops being honored (e.g. a future WSL update).
-
-- Same day, immediately after: ran `wsl --update` while the cluster was
-  healthy and idle - `2.5.10.0` -> `2.7.13.0`, kernel `6.6.87.2` ->
-  `6.18.33.2`. A platform update only takes effect for a distro on its
-  next start, not the currently-running one, so this needed the same
-  `wsl --shutdown` + `k3s-agent` restart pattern as the
-  `instanceIdleTimeout` fix above. Confirmed the new kernel actually
-  took (`uname -r` inside the distro, not just `wsl --version` on the
-  Windows side) before considering it done. Node came back `Ready`,
-  full pod sweep clean, all 7 Argo CD Applications `Synced`/`Healthy`
-  afterward. No regression expected for `instanceIdleTimeout`, but
-  worth confirming it holds on this newer build over the next while
-  rather than assuming a platform update couldn't touch it.
-
-## Log (continued) - `host-gw` was never compatible with WSL2 mirrored mode, and the fix had its own bug
-
-- 2026-09-05: A routine post-PC-reboot check found both nodes `Ready`
-  and Argo CD healthy, but Prometheus showed one `api` replica
-  (scheduled on `desktop-j1grrmu`) permanently `down` - `context
-  deadline exceeded`, even on `/health`. Narrowed with direct tests
-  before touching anything: the same-node replica (on `joe`, same node
-  as Prometheus) scraped fine; `desktop -> joe` pod traffic worked
-  (the `worker` pod reached Postgres); `joe -> desktop` pod traffic was
-  100% packet loss to *any* IP in that subnet, even the `cni0` gateway
-  itself. A `tcpdump` on desktop's `eth1` during a ping from `joe`
-  captured **zero packets** - not a firewall drop inside Linux, the
-  traffic never arrived at the Windows-managed NIC at all.
-
-  **Ruled out, in order:**
-  - Windows network category (Public vs. Private) - was Public,
-    switched to Private, no change.
-  - Stale mirrored-networking state - `wsl --shutdown` (interface even
-    renumbered `eth0` -> `eth1` as expected from a full VM restart),
-    no change.
-
-  **Actual root cause, found via `pktmon` (not guessed):** captured on
-  the physical NIC while pinging from `joe` - the packet arrives, passes
-  the WFP filter cleanly, then `TCPIP` itself drops it: `DropReason Not
-  locally destined, DropLocation 0xE0004101`. Windows' own IP stack
-  refuses to route a packet whose destination isn't a locally-owned
-  address unless the interface has forwarding explicitly enabled, which
-  it didn't. This is a structural incompatibility, not a
-  misconfiguration: `host-gw` requires the desktop's Windows host to act
-  as a router for the `10.42.1.0/24` pod subnet, and Windows' strong-host
-  model blocks exactly that by default. Confirms this is a different
-  failure mode than the earlier VXLAN/`host-gw` switch documented above
-  - that fix (avoiding UDP encapsulation Windows' network stack didn't
-  like) doesn't help here, since plain routed IP has the opposite
-  problem (Windows refusing to forward it at all).
-
-  **Fix, part 1: switched flannel from `host-gw` to `wireguard-native`**
-  (`--flannel-backend=wireguard-native` on the k3s server, restart `k3s`
-  on `joe` then `k3s-agent` on desktop - same mechanism as the earlier
-  backend switch). This sidesteps the forwarding problem entirely rather
-  than fighting it: a WireGuard packet's destination is the peer's real
-  IP:port (a **locally-owned** address), so it's just normal inbound
-  traffic to a listening socket, never a "forward this to somewhere
-  else" decision. Confirmed kernel WireGuard support existed on both
-  nodes (`modprobe wireguard`) before switching.
-
-  **Fix, part 2: the existing WireGuard firewall rule was in the wrong
-  firewall.** A `K3s-WireGuard-Pi` rule already existed allowing UDP
-  51820 from the Pi - but it was a **Hyper-V firewall** rule
-  (`Get-NetFirewallHyperVRule`), which governs Hyper-V vSwitch traffic.
-  Mirrored-mode WSL2 doesn't create a separate vSwitch/adapter for this
-  (`Get-NetAdapter` showed no `vEthernet (WSL)` adapter, just the real
-  physical one) - so that rule likely never applied to this traffic path
-  at all. `Get-NetFirewallRule` (the classic Windows Defender Firewall,
-  which does govern the physical adapter) had no rule for port 51820 -
-  confirmed with packet captures on both ends: the Pi *was* sending its
-  handshake response, it just never reached desktop. Added the missing
-  classic-firewall counterpart, scoped the same way as the existing
-  kubelet-metrics rule (LAN/single-source only, not a blanket port
-  opening).
-
-  **That firewall rule alone didn't fix it, though** - a `tcpdump` on
-  desktop's `eth1` right after adding it still showed zero replies from
-  the Pi. The handshake only started succeeding after a second,
-  unrelated action: installing `iperf` and attempting
-  `iperf -u -s -p 51820` (expected to fail, since the kernel WireGuard
-  module already owns that port - `listener bind failed: Address
-  already in use`, confirmed via `ss -ulnp` beforehand). Immediately
-  after that failed bind attempt, `wg show` went from `0 B received`
-  (stuck there through dozens of retries) to a completed handshake.
-  Best explanation, not fully confirmed: WSL2 mirrored networking may
-  not always register a kernel-owned socket (as opposed to a normal
-  userspace `bind()`) for Windows-side inbound visibility on its own,
-  and a userspace bind attempt against that same port - even one that
-  fails - seems to trigger WSL2 to notice and register it. If a
-  WireGuard (or similar kernel-socket) port silently refuses inbound
-  traffic again despite correct firewall rules on both sides, try a
-  throwaway `iperf`/`nc` bind attempt against the same port before
-  assuming the firewall is still wrong.
-
-  **Fix, part 3 (the one that actually mattered): stale routes from the
-  old backend were shadowing the new one.** Even after both fixes above,
-  cross-node ping was still 100% loss. `wg show` showed one successful
-  handshake (proving the tunnel itself worked) but zero data bytes ever
-  received afterward - not a firewall problem at that point, something
-  routing traffic around the tunnel entirely. `ip route | grep 10.42` on
-  both nodes found it: a leftover `host-gw`-era route
-  (`10.42.1.0/24 via 192.168.1.131 dev wlan0` on the Pi;
-  `10.42.0.0/24 via 192.168.1.253 dev eth1` on desktop) still present
-  alongside the new `10.42.0.0/16 dev flannel-wg` route. Linux routing
-  is longest-prefix-match, so the old, more specific `/24` route was
-  winning over the new, broader `/16` route on **both** nodes - meaning
-  every packet since the backend switch had been going out the old raw
-  path and hitting the exact same "not locally destined" drop, making
-  it look like the WireGuard fix hadn't done anything. A live
-  `systemctl restart` of flannel's backend doesn't clean up routes
-  belonging to the *previous* backend - deleted both stale routes by
-  hand (`ip route del`), and cross-node ping went from 100% loss to 0%
-  loss immediately, no other change involved.
-
-  **Confirmed fixed with real traffic, not just ping**: `wg show`
-  climbed from 0 B to tens of KiB received on both ends: Prometheus's
-  `/api/v1/targets` flipped the previously-`down` desktop `api` replica
-  to `up`; full cluster sweep afterward showed every pod
-  `Running`/`Completed` and all 7 Argo CD Applications
-  `Synced`/`Healthy`.
-
-  **Takeaway for next time**: switching flannel backends via a live
-  `systemctl restart` (rather than a full reboot of both nodes) leaves
-  the old backend's routes in place, and they can silently take priority
-  over the new backend's route via longest-prefix-match without any
-  error or log message pointing at it. Any future flannel backend change
-  needs an explicit `ip route del` for the old backend's routes on every
-  node as part of the switch, not just a service restart - checked with
-  `ip route | grep 10.42`, not assumed clean.
-
-## Log (continued) - moving adguard-exporter into the cluster to get a real NetworkPolicy boundary
-
-- 2026-09-06: `adguard-exporter` (Prometheus metrics for AdGuard Home,
-  `docs`/`docker/dns`) started life as a Docker Compose container on the
-  Pi alongside AdGuard itself. Its `:9618` turned out to be reachable by
-  any pod scheduled on `joe` (confirmed directly: a pod forced onto `joe`
-  via `nodeSelector` could reach it, one forced onto `desktop-j1grrmu`
-  could not, same as a genuine LAN client) - same-node pod traffic to the
-  Pi's own IP bypasses ufw's INPUT chain the way kube-router traffic
-  already does elsewhere in this file. A Compose container isn't a pod,
-  so there's no ingress boundary a NetworkPolicy can attach to - that gap
-  was left as a documented, accepted limitation rather than chased with
-  ufw rules that can't actually see this traffic.
-
-  **Fix: moved it into the cluster** (`kubernetes/monitoring/
-  adguard-exporter.yaml`) specifically so a NetworkPolicy could restrict
-  ingress to the Prometheus pod only. Deliberately *not* `hostNetwork`,
-  even though that's the more direct way to reach AdGuard's
-  loopback-bound API on the Pi - a hostNetwork pod shares the node's real
-  network namespace the same way the Compose container did, and
-  kube-router's NetworkPolicy enforcement doesn't apply to it any more
-  than it applied there. Stayed `nodeSelector`-pinned to `joe` and now
-  reaches AdGuard over the Pi's real LAN IP (`192.168.1.253:3000`)
-  instead of loopback, using the same same-node ufw-bypass mechanism as
-  before - just with real enforcement on the other side now. Ingress-only
-  policy (no `Egress` policyType), which matters: an `Egress` lockdown
-  would need every other same-node pod's legitimate traffic enumerated
-  first to avoid breaking something, which is exactly why the Compose-era
-  gap wasn't closed that way. Restricting who can reach *this one pod*
-  carries none of that risk.
-
-  **Verified the policy actually blocks the right things, not just that
-  it applied**: Prometheus's own scrape target stayed `up` with a fresh
-  timestamp throughout. A throwaway pod with no `nodeSelector` (landed on
-  `desktop-j1grrmu`) got `curl: (28) Connection timed out`. A throwaway
-  pod forced onto `joe` via `nodeSelector` got `curl: (7) ... Connection
-  refused` at 0ms - a different failure mode than the cross-node case,
-  worth understanding rather than waving off: same-node blocked traffic
-  gets an active reject from kube-router's local iptables rule, while
-  cross-node blocked traffic just times out with no RST able to cross
-  back through the tunnel. Confirmed this wasn't specific to the
-  synthetic test pod either - exec'd into the real, already-running
-  Grafana pod (same node as the exporter, same namespace) and got the
-  identical `Connection refused`. Four pods, three outcomes (allowed /
-  refused / timed out), all consistent with one policy and two different
-  network paths - not three different bugs.
-
-## Log (continued) - the WireGuard socket quirk recurs on every reboot, and a wrong turn through ufw
-
-- 2026-09-06: **Cross-node networking was down again after a desktop
-  reboot.** Every pod scheduled on the desktop failed DNS resolution
-  (`Temporary failure in name resolution`), which surfaced as an Argo CD
-  `api-migrate` PreSync hook failing three times and blocking the whole
-  `backend` sync. `wg show` on the desktop: `0 B received, 591 KiB sent`,
-  `latest handshake: 0`.
-
-  **Wrong turn worth recording, because the evidence looked convincing.**
-  The Pi's ufw allows `8472/udp` (VXLAN) but has no rule for `51820/udp`,
-  under a default-deny incoming policy - the flannel backend changed to
-  `wireguard-native` and the firewall role was never updated. That reads
-  like an obvious root cause, and an ansible change to "fix" it was
-  already written before it was checked. It was wrong. Two things
-  disproved it: ufw logging is on and had 59 `[UFW BLOCK]` entries in 20
-  minutes with **none** for `DPT=51820`, and a `tcpdump` on the Pi showed it
-  both receiving the desktop's 148-byte handshake initiations and sending
-  92-byte responses back. The Pi was answering the whole time. Per
-  docs/ansible.md, a ufw rule there would likely have been a no-op
-  anyway - K3s's iptables chains process before ufw's INPUT - so the
-  change would have added exactly the kind of rule this repo refuses to
-  write: one that looks like security and isn't. Reverted unshipped.
-
-  **Actual cause: the WSL2 kernel-socket registration quirk documented in
-  "Fix, part 2" above, recurring after reboot.** Same signature as the
-  original: correct firewall rules on both ends, Pi sending responses,
-  desktop receiving nothing, kernel WireGuard socket bound on 51820. The
-  documented remedy worked immediately - `timeout 5 nc -u -l 51820` failing
-  with `Address already in use` took `wg show` from `0 B received` to a
-  completed handshake and 12 KiB received within seconds. Cross-node pod
-  ping went from 100% loss to 0%, and DNS resolved from a desktop pod.
-
-  The lesson from last time was written down and still cost an hour,
-  because the ufw gap was real, visible, and adjacent - it just wasn't
-  what was breaking anything. Read the log entry for the symptom you
-  actually have (`0 B received` with correct rules) before acting on the
-  first plausible misconfiguration you find.
-
-  **Made it survive reboots**: `scripts/wsl-wireguard-register.ps1`, run at
-  logon by the `WSL2-K3s-WireGuard-Register` Scheduled Task (same pattern
-  as `WSL2-K3s-Keepalive`). It waits for `flannel-wg`, exits immediately if
-  the tunnel is already handshaking, and **refuses to bind when 51820 is
-  free** - a free port means flannel hasn't claimed it yet, and binding
-  it would turn a boot-time fix into a boot-time outage.
-
-- 2026-09-06: **The reboot also moved the desktop's DHCP lease,
-  `192.168.1.131 -> 192.168.1.133`.** K3s and flannel re-registered on their
-  own (node `InternalIP` and `flannel.alpha.coreos.com/public-ip` both
-  updated), but six places hardcoded the old address: the `inference`
-  Endpoints, the dashboard's `GAMING_SSH_HOST` default and its
-  `dashboard-known-hosts` ConfigMap, the Compose Prometheus scrape target,
-  and two docs. The SSH host key is unchanged (same machine), so only the
-  address prefix moved.
-
-  **This should be a static DHCP reservation on the router.** Nothing
-  above is hard to fix once, but it is entirely avoidable, and the
-  failure mode is quiet: the dashboard's gaming-mode SSH would fail host
-  key verification, and `/v1/chat` would reach an Endpoints address with
-  nothing behind it, neither of which announces itself as "the IP
-  changed". Historical log entries above deliberately keep `.131` - they
-  record what was true at the time.
-
-- 2026-09-06: **An Argo CD Application can report `Synced` while ignoring part
-  of its own manifest.** Updating the desktop's address in
-  `kubernetes/ai/inference.yaml` synced "successfully" and changed nothing:
-  the `inference` Endpoints kept `.131` while git said `.133`, and the `ai`
-  Application stayed `Synced`/`Healthy` throughout. Argo's **stock**
-  `resource.exclusions` in `argocd-cm` excludes `Endpoints` and `EndpointSlice`
-  (control-plane-managed, high-churn, excluded to cut watch events) - so
-  the resource is skipped silently. Not a local misconfiguration; it ships
-  that way.
-
-  The only trace is an `ExcludedResourceWarning` condition on the
-  Application, which nothing surfaces by default:
-
-  ```bash
-  kubectl -n argocd get application ai -o jsonpath='{.status.conditions}'
-  ```
-
-  Applied by hand to fix it, and put a warning at the top of the Endpoints
-  block in the manifest. Worth remembering generally: "Synced" means
-  "every resource Argo is willing to look at matches", not "the cluster
-  matches this file". Any hand-written Endpoints in this repo is
-  documentation with a `kubectl apply` step attached, not GitOps.
-
-## Log (continued) - moving Ollama into WSL, because a Windows-side listener is invisible to its own node's pods
-
-- 2026-09-06: **Pods on the desktop could not reach Ollama on the desktop.**
-  From a pod on the Pi, `inference.ai.svc` answered 200 with the full model
-  list; from a pod on the desktop, connection refused. Until cross-node
-  networking was repaired this was self-limiting - such a replica could not
-  reach Postgres either, so it never started. Once the tunnel worked, the
-  replica started, passed `/health` on Postgres and Redis alone, joined the
-  Service as Ready, and failed every `/v1/chat` routed to it. A
-  healthy-looking pod serving broken inference is worse than the outage
-  that preceded it.
-
-  **It was not the firewall**, which is where the time went. Both relevant
-  rules are scoped identically (`192.168.1.0/24`, profile Any, Allow). The
-  split is by *what listens*:
-
-  ```
-  from a desktop pod:  192.168.1.133:11434  FAIL   (Ollama - Windows process)
-                       192.168.1.133:22     FAIL   (sshd  - Windows process)
-                       192.168.1.133:10250  OK     (kubelet - WSL process)
-  ```
-
-  Inside WSL, `192.168.1.133` is **WSL's own** address. WSL-side listeners
-  answer on it; Windows-side ones never see the packet. WSL cannot bind it
-  either (`Address already in use` - Windows holds it), so a forwarder there
-  is not an option. The Service path fails the same way: kube-proxy DNATs
-  the ClusterIP to `192.168.1.133:11434`, which WSL then delivers locally to
-  nothing.
-
-  **Rejected: an iptables DNAT** from the pod CIDR to `127.0.0.1:11434` (WSL's
-  loopback does bridge to Windows). It would have worked, but it means
-  hand-written NAT rules inserted ahead of kube-proxy's chains, keyed to a
-  ClusterIP that changes if the Service is recreated, reapplied after every
-  reboot and every k3s restart - fragile machinery in the exact area that
-  has already produced three separate incidents in this log.
-
-  **Fix: Ollama now runs inside WSL as a systemd service.** It becomes a
-  WSL-side listener like kubelet, so the same `192.168.1.133:11434` works
-  from both nodes and `inference.yaml` no longer depends on a Windows-side
-  address at all. GPU passthrough confirmed first (`/dev/dxg` present,
-  `nvidia-smi` reporting the RTX 3070 Ti), then v0.32.5 installed to match
-  the Windows build exactly so the existing model store stays compatible -
-  the 4.7G store was copied from `C:`Users`josep`.ollama` rather than
-  re-downloading. Ollama logs `library=CUDA compute=8.6` and the model sits
-  in VRAM (`size_vram: 4.7GB`), so the GPU is genuinely in use.
-
-  Verified: both nodes reach the Service, a real `/api/generate` through the
-  cluster returned 200 from the desktop pod, the previously-stuck replica
-  went Ready on its own, and the rollout completed with one replica per
-  node - the two-node spread restored rather than worked around.
-
-  **The Windows autostart shortcut was disabled** (renamed in the Startup
-  folder, reversible). Left in place it would re-grab `:11434` at next logon
-  and the WSL service would crash-loop against it - the two cannot
-  coexist, since whichever binds first wins and the other sees
-  `Address already in use`.
+| `joe` | control plane, and where state lives | Raspberry Pi 5, Debian 13, arm64 | 192.168.1.253 |
+| `m1-node` | worker | Ubuntu 24.04 VM (Multipass, bridged) on an M1 MacBook, arm64 | 192.168.1.63 |
+
+The worker was a WSL2 VM on the desktop until 2026-09-10; why it moved is
+in [node-migration.md](node-migration.md). When the Mac is off, `m1-node`
+goes `NotReady` and anything unpinned runs on the Pi alone.
+
+### Workloads
+
+| Namespace | Workload | Placement | Reached at |
+|---|---|---|---|
+| `data` | Postgres + pgvector | Pi (5Gi `local-path`) | backend only (NetworkPolicy) |
+| `backend` | Redis | Pi (1Gi) | backend only (NetworkPolicy) |
+| `backend` | FastAPI `api`, 2 replicas | either node | `api.home`, `ai.home` |
+| `backend` | `worker` (Redis job queue) | either node | - |
+| `ai` | `inference` | Service + hand-written Endpoints to Ollama on the desktop, `192.168.1.131:11434` | in-cluster |
+| `monitoring` | Prometheus, Grafana, Alertmanager, adguard-exporter | Pi | `prometheus.home`, `grafana.home`, `alerts.home` |
+| `argocd` | Argo CD | - | `argocd.home` |
+| `chat`, `kiwix`, `dashboard` | chat assistant, offline Wikipedia, status page | chat either; others Pi | `chat.home`, `wikipedia.home`, `dashboard.home` |
+
+Stateful workloads are pinned to the Pi: `local-path` volumes live on
+the node that created them, and the Pi is the machine that's always on.
+
+Not in the cluster: CoreDNS and AdGuard (whole-LAN DNS, too critical for
+a first Kubernetes pass - [router-migration.md](router-migration.md)) and
+the phone bridge (it needs the Bluetooth radio - [phone.md](phone.md)).
+
+### Networking and security
+
+- **Pod network:** flannel with the `wireguard-native` backend
+  (`--flannel-backend` on the K3s server). It was chosen when the worker
+  was WSL2, where `vxlan` and `host-gw` both failed (below). The move back
+  to `vxlan` planned in node-migration.md hasn't been done.
+- **Ingress:** Traefik (bundled with K3s), HTTPS with the homelab CA
+  ([https.md](https.md)).
+- **NetworkPolicies:** `traefik-lan-only` (Traefik reachable from the LAN,
+  plus Prometheus for its metrics); Postgres and Redis reachable from
+  `backend` only; adguard-exporter reachable from Prometheus only; Argo
+  CD's own policies.
+- **ufw doesn't filter pod traffic.** K3s's iptables chains run before
+  ufw's, so ufw rules don't apply to anything reaching a pod. The real
+  boundaries are the NetworkPolicies above - found by testing from outside
+  the allowed range, see [argocd.md](argocd.md).
+- **Images:** built for `linux/arm64` by CI and pulled from
+  `ghcr.io/josephvelasquez48/...` ([cicd.md](cicd.md)). Both nodes are
+  arm64 now; multi-arch builds were dropped with the WSL2 node.
+
+## How it got here
+
+- **2026-09-03:** K3s on the Pi (after enabling the memory cgroup in
+  `cmdline.txt`), the desktop joined as a WSL2 worker, and the Docker
+  Compose stack moved in. Each service was checked through its real
+  Ingress hostname before the Compose version was torn down.
+- **2026-09-03 to 09-06:** a run of WSL2-specific networking failures (table
+  below), each root-caused with packet captures.
+- **2026-09-10:** the worker moved to the M1 VM and the desktop left the
+  cluster - [node-migration.md](node-migration.md).
+
+## Incidents and lessons
+
+| What broke | Why | Fix | Lesson |
+|---|---|---|---|
+| K3s wouldn't start | Raspberry Pi OS leaves the memory cgroup off | `cgroup_memory=1 cgroup_enable=memory` in `cmdline.txt` | Check prerequisites against the running kernel, not assumed |
+| Worker couldn't join | ufw on the Pi had no rules for 6443, 8472, 10250 | LAN-scoped rules | The error was a timeout, not auth - read the error class |
+| `kubectl` failed over SSH only | `KUBECONFIG` was in `.zshrc`, which non-interactive shells skip | Moved to `.zshenv` | Test the way it's actually used |
+| Pods on the WSL2 node couldn't resolve DNS | Windows silently dropped inbound flannel VXLAN, after both firewall layers were opened | Switched flannel to `host-gw` | Packet captures on both ends located the drop |
+| Pi couldn't reach pods on the WSL2 node | Windows' IP stack refuses to forward (`pktmon`: `Not locally destined`) | Switched to `wireguard-native` - traffic to a local socket, not forwarded | `host-gw` needs the host to route, which Windows won't |
+| WireGuard still dead after the switch | Old `/24` routes from `host-gw` beat the new `/16` by longest-prefix match | `ip route del` the old routes | A backend switch doesn't clean up the previous backend's routes |
+| WireGuard got no replies after reboots | WSL2 mirrored mode didn't register the kernel socket for inbound until a userspace bind was tried on that port | A logon task that does that bind | A convincing ufw gap looked like the cause and wasn't - logs and `tcpdump` said the Pi was answering |
+| WSL2 node flapping `NotReady` | `vmIdleTimeout` covers only the shared VM; the distro cold-booted every minute, hidden by a keepalive task | `instanceIdleTimeout=-1` | "Stayed Ready" wasn't proof - `dmesg` showed 100+ reboots |
+| Prometheus couldn't scrape Traefik | `traefik-lan-only` blocked in-cluster traffic | A narrow rule for the Prometheus pod on port 9100 | The policy was working as written |
+| adguard-exporter reachable from any pod on the Pi | A Compose container has no NetworkPolicy boundary | Moved into the cluster with a Prometheus-only policy | Verified from four pods: allowed, refused, timed out - one policy, two paths |
+| Changed Endpoints never applied, while Argo said `Synced` | Argo CD excludes `Endpoints` by default | Applied by hand; warning in the manifest | `Synced` means "what Argo looks at matches" |
+| Grafana `OOMKilled` | 512Mi limit, hit during restart churn | 1Gi | The node had headroom; the container limit was the ceiling |
+| Pods on the WSL2 node couldn't reach Ollama on the same machine | A Windows listener is invisible to WSL-side traffic to the same IP | Ollama moved into WSL (later back to Windows when the desktop left) | Test from every node, not just one |
+
+## Everyday commands
+
+```bash
+kubectl get nodes -o wide                        # is the Mac up?
+kubectl get pods -A -o wide | grep -v Running    # anything unhappy
+kubectl -n argocd get applications               # GitOps state
+kubectl -n argocd get application ai -o jsonpath='{.status.conditions}'   # excluded-resource warnings
+```
