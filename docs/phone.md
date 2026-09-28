@@ -43,7 +43,8 @@ iPhone ──Bluetooth──► Pi: PipeWire / WirePlumber, hands-free role (+ A
 **The Phone window** opens from the taskbar pin, the desktop shortcut or
 the tray. From the top:
 
-- **Audio** - call volume, and while the mic is on, which mic. Two switches:
+- **Audio** (folds to a one-line summary; click to open) - call volume, and
+  while the mic is on, which mic. Two switches:
   - *Music and videos on this PC* - off plays them on the iPhone. Calls
     come to the PC either way. The iPhone's volume buttons set the level.
   - *Keep iPhone-answered calls on the iPhone* - calls you pick up on the
@@ -53,6 +54,10 @@ the tray. From the top:
 - **Status** - whether the iPhone is connected and where call audio is.
 - **Dial pad** - hidden until its switch is on.
 - **Recent** - the latest 3 calls, *Show all* for up to 30, each with *Call*.
+
+**The call pop-up:** while a call rings, it fills the whole pop-up - caller
+and Answer / Decline, nothing else. Once answered, the volume slider
+appears underneath.
 
 **During a call:** Mute, Keypad, End. *Move call audio to this PC* and
 *Send call audio to iPhone* move the audio either way.
@@ -83,6 +88,9 @@ Ctrl+Alt+M mutes. The X hides the window; *Quit* in the tray stops the app.
 - **The media switch moves one link.** The Pi is always registered as a
   speaker; the switch connects or drops just the phone's A2DP profile. That
   takes a second or two and never touches the calls link.
+- **No automatic gain control on the mic.** The Samson has a hardware gain
+  knob; the browser's AGC fought it, lifting the room's echo between
+  sentences ("sounds like a bathroom"). The knob alone sets the level.
 - **Mic only during calls.** The window opens the mic while a call rings
   (that also wakes the Samson, which sleeps) and closes it 5 s after the
   call ends.

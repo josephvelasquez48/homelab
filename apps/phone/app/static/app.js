@@ -16,7 +16,11 @@ let ws = null;
 let state = null;
 let audio = null; // { ctx, capture, player, gain, stream, mic, micBus, denoise, gate, rawAnalyser, analyser }
 
-const MIC_OPTIONS = { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 };
+// No automatic gain control: the Samson has a hardware gain knob, and AGC
+// fighting it turned the mic down while talking and up in pauses, lifting
+// the room's echo between sentences - callers said it sounded like a
+// bathroom. The knob sets the level; nothing re-levels it.
+const MIC_OPTIONS = { echoCancellation: true, noiseSuppression: true, autoGainControl: false, channelCount: 1 };
 
 // Which mic to use. Saved on the Pi as the device's *label* - Firefox and
 // the ring agent's window give the same device different IDs, but the
@@ -228,6 +232,7 @@ function setFilterLevel(level) {
   try { localStorage.setItem("phone-noise-level", level); } catch {}
   if (audio) routeMic();
   renderFilter();
+  renderAudioSummary();
 }
 
 // Levels before and after the filter, smoothed over ~1 s, from drawMeter.
@@ -472,9 +477,13 @@ function render(s) {
   if (s.audioError) showError(`Audio: ${s.audioError}`);
   if (s.settings) $("keep-phone").checked = !!s.settings.keepPhoneAnswered;
   if (s.settings) $("media-on-pc").checked = !!s.settings.mediaOnPc;
+  renderAudioSummary();
 
   const call = pickCall(s.calls);
   releaseAudioWhenIdle(!!call);
+  // A ringing call takes the whole pop-up (style.css, body.incoming);
+  // once answered, the volume slider comes back underneath.
+  document.body.classList.toggle("incoming", POPUP && !!call && (call.state === "incoming" || call.state === "waiting"));
   $("call-card").hidden = !call;
   $("dial-card").hidden = !!call || POPUP;
   if (POPUP) {
@@ -682,6 +691,21 @@ function showDialer(on, focus = false) {
 }
 try { showDialer(localStorage.getItem("phone-dialer") === "on"); } catch { showDialer(false); }
 $("show-dialer").onchange = (e) => showDialer(e.target.checked, true);
+
+// The Audio section folds to one summary line; open or closed is
+// remembered per window, and it starts closed.
+function showAudioSection(open) {
+  $("audio-body").hidden = !open;
+  $("audio-toggle").setAttribute("aria-expanded", String(open));
+  try { localStorage.setItem("phone-audio-open", open ? "1" : "0"); } catch {}
+}
+function renderAudioSummary() {
+  const media = state && state.settings && state.settings.mediaOnPc ? "Music on PC" : "Music on iPhone";
+  const filter = { off: "Off", normal: "Normal", strong: "Strong" }[filterLevel];
+  $("audio-summary").textContent = `${media} · Filter: ${filter}`;
+}
+try { showAudioSection(localStorage.getItem("phone-audio-open") === "1"); } catch { showAudioSection(false); }
+$("audio-toggle").onclick = () => showAudioSection($("audio-body").hidden);
 for (const b of document.querySelectorAll("#filter-level button")) b.onclick = () => setFilterLevel(b.dataset.level);
 renderFilter();
 
