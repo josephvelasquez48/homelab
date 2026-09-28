@@ -119,6 +119,7 @@ input:focus { outline: none; border-color: var(--accent); }
 .list .meta { color: var(--muted); font-size: 13px; }
 .list .missed { color: var(--bad); }
 .list button.small { background: color-mix(in srgb, var(--good) 16%, transparent); color: var(--good); }
+.recent-more { width: 100%; margin-top: 8px; }
 
 /* Settings */
 .settings { padding-bottom: 6px; }

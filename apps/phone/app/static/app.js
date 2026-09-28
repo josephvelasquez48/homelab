@@ -568,9 +568,21 @@ function div(text, cls) {
   return el;
 }
 
+// Recent calls show the latest few; the rest (the Pi sends up to 30) fold
+// away behind "Show all". Folded again whenever the window reloads.
+const RECENT_SHOWN = 3;
+let recentExpanded = false;
+let lastExtras = null;
+
 function renderExtras(x) {
+  lastExtras = x;
   const arrows = { in: "↙", out: "↗", unknown: "•" };
-  $("recent").replaceChildren(...x.history.map((c) => {
+  const shown = recentExpanded ? x.history : x.history.slice(0, RECENT_SHOWN);
+  const more = $("recent-more");
+  more.hidden = x.history.length <= RECENT_SHOWN;
+  more.textContent = recentExpanded ? "Show fewer" : `Show all (${x.history.length})`;
+  more.setAttribute("aria-expanded", String(recentExpanded));
+  $("recent").replaceChildren(...shown.map((c) => {
     const who = document.createElement("div");
     who.className = "who";
     const label = c.missed ? "Missed" : c.direction === "out" ? "Outgoing" : c.direction === "in" ? "Incoming" : "Call";
@@ -644,6 +656,10 @@ $("decline").onclick = () => send({ action: "hangup", call: currentCall().path }
 $("hangup").onclick = () => send({ action: "hangup", call: currentCall().path });
 $("to-phone").onclick = () => send({ action: "audio-to-phone" });
 $("refresh-contacts").onclick = () => send({ action: "refresh-contacts" });
+$("recent-more").onclick = () => {
+  recentExpanded = !recentExpanded;
+  if (lastExtras) renderExtras(lastExtras);
+};
 $("to-pc").onclick = async () => {
   answeredHere = true; // this window now holds the call's audio
   if (!(await enableAudio())) return;
