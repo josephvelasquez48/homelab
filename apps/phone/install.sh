@@ -75,3 +75,9 @@ systemctl --user daemon-reload
 systemctl --user enable phone-bridge.service
 systemctl --user restart phone-bridge.service
 systemctl --user --no-pager status phone-bridge.service | head -5
+
+# Calls on the Pi's own touchscreen (screen/phone_screen.py). Harmless
+# without a display: it only opens Chromium while a call is up.
+cp "$APP_DIR/screen/phone-screen.service" "$HOME/.config/systemd/user/phone-screen.service"
+systemctl --user daemon-reload
+systemctl --user enable --now phone-screen.service
