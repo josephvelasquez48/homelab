@@ -62,6 +62,12 @@ appears underneath.
 **During a call:** Mute, Keypad, End. *Move call audio to this PC* and
 *Send call audio to iPhone* move the audio either way.
 
+**The Pi's touchscreen:** while a call rings or is up, the Pi's own screen
+shows it full screen - Answer, Decline, then Keypad and End. It's a remote
+control: the Pi has no speakers or mic, so Answer there sends the call to
+the PC, exactly as if you'd answered on the PC. The rest of the time the
+Pi's desktop is left alone.
+
 **Tray and hotkeys:** the tray icon is green (connected), amber (on a
 call) or grey. Ctrl+Alt+A answers, Ctrl+Alt+H declines or hangs up,
 Ctrl+Alt+M mutes. The X hides the window; *Quit* in the tray stops the app.
@@ -94,6 +100,18 @@ Ctrl+Alt+M mutes. The X hides the window; *Quit* in the tray stops the app.
 - **Mic only during calls.** The window opens the mic while a call rings
   (that also wakes the Samson, which sleeps) and closes it 5 s after the
   call ends.
+- **The Pi's screen, without a login.** `screen/phone_screen.py` (a user
+  service) polls the phone service and opens Chromium kiosk-style on
+  `/popup?touch=1` during calls. Chromium maps `phone.home` to 127.0.0.1,
+  so it connects over loopback - which the service trusts, and nothing
+  else on the network can use - while the certificate still matches.
+  Chromium trusts that certificate's key directly (`--ignore-certificate-errors-spki-list`,
+  read from the certificate at each launch). The Pi's own screen doesn't
+  count as "the PC is on", and can't become an audio page.
+- **Answer on the Pi, audio on the PC.** The Pi publishes a *handoff*; the
+  PC's ringing window takes the audio (it announces itself as an audio
+  page); only then does the Pi answer. If the PC doesn't take it within 4 s,
+  the call is answered anyway, with the audio on the iPhone.
 - **Timeouts everywhere.** Every telephony D-Bus call has a limit (5 s,
   20 s for answer and dial), and reconnect attempts time out after 30 s.
 
@@ -127,7 +145,7 @@ python3 apps/phone/pair.py      # 2-minute pairing window - pair from the phone
 bash apps/phone/install.sh      # venv, WirePlumber config, user unit, linger
 ```
 
-`install.sh` prints the login password and agent token the first time
+`install.sh` also installs `phone-screen.service`. It prints the login password and agent token the first time
 (kept in `~/.config/phone-bridge/env`). On the iPhone, turn on **Sync
 Contacts** for "joe" in Bluetooth settings, or caller names stay empty.
 
