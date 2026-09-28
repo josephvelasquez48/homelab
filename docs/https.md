@@ -8,14 +8,16 @@ keeps `--insecure` internally).
 
 | Hostnames | HTTPS |
 |---|---|
-| `api.home`, `ai.home`, `dashboard.home`, `grafana.home`, `argocd.home` | **Valid** - verified with certificate checking on |
-| `chat.home`, `wikipedia.home`, `alerts.home`, `prometheus.home` | **Broken** - Traefik falls back to its self-signed default, so browsers warn. The certificate only lists the first five names (`certificates/issue.py`), and the `chat` and `kiwix` namespaces have no copy of the TLS Secret |
+| `api.home`, `ai.home`, `dashboard.home`, `grafana.home`, `argocd.home`, `chat.home`, `wikipedia.home`, `alerts.home`, `prometheus.home` | **Valid** - all nine verified with certificate checking on, from the Pi and from Windows |
 | `phone.home:8443` | Valid - its own certificate ([phone.md](phone.md)) |
 | AdGuard's UI (`:3000`), Ollama on the desktop | Plain HTTP - outside Traefik |
 
-**To fix the broken four:** add them to `hosts` in `certificates/issue.py`,
-reissue (steps below), and add `chat` and `kiwix` to the namespaces
-`homelab-tls.enc.yaml` creates the Secret in.
+**Adding a hostname:** add it to `hosts` in `certificates/issue.py` (and its
+namespace to the Secret list there), reissue, and apply. A name missing
+from the certificate doesn't fail loudly: Traefik quietly serves its
+self-signed default. That happened to `chat`, `wikipedia`, `alerts` and
+`prometheus` until 2026-09-27, because the list was never updated when
+they were added.
 
 ## The CA and trust
 
@@ -38,7 +40,7 @@ Import-Certificate -FilePath D:\homelab\certificates\homelab-ca.crt -CertStoreLo
 certificate as a list of namespace-local Secrets, applied with the normal
 SOPS process ([secrets.md](secrets.md)).
 
-## Renewing (manual - expires 2027-09-10)
+## Renewing (manual - expires 2027-09-28)
 
 There's no cert-manager and no expiry alert yet. Renew with the *same* CA,
 so clients don't need a new root:

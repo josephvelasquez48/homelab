@@ -6,7 +6,7 @@
 resource "github_repository" "homelab" {
   name        = "homelab"
   description = "Self-hosted cloud/AI platform on a Raspberry Pi 5 + GPU desktop: Docker/K3s, FastAPI, PostgreSQL/pgvector, local LLM RAG, CI/CD, observability"
-  visibility  = "private"
+  visibility  = "public"
 
   has_issues   = true
   has_projects = true
