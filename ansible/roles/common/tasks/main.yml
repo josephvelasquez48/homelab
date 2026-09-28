@@ -182,14 +182,14 @@
 # mpris-proxy (a user unit from bluez) hands a Bluetooth device's media
 # controls to desktop players. Nothing on the Pi uses that; it segfaulted
 # when the phone bridge restarted the Bluetooth stack, and every phone
-# feature was built and tested with it off. Kept off.
-- name: Disable the Bluetooth MPRIS proxy (user unit)
+# feature was built and tested with it off. Kept off. The package enables
+# it for every user (/etc/systemd/user/default.target.wants), so a per-user
+# disable doesn't stick; it has to be disabled globally.
+- name: Disable the Bluetooth MPRIS proxy (global user unit)
   ansible.builtin.systemd_service:
     name: mpris-proxy.service
-    scope: user
-    state: stopped
+    scope: global
     enabled: false
-  become: false
   register: pi_mpris_off
   failed_when:
     - pi_mpris_off.failed
