@@ -31,7 +31,7 @@ the Pi.
 
 | Role | What it does |
 |---|---|
-| `common` | Memory cgroup kernel flag (plus reboot), the Pi's own DNS resolver, avahi's `enable-wide-area=no` |
+| `common` | Memory cgroup kernel flag (plus reboot), the Pi's own DNS resolver, avahi's `enable-wide-area=no`; turns off what the desktop image ships but nothing uses - printing (CUPS, `cups-browsed`), the Bluetooth MPRIS proxy - and removes the retired blocklist timer |
 | `docker` | Docker Engine |
 | `firewall` | ufw: LAN-only rules for SSH, DNS, K3s; removes rules for retired IPv6 prefixes |
 | `k3s` | K3s server |
