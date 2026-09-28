@@ -211,3 +211,21 @@ body.popup.incoming .caller { font-size: 28px; }
 body.popup.incoming .round-row { gap: 44px; margin-top: 34px; }
 body.popup.incoming button.round { width: 72px; height: 72px; }
 body.popup.incoming button.round svg { width: 30px; height: 30px; }
+
+/* The Pi's 7" touchscreen (?touch=1): the call fills the screen at any
+   stage, with finger-sized buttons. No mic or speakers there, so no Mute,
+   volume or audio controls. */
+body.popup.touch main { max-width: none; min-height: 100vh; padding: 16px; }
+body.popup.touch main > :not(#call-card) { display: none !important; }
+body.popup.touch .call-card { flex: 1; margin: 0; display: flex; flex-direction: column; justify-content: center; }
+body.popup.touch #mute, body.popup.touch #to-pc-row, body.popup.touch #to-phone-row, body.popup.touch #meter-row { display: none !important; }
+body.popup.touch .avatar { width: 120px; height: 120px; font-size: 48px; margin-bottom: 18px; }
+body.popup.touch .call-state { font-size: 16px; }
+body.popup.touch .caller { font-size: 40px; }
+body.popup.touch .call-timer { font-size: 22px; }
+body.popup.touch .round-row { gap: 72px; margin-top: 40px; }
+body.popup.touch button.round { width: 110px; height: 110px; margin-bottom: 30px; }
+body.popup.touch button.round svg { width: 44px; height: 44px; }
+body.popup.touch button.round span { font-size: 16px; top: calc(100% + 10px); }
+body.popup.touch .keypad { grid-template-columns: repeat(3, 84px); gap: 14px 28px; }
+body.popup.touch .keypad button { width: 84px; height: 84px; font-size: 30px; }

@@ -297,3 +297,61 @@ async def test_page_that_closes_its_audio_stops_counting():
     await hub.command(page, {"action": "audio-off"})
     assert hub.audio_clients == []
     assert tel.reject_sco[-1] is True  # a call answered on the iPhone stays there again
+
+
+@pytest.mark.asyncio
+async def test_pis_own_screen_does_not_count_as_the_pc(monkeypatch):
+    import app.hub as hub_module
+
+    clock = {"t": 1000.0}
+    monkeypatch.setattr(hub_module.time, "monotonic", lambda: clock["t"])
+    hub, tel = make()
+    clock["t"] += hub_module.PC_GONE_SECONDS + 1  # the PC's agent stopped polling
+    await hub.add(FakeSocket(), local=True)  # only the Pi's touchscreen is open
+    assert not hub.pc_present()
+    await hub.add(FakeSocket())  # a page on another machine does count
+    assert hub.pc_present()
+
+
+@pytest.mark.asyncio
+async def test_touchscreen_answer_hands_the_audio_to_the_pc_first(tmp_path):
+    import asyncio
+
+    hub, tel = make(calls=[Call("/ag1/call1", "incoming", "+1555", "")], settings_path=tmp_path / "s.json")
+    touch, pc = FakeSocket(), FakeSocket()
+    await hub.add(touch, local=True)
+    await hub.add(pc)
+
+    async def pc_window():  # the PC's ringing window sees the handoff and takes the audio
+        while hub.snapshot()["handoff"] != "/ag1/call1":
+            await asyncio.sleep(0.01)
+        await hub.command(pc, {"action": "audio-ready"})
+
+    taker = asyncio.create_task(pc_window())
+    assert await hub.command(touch, {"action": "answer-on-pc", "call": "/ag1/call1"}) is None
+    await taker
+    # Answered only once the PC had the audio, with RejectSCO off - so the phone sends it to the Pi.
+    assert tel.answered == [("/ag1/call1", False)]
+    assert hub.snapshot()["handoff"] is None
+
+
+@pytest.mark.asyncio
+async def test_touchscreen_answer_still_answers_if_the_pc_never_takes_it(monkeypatch, tmp_path):
+    import app.hub as hub_module
+
+    monkeypatch.setattr(hub_module, "HANDOFF_WAIT_SECONDS", 0.05)
+    hub, tel = make(calls=[Call("/ag1/call1", "incoming", "+1555", "")], settings_path=tmp_path / "s.json")
+    touch = FakeSocket()
+    await hub.add(touch, local=True)
+    error = await hub.command(touch, {"action": "answer-on-pc", "call": "/ag1/call1"})
+    assert "on the iPhone" in error
+    assert [path for path, _ in tel.answered] == ["/ag1/call1"]
+
+
+@pytest.mark.asyncio
+async def test_pis_screen_cannot_become_an_audio_page():
+    hub, tel = make()
+    touch = FakeSocket()
+    await hub.add(touch, local=True)
+    assert "no speakers" in await hub.command(touch, {"action": "audio-ready"})
+    assert hub.audio_clients == []

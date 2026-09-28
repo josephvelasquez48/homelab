@@ -13,7 +13,11 @@ ExecStart=%h/.local/share/phone-bridge/venv/bin/uvicorn app.main:app \
     --host 0.0.0.0 --port 8443 \
     --ssl-certfile %h/.config/phone-bridge/tls.crt \
     --ssl-keyfile %h/.config/phone-bridge/tls.key \
-    --no-access-log
+    --no-access-log \
+    --timeout-graceful-shutdown 3
+# The graceful-shutdown limit: the PC's media stream (/api/agent/media) never
+# ends on its own, so without it uvicorn waited on it until systemd's 90 s
+# stop timeout killed the process - every restart took a minute and a half.
 Restart=on-failure
 RestartSec=3
 
