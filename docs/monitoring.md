@@ -1,157 +1,68 @@
-# Monitoring (Prometheus + Grafana)
+# Monitoring and alerting
 
-Roadmap step 9. See [docker/monitoring/README.md](../docker/monitoring/README.md)
-for the deploy/verify commands - this doc is the decision/debugging log.
+Roadmap step 9. Prometheus, Grafana and Alertmanager run in the cluster's
+`monitoring` namespace, pinned to the Pi. They started as Docker Compose
+on the Pi and moved into K3s ([kubernetes.md](kubernetes.md)).
 
-## Log
+## What's collected
 
-- 2026-09-03: Deployed Prometheus + Grafana + node_exporter on the Pi
-  (`network_mode: host`, same pattern as `docker/dns`). Prometheus scrapes
-  itself, node_exporter (Pi hardware), and the FastAPI `/metrics` on the
-  desktop across the network. Grafana's datasource and a 6-panel
-  "Homelab Overview" dashboard are provisioned from files in the repo
-  (`docker/monitoring/grafana/provisioning/`), not clicked together by
-  hand in the UI - a fresh deploy comes up pre-configured with the same
-  dashboard, not empty.
+| Target | What | Where it runs |
+|---|---|---|
+| `node-pi` | Pi hardware: CPU, memory, disk, temperature, network | `node_exporter` in Docker on the Pi (`docker/monitoring`), since it needs the host's `/proc` and `/sys` |
+| `kubernetes-pods` | Any pod annotated `prometheus.io/scrape` - the API, adguard-exporter, Traefik | Found through the Kubernetes API (RBAC lets Prometheus list pods) |
+| Textfile metrics | Backups ([backups.md](backups.md)) and the phone bridge ([phone.md](phone.md)) | Files in node_exporter's textfile directory, written by those services |
 
-  Renamed the internal DNS domain from `.joseph` to `.home` in the same
-  pass (`api.home`, `ai.home`, `grafana.home`) - unrelated to monitoring
-  itself, just landed at the same time.
+**Grafana** is provisioned from the repo (`kubernetes/monitoring/grafana.yaml`),
+so a fresh install comes up with its data source and the "Homelab
+Overview" dashboard: targets up, Pi CPU / memory / disk / temperature /
+load / network / disk I/O, OOM kills, API request rate and p95 latency,
+and AdGuard (queries, blocked, block rate, top domains).
 
-  **Verified real data, not just that nothing errored:**
-  - All three Prometheus targets (`prometheus`, `node-pi`, `homelab-api`)
-    reached `up` - including the cross-machine scrape from the Pi to the
-    desktop, which could plausibly have been blocked by Windows Firewall
-    but wasn't.
-  - Grafana's datasource and dashboard are actually provisioned
-    (`/api/datasources`, `/api/search?query=Homelab` both return them),
-    not just that the container started.
-  - Ran every panel's exact PromQL query directly against Prometheus:
-    CPU/memory/disk return real, sane numbers (e.g. disk usage 6.27% on
-    a 469GB NVMe with ~30GB used, which matches). Request-rate and p95
-    latency initially returned `0`/`NaN` - not a bug, just no traffic in
-    the last 5 minutes at query time - then generated real requests
-    (`/health`, `/v1/chat`) and confirmed the new handler labels appeared
-    and the panels populate once there's enough scrape history for
-    `rate()` to compute (a counter needs 2+ scrapes in-window; brand-new
-    series read `0` until then).
-
-## Known gaps (not done yet)
-
-- **No Windows host metrics.** node_exporter only runs on the Pi.
-  Desktop CPU/RAM/disk would need `windows_exporter` running natively on
-  Windows (not containerized - Docker Desktop on Windows can't cleanly
-  expose host-level Windows metrics from inside a Linux container).
-- **No GPU metrics.** The RTX 3070 Ti isn't monitored yet - would need
-  something like `nvidia_gpu_exporter` or DCGM, running natively
-  alongside Ollama.
-- **No Postgres/Redis exporters.** `postgres_exporter`/`redis_exporter`
-  would surface connection counts, query latency, cache hit rates, etc.
-- **Alerting covers backups only.** Alertmanager is deployed and emails
-  on backup failure (`kubernetes/monitoring/alertmanager.yaml`), but
-  nothing else has rules. A node going down, a pod crash-looping, a full
-  disk - none of those page anyone. Backups were done first because that
-  is where a silent failure costs the most, not because the rest is
-  covered.
+**Verified with data, not just "it started":** every panel's query was run
+directly against Prometheus and returned sane numbers (disk 6.3% of the
+469 GB NVMe matched `df`). Rate panels read 0 until a series has two
+scrapes in the window.
 
 ## Alerting
 
-Alertmanager emails on backup failure. Five rules, in
-`kubernetes/monitoring/alertmanager.yaml`.
+Alertmanager emails through Gmail (`smtp.gmail.com:587`, an app password).
+Rules are in `kubernetes/monitoring/alertmanager.yaml`:
 
-The rule that matters most is not the obvious one. `HomelabBackupStale`
-catches a backup that stopped happening, but a rule written as
-`value > threshold` never fires on a series that does not exist - and if
-the Mac stops publishing, or node_exporter dies, or Prometheus loses the
-Pi, the `homelab_backup_*` series simply vanish. `HomelabBackupMetricsMissing`
-uses `absent()` to catch exactly that. Absence is the failure mode that
-hides, and it is the one that looked like health all through the incident
-that prompted this.
+| Alert | Fires when |
+|---|---|
+| `HomelabBackupStale` | No snapshot for 26 h (the daily 03:00 run plus slack) |
+| `HomelabBackupMetricsMissing` | The backup metrics disappear altogether |
+| `HomelabBackupAgentFailed`, `...RepositoryUnreadable`, `...ReporterStale` | The Mac's backup agent, repository or reporter fails |
+| `PhoneBridgeDown`, `PhoneCallerSilent`, `PhonePcMicSilent` | The phone service stops, or a bridged call is silent one way |
 
-The threshold is 26 hours rather than 24. The schedule is 03:00 daily, so
-a 24-hour threshold flaps on ordinary jitter between one run and the next.
+**`absent()` is the rule that matters most.** A `value > threshold` rule
+never fires on a series that doesn't exist - and if the Mac stops
+publishing, the backup series just vanish. That's the failure that looks
+like health.
 
-### The config is a Secret, not a ConfigMap
+**The config is a SOPS Secret, not a ConfigMap:** it holds the SMTP
+password *and* the recipient address, and this repo is public. Apply it
+(`kubernetes/secrets/apply.sh`) before Argo CD creates the Deployment, or
+the pod can't mount its config.
 
-This repository is public. The Alertmanager config carries the SMTP app
-password *and* the destination address, so the whole file lives in
-`kubernetes/secrets/alertmanager-config.enc.yaml` under SOPS, mounted as a
-Secret. Splitting it - config in a ConfigMap, password in a Secret - would
-still have put an email address in a public manifest, and Alertmanager
-supports a file reference for the password but not for `smtp_from` or the
-recipient.
+## Deliberately not alerted
 
-### Ordering matters on a fresh deploy
+**Ollama being unreachable.** `homelab_inference_reachable` is set by the
+API's `/ready` handler. It used to fail readiness, which took *every* API
+replica out of service - and Argo CD reported `backend` Degraded - whenever
+the desktop slept. It's a metric now; Postgres and Redis still fail
+readiness, since those have somewhere else to route. An alert would fire
+every night the desktop sleeps and teach you to ignore alerts.
 
-The Secret is applied out-of-band by `kubernetes/secrets/apply.sh`, not by
-Argo CD (see `docs/secrets.md`). Argo will happily create the Deployment
-before the Secret exists, and the pod then sits unable to mount its config.
-Apply the secret first.
+## Known gaps
 
-### Gmail specifics
-
-`smtp.gmail.com:587` with STARTTLS, authenticating as the sending account.
-Google will not accept an account password here: it needs an **app
-password**, which requires 2-Step Verification to be on. That credential
-is generated by the account owner and pasted straight into SOPS, so it
-never lands in plaintext on disk:
-
-```sh
-sops kubernetes/secrets/alertmanager-config.enc.yaml
-```
-
-Replace `REPLACE_WITH_GMAIL_APP_PASSWORD`, save, and the file re-encrypts
-on write.
-
-### Both UIs are exposed, and neither authenticates
-
-`alerts.home` and `prometheus.home` exist so the links inside alert emails
-resolve. Alertmanager builds them from `--web.external-url`, Prometheus
-builds the `generatorURL` behind the "Source" link the same way, and
-without those flags both point at pod hostnames that resolve nowhere.
-
-Neither has any authentication, which is a real consequence rather than an
-oversight. Anyone on the LAN who reaches `alerts.home` can silence alerts.
-Anyone reaching `prometheus.home` can read every metric the cluster
-collects.
-
-Prometheus runs without `--web.enable-admin-api` and without
-`--web.enable-lifecycle`, so what is exposed is readable, not mutable.
-Adding either flag changes that materially and should not be done while
-the Ingress is unauthenticated.
-
-Traefik basic-auth middleware in front of both is the obvious fix. The
-repo has no middleware pattern yet, so it would be new machinery rather
-than reuse, and it has not been done.
-
-### Still not covered
-
-Nothing routes by severity - `critical` and `warning` go to the same
-mailbox. There is no second channel, so if email itself is broken the
-alert about it arrives by email. That is a real limitation of a
-single-receiver setup and worth remembering before trusting it completely.
-
-## Inference reachability is a metric, not a readiness failure
-
-`homelab_inference_reachable` is set by the API's `/ready` handler on every
-kubelet probe, so it tracks Ollama on the desktop without any extra
-polling.
-
-It exists because the check used to fail readiness, and that was wrong for
-this topology. Taking a replica out of the Service makes sense when there
-is somewhere else to route to. Ollama runs on a single desktop, so every
-replica failed the check at the same moment, the whole Deployment went
-unready, and Argo CD reported the `backend` app Degraded - because a PC had
-gone to sleep. Everything the API serves that has nothing to do with
-inference went down with it.
-
-Postgres and Redis still fail readiness. They are in-cluster, they have
-somewhere to route to, and a replica that cannot reach them genuinely
-cannot serve.
-
-**There is deliberately no alert on this metric.** The desktop sleeping is
-normal, so a rule on `homelab_inference_reachable == 0` would email every
-night and teach you to ignore alerts - which would eventually cost you a
-backup failure. Watch it on the dashboard instead. If the desktop ever
-becomes always-on infrastructure, an alert becomes reasonable at that
-point and not before.
+- **No Windows or GPU metrics.** Would need `windows_exporter` and an
+  NVIDIA exporter running natively on the desktop.
+- **No Postgres or Redis exporters** (connections, query latency, hit rates).
+- **Few alerts.** Nothing for a node down, a crash-looping pod or a full disk.
+- **One receiver.** Everything goes to one mailbox, so if email breaks, the
+  alert about it arrives by email.
+- **`alerts.home` and `prometheus.home` have no login** - they exist so links
+  in alert emails work. Anyone on the LAN can silence an alert or read
+  every metric. Prometheus's admin and lifecycle APIs are off, so it's read
+  only. The fix is Traefik basic-auth middleware, not built yet.

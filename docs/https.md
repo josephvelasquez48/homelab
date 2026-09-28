@@ -1,81 +1,65 @@
-# HTTPS for homelab services
+# HTTPS
 
-TLS terminates at Traefik for `api.home`, `ai.home`, `dashboard.home`,
-`grafana.home`, and `argocd.home`. Port 80 redirects to HTTPS on port 443.
-The internal Traefik-to-service hop remains HTTP; this is not pod-to-pod TLS.
-In particular, Argo's `--insecure` setting remains for its internal HTTP service.
+TLS ends at Traefik with a certificate from the homelab's own CA; port 80
+redirects to 443. The hop from Traefik to each pod stays HTTP (so Argo CD
+keeps `--insecure` internally).
 
-## Certificates and trust
+## Status
 
-`certificates/homelab-ca.crt` is the public local root. Its DNS name constraint
-limits issuance to `.home`; server SANs list the five service names explicitly.
-Trust the root on each client before using the HTTPS names. Windows current-user
-Root and the Pi system trust store were configured during deployment. Other
-clients, including phones and browsers with separate certificate stores, need
-manual trust. Do not disable certificate verification as a workaround.
+| Hostnames | HTTPS |
+|---|---|
+| `api.home`, `ai.home`, `dashboard.home`, `grafana.home`, `argocd.home` | **Valid** - verified with certificate checking on |
+| `chat.home`, `wikipedia.home`, `alerts.home`, `prometheus.home` | **Broken** - Traefik falls back to its self-signed default, so browsers warn. The certificate only lists the first five names (`certificates/issue.py`), and the `chat` and `kiwix` namespaces have no copy of the TLS Secret |
+| `phone.home:8443` | Valid - its own certificate ([phone.md](phone.md)) |
+| AdGuard's UI (`:3000`), Ollama on the desktop | Plain HTTP - outside Traefik |
 
-Windows import:
+**To fix the broken four:** add them to `hosts` in `certificates/issue.py`,
+reissue (steps below), and add `chat` and `kiwix` to the namespaces
+`homelab-tls.enc.yaml` creates the Secret in.
+
+## The CA and trust
+
+- **Public root:** `certificates/homelab-ca.crt`. Name-constrained to
+  `.home`, so it can't sign anything else. Valid ten years.
+- **Private key:** outside git, in the restricted age-key folder on
+  Windows, with a SOPS-encrypted copy in
+  `kubernetes/secrets/reference/homelab-ca.enc.yaml`. It's never in
+  Kubernetes. Protect the age key too - the encrypted copy is useless
+  without it.
+- **Trust the root on each client** - never turn off verification instead.
+  Done on Windows (current user) and on the Pi; not yet on the Mac or
+  phones.
 
 ```powershell
 Import-Certificate -FilePath D:\homelab\certificates\homelab-ca.crt -CertStoreLocation Cert:\CurrentUser\Root
 ```
 
-The CA private key is outside git at
-`C:\Users\josep\.config\sops\age\homelab-ca.key`, inside the restricted key
-directory. A SOPS-encrypted reference is in
-`kubernetes/secrets/reference/homelab-ca.enc.yaml`. The CA key is not installed
-in Kubernetes. `kubernetes/secrets/homelab-tls.enc.yaml` holds a List of four
-namespace-local TLS Secrets; these contain the shared server key and certificate
-and follow the existing manual SOPS apply process.
+`kubernetes/secrets/homelab-tls.enc.yaml` holds the server key and
+certificate as a list of namespace-local Secrets, applied with the normal
+SOPS process ([secrets.md](secrets.md)).
 
-## Renewal
+## Renewing (manual - expires 2027-09-10)
 
-The server certificate expires September 10, 2027. Renewal is manual; there is
-no cert-manager or expiry alert yet. Renew before expiry using the existing CA
-so clients do not need to trust a replacement root:
+There's no cert-manager and no expiry alert yet. Renew with the *same* CA,
+so clients don't need a new root:
 
-1. Run `certificates/issue.py` using Python with `cryptography` and SOPS installed.
-   The existing CA key and public certificate must both be present. The script
-   generates a new server key and encrypted secret manifests, not a new CA.
-2. Decrypt/apply `homelab-tls.enc.yaml` through the existing secrets workflow.
-3. Verify all five HTTPS hosts with certificate verification enabled, then commit
-   the encrypted changes. Do not commit plaintext key files.
+1. Run `certificates/issue.py` (needs Python `cryptography`, SOPS, and the
+   CA key and certificate). It makes a new server key and encrypted Secret
+   manifests - not a new CA.
+2. Apply `homelab-tls.enc.yaml` with `kubernetes/secrets/apply.sh`.
+3. Check every hostname with verification on, then commit the encrypted
+   files. Never commit plaintext keys.
 
-The CA lasts ten years. Protect the age key as well as the CA key; the encrypted
-reference alone cannot be decrypted without the age identity.
+## Worth knowing
 
-## Deployment and clients
-
-Workload Ingresses are GitOps-managed. Argo's own Ingress and
-`kubernetes/argocd/traefik-security.yaml` must still be applied manually.
-Install TLS Secrets before switching the Ingresses and redirect.
-
-The dashboard session cookie is Secure, HttpOnly, SameSite=Strict. Tests use an
-HTTPS base URL. Health probes and cluster-internal service calls continue to
-use their internal HTTP URLs. LAN API clients should change their base URL to
-`https://api.home` rather than relying on a redirect after sending an API key
-in an HTTP request. Load-test scripts with explicit HTTP URLs need an HTTPS
-base URL and trust of the root on their execution host.
-
-AdGuard's separate port-3000 UI is outside these Ingresses and remains HTTP.
-This rollout does not add encryption to that UI or Ollama's LAN API.
-
-Reference: https://doc.traefik.io/traefik/reference/routing-configuration/kubernetes/ingress/
-
-## Live verification
-
-All five names passed certificate/hostname validation. HTTP returns 308 with
-an HTTPS Location. A real dashboard login confirmed Secure, HttpOnly and
-SameSite=Strict cookies, and the test session was logged out afterward.
-Traefik is pinned to `joe`: DNS points to the Pi, and `externalTrafficPolicy:
-Local` requires a local Traefik pod. A rollout initially scheduled Traefik on
-the M1 and interrupted ingress until this placement was corrected.
-
-Windows curl with Schannel requires `--ssl-revoke-best-effort` for this CA
-because no CRL/OCSP service is configured. This preserves chain/hostname
-verification; it is not `--insecure`. Windows PowerShell HTTPS validation and
-Python validation with the explicit CA both passed without disabling trust.
-
-The encrypted CA reference and public root are included in the Mac's recovery
-backup, verified by a full Restic data check. Mac/browser trust installation
-has not been performed; the recovery directory contains the public certificate.
+- **Traefik is pinned to the Pi.** DNS points at the Pi and
+  `externalTrafficPolicy: Local` needs a local Traefik pod; a rollout that
+  put it on the M1 broke ingress until it was pinned.
+- **Windows `curl` needs `--ssl-revoke-best-effort`** for this CA, since
+  there's no revocation service. That still checks the chain and hostname
+  - it isn't `--insecure`.
+- **API clients should use `https://api.home` directly**, not rely on the
+  redirect after already sending an API key over HTTP. Health probes and
+  in-cluster calls stay on internal HTTP.
+- **The dashboard's session cookie** is Secure, HttpOnly, SameSite=Strict -
+  verified with a real login.
