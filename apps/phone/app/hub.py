@@ -51,7 +51,10 @@ DEFAULT_SETTINGS = {
     "mediaOnPc": True,
 }
 # Page actions that mean "this call belongs on the PC".
-PC_ACTIONS = ("answer", "dial", "audio-to-pc")
+PC_ACTIONS = ("answer", "dial", "audio-to-pc", "answer-on-pc")
+# How long "answer on the PC" (from the Pi's touchscreen) waits for the PC's
+# window to take the audio before answering anyway, audio then on the iPhone.
+HANDOFF_WAIT_SECONDS = 4
 # How long the phone's audio link may sit on the Pi with no call before the
 # hands-free link is reset to make the phone announce its calls again.
 ORPHAN_AUDIO_SECONDS = 8
@@ -108,6 +111,11 @@ class Hub:
         self._pc_seen = time.monotonic()
         self._orphan_reset = False
         self.clients: list[WebSocket] = []
+        # Pages on the Pi's own touchscreen (loopback). They can answer and
+        # hang up, but have no speakers or mic, and don't mean the PC is on.
+        self.local_clients: set[WebSocket] = set()
+        # The call the Pi's touchscreen asked the PC's window to take.
+        self._handoff: str | None = None
         self.audio_clients: list[WebSocket] = []
         self._last_state: dict | None = None
         self._reject_sco: tuple[str | None, bool] | None = None
@@ -131,6 +139,7 @@ class Hub:
         state["bridged"] = self.bridge.running
         state["audioError"] = self._audio_error
         state["settings"] = dict(self.settings)
+        state["handoff"] = self._handoff
         return state
 
     def extras(self) -> dict:
@@ -235,8 +244,11 @@ class Hub:
         self._pc_seen = time.monotonic()
 
     def pc_present(self) -> bool:
-        """The agent polled lately, or a page is open (a browser counts)."""
-        return bool(self.clients) or time.monotonic() - self._pc_seen < PC_GONE_SECONDS
+        """The agent polled lately, or a page is open (a browser counts) -
+        not the Pi's own touchscreen, which would keep the phone connected
+        with the PC off."""
+        remote = any(ws not in self.local_clients for ws in self.clients)
+        return remote or time.monotonic() - self._pc_seen < PC_GONE_SECONDS
 
     def _check_orphan_audio(self, state) -> None:
         """Recover a call the Pi never heard about.
@@ -317,6 +329,33 @@ class Hub:
         except OSError as e:
             log.warning("metrics not written: %s", e)
 
+    async def _answer_on_pc(self, path: str) -> str | None:
+        """Answer from the Pi's touchscreen, with the audio on the PC.
+
+        The PC's window must be an audio page *before* the phone answers:
+        with none, RejectSCO is on and the phone keeps the audio. So the
+        handoff is published first (the PC's window, already ringing with
+        its mic open, takes it and announces audio-ready), then the answer.
+        If the PC doesn't take it in time, answer anyway - better on the
+        iPhone than unanswered.
+        """
+        self._handoff = path
+        await self.broadcast_state()
+        try:
+            deadline = time.monotonic() + HANDOFF_WAIT_SECONDS
+            while not any(c not in self.local_clients for c in self.audio_clients):
+                if time.monotonic() > deadline:
+                    break
+                await asyncio.sleep(0.1)
+            took = any(c not in self.local_clients for c in self.audio_clients)
+            await self.tick()  # RejectSCO off now that a PC page has audio
+            await self.tel.answer(path)
+        finally:
+            self._handoff = None
+        if not took:
+            return "Answered - the PC didn't take the audio, so it's on the iPhone"
+        return None
+
     async def release_audio(self) -> None:
         """Send a call's audio back to the iPhone (see release-sco.sh)."""
         self._phone_held = True
@@ -351,12 +390,15 @@ class Hub:
             except Exception:
                 pass
 
-    async def add(self, ws: WebSocket) -> None:
+    async def add(self, ws: WebSocket, local: bool = False) -> None:
         self.clients.append(ws)
+        if local:
+            self.local_clients.add(ws)
         await self.broadcast_state(force=True)
         await self.broadcast_extras(only=ws)
 
     async def remove(self, ws: WebSocket) -> None:
+        self.local_clients.discard(ws)
         if ws in self.clients:
             self.clients.remove(ws)
         if ws in self.audio_clients:
@@ -391,6 +433,8 @@ class Hub:
                 self.settings["micLabel"] = str(msg.get("value", ""))[:200]
                 save_settings(self.settings_path, self.settings)
             elif action == "audio-ready":
+                if ws in self.local_clients:
+                    return "The Pi's screen has no speakers or mic"
                 if ws in self.audio_clients:
                     self.audio_clients.remove(ws)
                 self.audio_clients.append(ws)
@@ -402,6 +446,8 @@ class Hub:
                     self.audio_clients.remove(ws)
             elif action == "answer":
                 await self.tel.answer(str(msg.get("call", "")))
+            elif action == "answer-on-pc":
+                return await self._answer_on_pc(str(msg.get("call", "")))
             elif action == "hangup":
                 await self.tel.hangup(str(msg.get("call", "")))
             elif action == "dial":

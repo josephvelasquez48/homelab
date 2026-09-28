@@ -82,12 +82,20 @@ async def healthz():
     return {"ok": True}
 
 
+def is_local(client) -> bool:
+    """The Pi's own touchscreen. Chromium there maps phone.home to 127.0.0.1
+    (phone-screen.service), so its connections arrive on loopback, which no
+    other machine can reach; the certificate still matches phone.home."""
+    return bool(client) and client.host in ("127.0.0.1", "::1")
+
+
 @app.get("/")
 @app.get("/popup")
 async def index(request: Request):
     # /popup is the same page; app.js switches to the compact layout the
-    # ring agent opens as a small window.
-    page = "index.html" if request.session.get("authenticated") else "login.html"
+    # ring agent opens as a small window (and ?touch=1 for the Pi's screen).
+    signed_in = request.session.get("authenticated") or is_local(request.client)
+    page = "index.html" if signed_in else "login.html"
     return FileResponse(STATIC / page, headers={"Cache-Control": "no-store"})
 
 
@@ -102,8 +110,11 @@ def ringing_call():
 
 
 @app.get("/api/agent/ringing", dependencies=[Depends(require_agent)])
-async def agent_ringing():
-    hub.pc_seen()
+async def agent_ringing(screen: bool = False):
+    # The Pi's own screen watcher polls here too (screen=1); only the PC's
+    # agent means the PC is on.
+    if not screen:
+        hub.pc_seen()
     call = ringing_call()
     live = next((c for c in hub.tel.state.calls if c.state != "disconnected"), None)
     return {
@@ -185,11 +196,12 @@ async def ws(websocket: WebSocket):
     # WebSocket handshake isn't subject to CORS, so check Origin as well.
     origin = websocket.headers.get("origin", "")
     host = websocket.headers.get("host", "")
-    if not websocket.session.get("authenticated") or origin != f"https://{host}":
+    local = is_local(websocket.client)
+    if not (websocket.session.get("authenticated") or local) or origin != f"https://{host}":
         await websocket.close(code=4401)
         return
     await websocket.accept()
-    await hub.add(websocket)
+    await hub.add(websocket, local=local)
     try:
         while True:
             message = await websocket.receive()

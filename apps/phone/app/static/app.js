@@ -9,7 +9,11 @@ const POPUP = location.pathname === "/popup";
 // call popup (/popup) or the full app (/) - which shows and hides itself,
 // so no self-closing and no browser notifications.
 const AGENT = new URLSearchParams(location.search).has("agent");
+// ?touch=1: the Pi's own touchscreen (phone-screen.service). A remote control
+// - no speakers or mic there - so Answer sends the call to the PC.
+const TOUCH = new URLSearchParams(location.search).has("touch");
 if (POPUP) document.body.classList.add("popup");
+if (TOUCH) document.body.classList.add("touch");
 let popupHadCall = false;
 let popupCloseTimer = null;
 let ws = null;
@@ -480,6 +484,12 @@ function render(s) {
   renderAudioSummary();
 
   const call = pickCall(s.calls);
+  // Answered on the Pi's touchscreen: this window (the PC's) takes the audio,
+  // as if Answer had been clicked here. The Pi answers once we announce.
+  if (AGENT && call && s.handoff === call.path && !answeredHere) {
+    answeredHere = true;
+    enableAudio().then((ok) => { if (ok) announceAudio(); });
+  }
   releaseAudioWhenIdle(!!call);
   // A ringing call takes the whole pop-up (style.css, body.incoming);
   // once answered, the volume slider comes back underneath.
@@ -493,7 +503,7 @@ function render(s) {
       popupHadCall = true;
       clearTimeout(popupCloseTimer);
       popupCloseTimer = null;
-    } else if (!popupCloseTimer && !AGENT) {
+    } else if (!popupCloseTimer && !AGENT && !TOUCH) {
       popupCloseTimer = setTimeout(() => window.close(), popupHadCall ? 1500 : 4000);
     }
     $("popup-idle").hidden = !!call;
@@ -654,6 +664,11 @@ $("volume").oninput = (e) => {
 };
 
 $("answer").onclick = async () => {
+  if (TOUCH) {
+    // The Pi's screen: the PC's window takes the audio, then the Pi answers.
+    send({ action: "answer-on-pc", call: currentCall().path });
+    return;
+  }
   // Answering from here should bring the audio here too, so make sure the
   // PC side is ready before the phone moves the call over.
   answeredHere = true;
@@ -732,7 +747,7 @@ for (const [padId, onKey] of [
 // requested, so opening the page can't pop a permission prompt. (The ring
 // agent's window turns audio on when Answer is clicked instead.)
 async function autoEnableAudio() {
-  if (AGENT || !navigator.permissions) return;
+  if (AGENT || TOUCH || !navigator.permissions) return;
   try {
     const mic = await navigator.permissions.query({ name: "microphone" });
     // Wait for the Pi's first state message: it carries the saved mic, and
