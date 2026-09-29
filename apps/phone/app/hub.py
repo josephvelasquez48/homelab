@@ -342,7 +342,10 @@ class Hub:
         self._handoff = path
         await self.broadcast_state()
         try:
-            deadline = time.monotonic() + HANDOFF_WAIT_SECONDS
+            # No page on another machine at all: nothing can take the audio,
+            # so don't make the caller wait for it.
+            has_pc_page = any(c not in self.local_clients for c in self.clients)
+            deadline = time.monotonic() + (HANDOFF_WAIT_SECONDS if has_pc_page else 0)
             while not any(c not in self.local_clients for c in self.audio_clients):
                 if time.monotonic() > deadline:
                     break

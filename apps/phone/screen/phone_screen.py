@@ -33,8 +33,12 @@ CA = Path(__file__).resolve().parents[3] / "certificates/homelab-ca.crt"
 URL = "https://phone.home:8443/popup?touch=1"
 STATUS = "https://127.0.0.1:8443/api/agent/ringing?screen=1"
 PROFILE = Path.home() / ".local/share/phone-screen/chromium"
-POLL_SECONDS = 1.0
-CLOSE_AFTER_SECONDS = 3  # a moment after the call ends, so "Call ended" can show
+# Loopback and cheap, so poll often: the check interval is most of the delay
+# between a call arriving and the screen showing it (Chromium itself starts
+# and connects in ~0.8 s here). Closing waits only a moment - after the call
+# ends the page is blank, and a 3 s wait there read as the screen hanging.
+POLL_SECONDS = 0.25
+CLOSE_AFTER_SECONDS = 0.5
 
 log = logging.getLogger("phone-screen")
 

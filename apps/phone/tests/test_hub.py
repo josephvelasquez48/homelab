@@ -355,3 +355,16 @@ async def test_pis_screen_cannot_become_an_audio_page():
     await hub.add(touch, local=True)
     assert "no speakers" in await hub.command(touch, {"action": "audio-ready"})
     assert hub.audio_clients == []
+
+
+@pytest.mark.asyncio
+async def test_touchscreen_answer_does_not_wait_when_no_pc_page_is_open(tmp_path):
+    import time as clock
+
+    hub, tel = make(calls=[Call("/ag1/call1", "incoming", "+1555", "")], settings_path=tmp_path / "s.json")
+    touch = FakeSocket()
+    await hub.add(touch, local=True)  # only the Pi's screen - nothing to hand the audio to
+    started = clock.monotonic()
+    await hub.command(touch, {"action": "answer-on-pc", "call": "/ag1/call1"})
+    assert clock.monotonic() - started < 1  # not the 4 s handoff wait
+    assert [path for path, _ in tel.answered] == ["/ag1/call1"]
