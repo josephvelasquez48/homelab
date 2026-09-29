@@ -1,0 +1,19 @@
+# systemd *user* unit (~/.config/systemd/user/), installed by install.sh.
+# Keeps https://dashboard.home/display full screen on the Pi's touchscreen.
+# Started at desktop login by pi-display.desktop, which hands over the
+# session's DISPLAY first - the user manager itself starts before X does.
+[Unit]
+Description=Homelab display on the Pi's touchscreen (dashboard.home/display)
+
+[Service]
+ExecStart=/usr/bin/chromium --kiosk \
+    --user-data-dir=%h/.local/share/pi-display/chromium \
+    --noerrdialogs --disable-infobars --no-first-run --password-store=basic \
+    --disable-session-crashed-bubble --check-for-update-interval=31536000 \
+    --overscroll-history-navigation=0 --disable-pinch \
+    --disable-features=Translate,TouchpadOverscrollHistoryNavigation \
+    https://dashboard.home/display
+# A call opens its own Chromium on top (apps/phone/screen), and closing it
+# shows this again. If this one exits, bring it back.
+Restart=always
+RestartSec=5

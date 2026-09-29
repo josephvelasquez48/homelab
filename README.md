@@ -178,6 +178,9 @@ with the Pi as the phone's Bluetooth hands-free unit. A host service
 RustDesk server - remote desktop between the PC, the laptop and the Pi through
 the Pi instead of public servers, LAN only with a required key - see
 [docs/rustdesk.md](docs/rustdesk.md).
+Always-on display on the Pi's touchscreen - a live architecture map with
+real traffic, and a tap away, an aquarium with one fish per pod - see
+[docs/dashboard.md](docs/dashboard.md).
 
 ## Repo structure
 
@@ -193,7 +196,8 @@ homelab/
 ├── terraform/             # GitHub repo settings as code
 ├── load-testing/          # k6 scripts - see docs/load-testing.md
 ├── failure-testing/        # Fault-injection scripts - see docs/failure-testing.md
-├── apps/dashboard/          # Status UI + GPU release trigger, runs in-cluster - see docs/dashboard.md
+├── apps/dashboard/          # Status UI, GPU release, the Pi's always-on display, runs in-cluster - see docs/dashboard.md
+├── apps/pi-display/         # Opens the display full screen on the Pi's touchscreen - see docs/dashboard.md
 ├── apps/phone/              # iPhone calls on the desktop via the Pi's Bluetooth, host service - see docs/phone.md
 ├── backup/                 # Encrypted backup + restore-rehearsal tooling - see docs/backups.md
 ├── scripts/                # Small host utilities (e.g. the deployed-auth verifier)

@@ -32,6 +32,14 @@ ALERTMANAGER_URL = os.environ.get(
     "ALERTMANAGER_URL", "http://alertmanager.monitoring.svc.cluster.local:9093"
 )
 
+# The Pi's LAN address, where the host services the display probes live
+# (CoreDNS on :53, RustDesk on :21116) - see app/display.py.
+HOST_IP = os.environ.get("HOST_IP", "192.168.1.253")
+
+# Where the display's weather is for (Open-Meteo, no key). Unset hides it.
+WEATHER_LAT = os.environ.get("WEATHER_LAT", "")
+WEATHER_LON = os.environ.get("WEATHER_LON", "")
+
 # Session auth for the state-changing gaming-mode endpoints. Both values
 # come from the dashboard-auth Secret
 # (kubernetes/secrets/dashboard-auth.enc.yaml, SOPS-encrypted and applied
