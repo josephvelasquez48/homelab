@@ -59,6 +59,12 @@ approving it on the Pi. Set with `sudo raspi-config nonint do_wayland W1`
 and a reboot; `W2` switches back. The touchscreen call screen works on
 either (`apps/phone/screen/phone_screen.py`).
 
+X11 doesn't read labwc's rotation (kanshi `transform 270`), so the
+touchscreen is rotated separately there: `xrandr --output DSI-2 --rotate
+right` in `/usr/share/dispsetup.sh`, and the touch input to match in
+`/etc/X11/xorg.conf.d/40-touch-rotate.conf` (TransformationMatrix
+`0 1 0 -1 0 1 0 0 1`).
+
 ## Limits
 
 Away from home the laptop can't reach `rustdesk.home`. Reaching it from
