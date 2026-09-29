@@ -1,6 +1,6 @@
 services:
-  # Self-hosted RustDesk server, so remote sessions between the desktop and
-  # the laptop never go through RustDesk's public servers. LAN only: ufw
+  # Self-hosted RustDesk server, so remote sessions between the PC, the
+  # laptop and the Pi never go through RustDesk's public servers. LAN only: ufw
   # allows 21115-21117 from 192.168.1.0/24 and nothing else (see
   # docs/rustdesk.md).
   #
