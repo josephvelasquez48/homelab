@@ -111,7 +111,12 @@ Ctrl+Alt+M mutes. The X hides the window; *Quit* in the tray stops the app.
 - **Answer on the Pi, audio on the PC.** The Pi publishes a *handoff*; the
   PC's ringing window takes the audio (it announces itself as an audio
   page); only then does the Pi answer. If the PC doesn't take it within 4 s,
-  the call is answered anyway, with the audio on the iPhone.
+  the call is answered anyway, with the audio on the iPhone - at once if no
+  PC window is connected at all.
+- **Taps respond at once.** Answer, Decline and End dim and say
+  "Answering…" etc. the moment they're pressed, until the call's next state
+  arrives. The Pi's screen checks for calls every 0.25 s and closes 0.5 s
+  after one ends.
 - **Timeouts everywhere.** Every telephony D-Bus call has a limit (5 s,
   20 s for answer and dial), and reconnect attempts time out after 30 s.
 
