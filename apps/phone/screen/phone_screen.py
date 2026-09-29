@@ -53,6 +53,19 @@ def wayland() -> bool:
     return (Path(runtime) / os.environ.get("WAYLAND_DISPLAY", "wayland-0")).exists()
 
 
+def wake_x11() -> None:
+    """Wake a blanked X11 display without turning power saving on.
+
+    `xset dpms force on` also enables DPMS, with its default 10-minute
+    timeout - on a Pi set never to blank, one call brought the sleep timer
+    back. Turn it off again if it was off before.
+    """
+    was_off = "DPMS is Disabled" in subprocess.run(["xset", "q"], capture_output=True, text=True).stdout
+    subprocess.run(["xset", "dpms", "force", "on"], capture_output=True)
+    if was_off:
+        subprocess.run(["xset", "-dpms"], capture_output=True)
+
+
 def agent_token() -> str:
     for line in (CONFIG / "env").read_text().splitlines():
         if line.startswith("PHONE_AGENT_TOKEN="):
@@ -92,9 +105,10 @@ class Screen:
 
     def open(self) -> None:
         on_wayland = wayland()
-        # Wake a blanked display.
-        wake = ["wlopm", "--on", "*"] if on_wayland else ["xset", "dpms", "force", "on"]
-        subprocess.run(wake, capture_output=True)
+        if on_wayland:
+            subprocess.run(["wlopm", "--on", "*"], capture_output=True)  # wake a blanked display
+        else:
+            wake_x11()
         PROFILE.mkdir(parents=True, exist_ok=True)
         self.browser = subprocess.Popen(
             [
