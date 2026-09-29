@@ -62,6 +62,9 @@ The touchscreen call screen works on either. X11 ignores labwc's rotation
 - display: `xrandr --output DSI-2 --rotate right` in `/usr/share/dispsetup.sh`
 - touch: `/etc/X11/xorg.conf.d/40-touch-rotate.conf`, TransformationMatrix
   `0 1 0 -1 0 1 0 0 1`
+- no screen blanking: X11 blanks after 10 minutes by default, labwc here
+  didn't. Off with `sudo raspi-config nonint do_blanking 1`
+  (`/etc/X11/xorg.conf.d/10-blanking.conf`)
 
 ## Limits
 
