@@ -98,6 +98,11 @@ spec:
           # open. The page says so explicitly via /api/session.
           envFrom:
             - secretRef: { name: dashboard-auth, optional: true }
+          # Weather on the Pi's display (Open-Meteo, no key): ZIP 92505,
+          # Riverside CA. Unset hides it.
+          env:
+            - { name: WEATHER_LAT, value: "33.92" }
+            - { name: WEATHER_LON, value: "-117.49" }
           ports:
             - containerPort: 8000
           resources:
