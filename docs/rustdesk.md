@@ -47,6 +47,15 @@ The bottom of the main window should then say **Ready**.
 Recommended in **Settings > Security**: a strong permanent password (or
 "accept sessions via click" only), and **Enable direct IP access** off.
 
+## The Pi's own desktop
+
+Not RustDesk: on Wayland (labwc) it can't take a session without someone
+approving it on the Pi's screen. Raspberry Pi OS's **wayvnc** is already
+running on :5900 and handles it: login is the Pi user's password (PAM) and
+the session is encrypted. ufw allows 5900 from the LAN only.
+
+Connect with RealVNC Viewer to `192.168.1.253`.
+
 ## Limits
 
 Away from home the laptop can't reach `rustdesk.home`. Reaching it from

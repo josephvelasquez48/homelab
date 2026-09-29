@@ -37,6 +37,9 @@
     # Its web-client ports (21118/21119) stay closed - nothing uses them.
     - { port: "21115:21117", proto: tcp, comment: "RustDesk server - LAN only" }
     - { port: "21116", proto: udp, comment: "RustDesk ID server - LAN only" }
+    # The Pi's own desktop: Raspberry Pi OS's wayvnc (password = the Pi
+    # login, encrypted). RustDesk can't do unattended access on Wayland.
+    - { port: "5900", proto: tcp, comment: "wayvnc - LAN only" }
     - { port: "6443", proto: tcp, comment: "K3s API - LAN only" }
     - { port: "8472", proto: udp, comment: "K3s Flannel VXLAN - LAN only" }
     - { port: "10250", proto: tcp, comment: "K3s kubelet - LAN only" }
