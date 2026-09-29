@@ -30,6 +30,9 @@ venv/
 # cache), not source
 docker/dns/adguard/
 
+# RustDesk server's key pair and peer database
+docker/rustdesk/data/
+
 # OS
 .DS_Store
 Thumbs.db

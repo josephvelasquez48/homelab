@@ -14,3 +14,6 @@
 # Bluetooth radio), serving its own TLS on :8443 - https://phone.home:8443.
 # See docs/phone.md.
 192.168.1.253 phone.home
+# Not behind Traefik either: the RustDesk server (docker/rustdesk), whose
+# own ports 21115-21117 the clients use directly. See docs/rustdesk.md.
+192.168.1.253 rustdesk.home

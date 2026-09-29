@@ -61,6 +61,12 @@ with tempfile.TemporaryDirectory(prefix='homelab-snapshot-') as tmp:
     if config.read_bytes() != content:
         raise RuntimeError('AdGuard config changed during capture; retry')
     shutil.copy2(dns / 'docker-compose.yml', root / 'dns/docker-compose.yml')
+    # RustDesk's key pair: every client is configured with its public half.
+    rustdesk = Path('/home/joe/apps/homelab/docker/rustdesk/data')
+    if rustdesk.exists():
+        (root / 'rustdesk').mkdir()
+        for key in rustdesk.glob('id_ed25519*'):
+            shutil.copy2(key, root / 'rustdesk' / key.name)
     metadata = {'created_utc': datetime.now(timezone.utc).isoformat(), 'k3s_version': run(['k3s', '--version']).decode(), 'exclusions': ['Prometheus history', 'AdGuard query history, statistics, and filter cache', 'Ollama models', 'Grafana plugin binaries'], 'consistency': 'Each database snapshot is consistent independently; snapshots are not atomic across services.'}
     (root / 'metadata.json').write_text(json.dumps(metadata, indent=2))
     with tarfile.open(fileobj=sys.stdout.buffer, mode='w|') as archive:
