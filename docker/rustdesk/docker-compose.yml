@@ -1,0 +1,33 @@
+services:
+  # Self-hosted RustDesk server, so remote sessions between the PC, the
+  # laptop and the Pi never go through RustDesk's public servers. LAN only: ufw
+  # allows 21115-21117 from 192.168.1.0/24 and nothing else (see
+  # docs/rustdesk.md).
+  #
+  # -k _ makes both halves refuse any client that doesn't have this
+  # server's public key (data/id_ed25519.pub), so knowing the address isn't
+  # enough to use it. The key pair is made on first start; losing the
+  # private half means re-keying every client, so the Pi snapshot backs it
+  # up (backup/pi-snapshot.py).
+
+  # ID/rendezvous server: 21115 (NAT test), 21116 tcp+udp (IDs, hole punching).
+  hbbs:
+    image: rustdesk/rustdesk-server:1.1.16
+    container_name: rustdesk-hbbs
+    command: hbbs -r rustdesk.home:21117 -k _
+    network_mode: host
+    volumes:
+      - ./data:/root
+    depends_on:
+      - hbbr
+    restart: unless-stopped
+
+  # Relay: 21117, used when two clients can't connect to each other directly.
+  hbbr:
+    image: rustdesk/rustdesk-server:1.1.16
+    container_name: rustdesk-hbbr
+    command: hbbr -k _
+    network_mode: host
+    volumes:
+      - ./data:/root
+    restart: unless-stopped

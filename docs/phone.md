@@ -107,7 +107,9 @@ Ctrl+Alt+M mutes. The X hides the window; *Quit* in the tray stops the app.
   else on the network can use - while the certificate still matches.
   Chromium trusts that certificate's key directly (`--ignore-certificate-errors-spki-list`,
   read from the certificate at each launch). The Pi's own screen doesn't
-  count as "the PC is on", and can't become an audio page.
+  count as "the PC is on", and can't become an audio page. It needs the
+  Pi's desktop logged in, on X11 or Wayland (the Pi runs X11 for RustDesk -
+  see [rustdesk.md](rustdesk.md)).
 - **Answer on the Pi, audio on the PC.** The Pi publishes a *handoff*; the
   PC's ringing window takes the audio (it announces itself as an audio
   page); only then does the Pi answer. If the PC doesn't take it within 4 s,

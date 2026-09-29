@@ -175,6 +175,9 @@ Phone bridge - iPhone calls, and optionally its music, on the desktop,
 with the Pi as the phone's Bluetooth hands-free unit. A host service
 (it needs the Bluetooth radio), with the bugs found on live calls - see
 [docs/phone.md](docs/phone.md).
+RustDesk server - remote desktop between the PC, the laptop and the Pi through
+the Pi instead of public servers, LAN only with a required key - see
+[docs/rustdesk.md](docs/rustdesk.md).
 
 ## Repo structure
 
@@ -185,7 +188,7 @@ homelab/
 │   └── ai/                # placeholder - RAG lives in apps/api, see docs/kubernetes.md
 ├── kubernetes/            # K3s manifests (ai/backend/data/monitoring namespaces, Argo CD)
 ├── kubernetes/secrets/    # SOPS-encrypted Secrets, applied out-of-band - see docs/secrets.md
-├── docker/                # dns/ still live; docker-compose.yml + monitoring/ retired - see docker/README.md
+├── docker/                # dns/ and rustdesk/ live; docker-compose.yml + monitoring/ retired - see docker/README.md
 ├── ansible/               # Pi host configuration automation
 ├── terraform/             # GitHub repo settings as code
 ├── load-testing/          # k6 scripts - see docs/load-testing.md
