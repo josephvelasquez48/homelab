@@ -1,12 +1,12 @@
 [Unit]
 Description=Phone calls on the Pi's touchscreen (a remote control for the PC)
-# Chromium needs the desktop's Wayland display, but only when a call comes
+# Chromium needs the desktop's display (Wayland or X11), but only when a call comes
 # in - long after login - so this can start with the other user services.
 After=phone-bridge.service
 
 [Service]
 ExecStart=/usr/bin/python3 %h/apps/homelab/apps/phone/screen/phone_screen.py
-Environment=WAYLAND_DISPLAY=wayland-0
+Environment=WAYLAND_DISPLAY=wayland-0 DISPLAY=:0 XAUTHORITY=%h/.Xauthority
 Restart=on-failure
 RestartSec=5
 

@@ -13,6 +13,10 @@ still matches phone.home; Chromium is told to trust that certificate's key
 certificate at each launch - the Pi's Chromium doesn't use the system CA
 store and certutil isn't installed.
 
+Works on either desktop session: Wayland (labwc) or X11, which the Pi
+runs so RustDesk can control it (docs/rustdesk.md). Whichever display is
+up when a call comes in is used.
+
 Stdlib only, so it runs on the system python3.
 """
 import base64
@@ -41,6 +45,12 @@ POLL_SECONDS = 0.25
 CLOSE_AFTER_SECONDS = 0.5
 
 log = logging.getLogger("phone-screen")
+
+
+def wayland() -> bool:
+    """Is the desktop a Wayland session (its socket exists) rather than X11?"""
+    runtime = os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")
+    return (Path(runtime) / os.environ.get("WAYLAND_DISPLAY", "wayland-0")).exists()
 
 
 def agent_token() -> str:
@@ -81,13 +91,16 @@ class Screen:
             return json.load(resp)
 
     def open(self) -> None:
-        subprocess.run(["wlopm", "--on", "*"], capture_output=True)  # wake a blanked display
+        on_wayland = wayland()
+        # Wake a blanked display.
+        wake = ["wlopm", "--on", "*"] if on_wayland else ["xset", "dpms", "force", "on"]
+        subprocess.run(wake, capture_output=True)
         PROFILE.mkdir(parents=True, exist_ok=True)
         self.browser = subprocess.Popen(
             [
                 "chromium",
                 "--kiosk",
-                "--ozone-platform=wayland",
+                f"--ozone-platform={'wayland' if on_wayland else 'x11'}",
                 f"--user-data-dir={PROFILE}",
                 "--host-resolver-rules=MAP phone.home 127.0.0.1",
                 f"--ignore-certificate-errors-spki-list={spki_hash(CERT.read_text())}",

@@ -49,12 +49,15 @@ Recommended in **Settings > Security**: a strong permanent password (or
 
 ## The Pi's own desktop
 
-Not RustDesk: on Wayland (labwc) it can't take a session without someone
-approving it on the Pi's screen. Raspberry Pi OS's **wayvnc** is already
-running on :5900 and handles it: login is the Pi user's password (PAM) and
-the session is encrypted. ufw allows 5900 from the LAN only.
+The Pi runs the RustDesk client too, as a service (`rustdesk.service`), set
+to this server with a permanent password (in `~/.config/rustdesk-password`
+on the Pi). Connect to its ID from the PC.
 
-Connect with RealVNC Viewer to `192.168.1.253`.
+That needs the Pi's desktop on **X11** (openbox), not Wayland (labwc): on
+labwc RustDesk can't take the screen or send input without someone
+approving it on the Pi. Set with `sudo raspi-config nonint do_wayland W1`
+and a reboot; `W2` switches back. The touchscreen call screen works on
+either (`apps/phone/screen/phone_screen.py`).
 
 ## Limits
 
