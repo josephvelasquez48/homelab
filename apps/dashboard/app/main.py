@@ -9,7 +9,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from starlette.middleware.sessions import SessionMiddleware
 
-from app import gpu, k8s, prometheus
+from app import display, gpu, k8s, prometheus
 from app.auth import check_password, is_authenticated, require_json, require_session
 from app.config import (
     ALERTMANAGER_URL,
@@ -67,6 +67,12 @@ app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 @app.get("/")
 async def index():
     return FileResponse(STATIC_DIR / "index.html")
+
+
+@app.get("/display")
+async def display_page():
+    """The Pi's always-on screen (apps/pi-display opens it full screen)."""
+    return FileResponse(STATIC_DIR / "display.html")
 
 
 @app.get("/health")
@@ -168,6 +174,18 @@ async def status():
         "pi_metrics": pi_metrics,
         "cross_node_status": cross_node_status,
     }
+
+
+@app.get("/api/display")
+async def display_state():
+    k8s_client = app.state.k8s
+    return await display.gather(
+        k8s_client,
+        app.state.http,
+        k8s.get_argo_applications(k8s_client),
+        _active_alerts(app.state.http),
+        k8s.get_nodes(k8s_client),
+    )
 
 
 class LoginRequest(BaseModel):

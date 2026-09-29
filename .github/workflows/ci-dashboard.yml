@@ -33,6 +33,7 @@ jobs:
         shell: bash
         run: |
           python -c "import pathlib, re; print('\n'.join(re.findall(r'<script>(.*?)</script>', pathlib.Path('app/static/index.html').read_text(encoding='utf-8'), re.S)))" | node --check
+          node --check app/static/display.js
 
   build-and-push:
     needs: test

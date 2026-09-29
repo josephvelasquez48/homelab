@@ -1,0 +1,6 @@
+[Desktop Entry]
+Type=Application
+Name=Homelab display
+Comment=Start the always-on homelab display (apps/pi-display)
+Exec=sh -c 'systemctl --user import-environment DISPLAY XAUTHORITY WAYLAND_DISPLAY; systemctl --user restart pi-display.service'
+X-GNOME-Autostart-enabled=true

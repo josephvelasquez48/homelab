@@ -29,6 +29,43 @@ running in the cluster and pinned to the Pi. Not on the original roadmap.
   handling, `ssh_runner.py`) was deleted when the desktop left the
   cluster ([node-migration.md](node-migration.md)).
 
+## The Pi's always-on display
+
+`/display` is a full-screen page for the Pi's 1280x720 touchscreen. Tap
+to switch between two views:
+
+- **Architecture map:** each box is a real service with a live status
+  light; dots move along a line at its real request rate. Red DNS dots
+  are queries AdGuard blocked, turned back before the internet. Along the
+  bottom: DNS rate, blocked share, pods, API load and the Pi's vitals.
+- **Cluster aquarium:** one fish per pod, coloured by namespace, one rock
+  per node. A pod that isn't ready floats belly-up with the reason; a
+  pending one sinks; a pod that restarts while you watch says so.
+
+Tap a box or a fish for details. The top bar has the time, weather (if
+`WEATHER_LAT`/`WEATHER_LON` are set), overall health and the iPhone; the
+bottom ticker cycles alerts, down nodes, Argo CD, backups and AdGuard.
+
+**Data:** one `GET /api/display` every 5 s (`app/display.py`):
+
+| Shown | From |
+|---|---|
+| In-cluster boxes, fish | Pod readiness from the Kubernetes API |
+| CoreDNS, RustDesk | A DNS query / TCP connect to the Pi's own address - works because this pod is pinned to the Pi (same-node traffic isn't filtered by ufw) |
+| AdGuard, phone, Ollama, backups | Prometheus gauges; the phone counts as down when its gauges are 2 minutes stale |
+| Dots | Prometheus rates: AdGuard queries, Traefik per service, the api's own routes. No traffic, no dots |
+
+No data shows as grey, never green.
+
+**On the Pi:** `apps/pi-display/install.sh` adds the homelab CA to
+Chromium's certificate store (name-constrained to `.home`) and installs
+`pi-display.service`, a user unit that keeps Chromium in kiosk mode on
+the page. An autostart entry starts it at desktop login. A call's screen
+(`apps/phone/screen`) opens on top and closes back to it.
+
+**Cost:** animation is capped at 24 fps. At 60 the Pi's Chromium used
+about 1.5 cores; at 24 it's about a quarter of one.
+
 ## Auth on the one action
 
 The status is open on the LAN, like Grafana. The action needs a login.

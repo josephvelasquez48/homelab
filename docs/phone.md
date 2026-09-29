@@ -66,7 +66,7 @@ appears underneath.
 shows it full screen - Answer, Decline, then Keypad and End. It's a remote
 control: the Pi has no speakers or mic, so Answer there sends the call to
 the PC, exactly as if you'd answered on the PC. The rest of the time the
-Pi's desktop is left alone.
+Pi's always-on display (docs/dashboard.md) shows underneath.
 
 **Tray and hotkeys:** the tray icon is green (connected), amber (on a
 call) or grey. Ctrl+Alt+A answers, Ctrl+Alt+H declines or hangs up,

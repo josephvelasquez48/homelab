@@ -1,0 +1,353 @@
+"""State for the Pi's always-on screen (/display): the architecture map and
+the pod aquarium.
+
+One call gathers everything the page draws, so the page only ever makes one
+request every few seconds:
+
+- **services** - one status per box on the map: "up", "down" or "unknown".
+  In-cluster ones come from pod readiness, host ones from a probe or a
+  Prometheus gauge. No data is "unknown", never "up".
+- **rates** - requests per second along each line on the map, from
+  Prometheus. Zero means nothing is flowing, and the page draws no dots.
+- **pods** - every pod, for the aquarium: one fish each.
+- **events** - short lines for the ticker, built from the same data.
+
+Host services (CoreDNS, RustDesk) are probed at the Pi's own address. That
+works because this pod is pinned to the Pi: same-node pod traffic to the
+node's IP isn't filtered by ufw (see kubernetes/monitoring/adguard-exporter.yaml).
+"""
+import asyncio
+import struct
+import time
+
+import httpx
+
+from app.config import HOST_IP, PROMETHEUS_URL, WEATHER_LAT, WEATHER_LON
+
+# The api's routes that call Ollama (apps/api/app/routers).
+OLLAMA_HANDLERS = "/v1/chat|/v1/embed|/v1/rag/query|/v1/documents|/v1/conversations/.+/messages"
+PROBE_HANDLERS = "/metrics|/ready|/health"
+
+RATE_QUERIES = {
+    "dns": "sum(clamp_min(rate(adguard_queries[5m]), 0))",
+    "dns_blocked": "sum(clamp_min(rate(adguard_queries_blocked[5m]), 0))",
+    # The display's own polling goes through Traefik too; leave it out, or
+    # the screen would mostly show itself.
+    "web": 'sum(rate(traefik_service_requests_total{service!~"dashboard-.*"}[5m])) or vector(0)',
+    "web_api": 'sum(rate(traefik_service_requests_total{service=~"backend-api-.*"}[5m])) or vector(0)',
+    "web_apps": 'sum(rate(traefik_service_requests_total{service=~"(monitoring|argocd|chat|kiwix)-.*"}[5m])) or vector(0)',
+    # Counters only appear once a route has been hit; no series is no traffic.
+    "api": f'sum(rate(http_requests_total{{handler!~"{PROBE_HANDLERS}"}}[5m])) or vector(0)',
+    "ollama": f'sum(rate(http_requests_total{{handler=~"{OLLAMA_HANDLERS}"}}[5m])) or vector(0)',
+}
+
+VALUE_QUERIES = {
+    "dns_today": "sum(adguard_queries)",
+    "blocked_today": "sum(adguard_queries_blocked)",
+    "adguard_up": "min(adguard_up)",
+    "adguard_protection": "min(adguard_protection_enabled)",
+    "pi_temp_c": 'node_hwmon_temp_celsius{job="node-pi",chip="thermal_thermal_zone0",sensor="temp0"}',
+    "pi_cpu": '1 - avg(rate(node_cpu_seconds_total{job="node-pi",mode="idle"}[2m]))',
+    "pi_mem": '1 - node_memory_MemAvailable_bytes{job="node-pi"} / node_memory_MemTotal_bytes{job="node-pi"}',
+    "api_p95_s": f'histogram_quantile(0.95, sum by (le) (rate(http_request_duration_seconds_bucket{{handler!~"{PROBE_HANDLERS}"}}[1h])))',
+    # The phone service writes its gauges every few seconds; stale means it's down.
+    "phone_age_s": "time() - phone_bridge_last_update_timestamp_seconds",
+    "phone_audio": "phone_bridge_running",  # 1 while call audio is bridged to the PC
+    "phone_connected": "phone_connected",
+    "phone_call": "phone_call_active",
+    "phone_pc": "phone_pc_present",
+    "inference": "min(homelab_inference_reachable)",
+    "backup_age_h": "(time() - homelab_backup_last_snapshot_timestamp_seconds) / 3600",
+    "backup_exit": "homelab_backup_last_exit_code",
+    "targets_up": "sum(up)",
+    "targets": "count(up)",
+}
+
+# Map boxes that are pods: box -> (namespace, pod name prefix).
+POD_SERVICES = {
+    "traefik": ("kube-system", "traefik-"),
+    "api": ("backend", "api-"),
+    "postgres": ("data", "postgres-"),
+    "redis": ("backend", "redis-"),
+    "prometheus": ("monitoring", "prometheus-"),
+    "argocd": ("argocd", "argocd-server-"),
+    "grafana": ("monitoring", "grafana-"),
+    "chat": ("chat", "chat-"),
+    "kiwix": ("kiwix", "kiwix-"),
+}
+
+WEATHER_TTL_S = 600
+_weather: dict = {"at": 0.0, "value": None}
+
+
+async def _query(client: httpx.AsyncClient, expr: str) -> float | None:
+    try:
+        r = await client.get(f"{PROMETHEUS_URL}/api/v1/query", params={"query": expr})
+        r.raise_for_status()
+        result = r.json()["data"]["result"]
+        return float(result[0]["value"][1]) if result else None
+    except Exception:
+        return None
+
+
+async def _queries(client: httpx.AsyncClient, queries: dict[str, str]) -> dict[str, float | None]:
+    values = await asyncio.gather(*(_query(client, q) for q in queries.values()))
+    return dict(zip(queries, values))
+
+
+async def _top_blocked(client: httpx.AsyncClient) -> str | None:
+    try:
+        r = await client.get(
+            f"{PROMETHEUS_URL}/api/v1/query", params={"query": "topk(1, adguard_top_blocked_domains)"}
+        )
+        r.raise_for_status()
+        result = r.json()["data"]["result"]
+        return result[0]["metric"].get("domain") if result else None
+    except Exception:
+        return None
+
+
+async def list_pods(k8s: httpx.AsyncClient) -> list[dict]:
+    """Every pod in the cluster, with why it isn't running when it isn't."""
+    r = await k8s.get("/api/v1/pods")
+    r.raise_for_status()
+    pods = []
+    for item in r.json()["items"]:
+        phase = item["status"].get("phase", "Unknown")
+        if phase == "Succeeded":  # finished Jobs, not residents of the tank
+            continue
+        statuses = item["status"].get("containerStatuses", [])
+        reason = next(
+            (s["state"]["waiting"].get("reason") for s in statuses if "waiting" in s.get("state", {})),
+            None,
+        )
+        pods.append(
+            {
+                "name": item["metadata"]["name"],
+                "namespace": item["metadata"]["namespace"],
+                "node": item["spec"].get("nodeName"),
+                "phase": phase,
+                "ready": bool(statuses) and all(s.get("ready") for s in statuses),
+                "restarts": sum(s.get("restartCount", 0) for s in statuses),
+                "reason": reason,
+            }
+        )
+    return pods
+
+
+def pod_status(pods: list[dict], namespace: str, prefix: str) -> str:
+    """up if any matching pod is ready, down if some exist and none are."""
+    matching = [p for p in pods if p["namespace"] == namespace and p["name"].startswith(prefix)]
+    if not matching:
+        return "unknown"
+    return "up" if any(p["ready"] for p in matching) else "down"
+
+
+def dns_query(name: str, qid: int = 0x5A5A) -> bytes:
+    header = struct.pack(">HHHHHH", qid, 0x0100, 1, 0, 0, 0)  # recursion desired, one question
+    labels = b"".join(bytes([len(part)]) + part.encode() for part in name.split("."))
+    return header + labels + b"\x00" + struct.pack(">HH", 1, 1)  # A, IN
+
+
+def dns_answered(response: bytes, qid: int = 0x5A5A) -> bool:
+    """Same ID, a response, rcode NOERROR and at least one answer."""
+    if len(response) < 12:
+        return False
+    rid, flags, _, answers = struct.unpack(">HHHH", response[:8])
+    return rid == qid and flags & 0x8000 and flags & 0x000F == 0 and answers > 0
+
+
+class _DnsProbe(asyncio.DatagramProtocol):
+    def __init__(self, done: asyncio.Future):
+        self.done = done
+
+    def datagram_received(self, data, addr):
+        if not self.done.done():
+            self.done.set_result(data)
+
+
+async def probe_dns(host: str, name: str = "dashboard.home", timeout: float = 2.0) -> str:
+    loop = asyncio.get_running_loop()
+    done = loop.create_future()
+    transport = None
+    try:
+        transport, _ = await loop.create_datagram_endpoint(lambda: _DnsProbe(done), remote_addr=(host, 53))
+        transport.sendto(dns_query(name))
+        return "up" if dns_answered(await asyncio.wait_for(done, timeout)) else "down"
+    except Exception:
+        return "down"
+    finally:
+        if transport:
+            transport.close()
+
+
+async def probe_tcp(host: str, port: int, timeout: float = 2.0) -> str:
+    try:
+        _, writer = await asyncio.wait_for(asyncio.open_connection(host, port), timeout)
+        writer.close()
+        return "up"
+    except Exception:
+        return "down"
+
+
+async def weather(client: httpx.AsyncClient) -> dict | None:
+    """Current conditions from Open-Meteo (no key), cached; None when no location is set."""
+    if not (WEATHER_LAT and WEATHER_LON):
+        return None
+    if time.monotonic() - _weather["at"] < WEATHER_TTL_S:
+        return _weather["value"]
+    try:
+        r = await client.get(
+            "https://api.open-meteo.com/v1/forecast",
+            params={
+                "latitude": WEATHER_LAT,
+                "longitude": WEATHER_LON,
+                "current": "temperature_2m,weather_code,is_day",
+                "temperature_unit": "fahrenheit",
+            },
+        )
+        r.raise_for_status()
+        cur = r.json()["current"]
+        _weather["value"] = {
+            "temp_f": round(cur["temperature_2m"]),
+            "code": cur["weather_code"],
+            "is_day": bool(cur.get("is_day", 1)),
+        }
+    except Exception:
+        pass  # keep the last good value
+    _weather["at"] = time.monotonic()
+    return _weather["value"]
+
+
+def flag(value: float | None) -> bool | None:
+    return None if value is None else value >= 1
+
+
+def services(pods: list[dict], v: dict, dns: str, rustdesk: str) -> dict[str, str]:
+    out = {box: pod_status(pods, ns, prefix) for box, (ns, prefix) in POD_SERVICES.items()}
+    out["coredns"] = dns
+    if v["adguard_up"] is None:
+        out["adguard"] = "unknown"
+    else:  # filtering switched off counts as down: DNS works, but unprotected
+        out["adguard"] = "up" if flag(v["adguard_up"]) and flag(v["adguard_protection"]) is not False else "down"
+    out["phone"] = "unknown" if v["phone_age_s"] is None else ("up" if v["phone_age_s"] < 120 else "down")
+    out["phone_pc"] = {True: "up", False: "down", None: "unknown"}[flag(v["phone_pc"])]
+    out["iphone"] = {True: "up", False: "down", None: "unknown"}[flag(v["phone_connected"])]
+    out["ollama"] = {True: "up", False: "down", None: "unknown"}[flag(v["inference"])]
+    out["rustdesk"] = rustdesk
+    out["internet"] = "up" if v["adguard_up"] and (v["dns_today"] or 0) > (v["blocked_today"] or 0) else "unknown"
+    return out
+
+
+def edge_rates(r: dict, v: dict) -> dict[str, float]:
+    z = lambda x: max(x or 0.0, 0.0)  # noqa: E731
+    # Only call audio: the media stream stays open while nothing plays, and
+    # there's no gauge for "music is playing".
+    audio = 2.0 if flag(v["phone_audio"]) else 0.0
+    return {
+        "lan-coredns": z(r["dns"]),
+        "coredns-adguard": z(r["dns"]),
+        "adguard-internet": z(r["dns"]),  # blocked share drawn as red dots that stop short
+        "lan-traefik": z(r["web"]),
+        "traefik-api": z(r["web_api"]),
+        "traefik-apps": z(r["web_apps"]),
+        "api-postgres": z(r["api"]),
+        "api-redis": z(r["api"]),
+        "api-ollama": z(r["ollama"]),
+        "iphone-phone": audio,
+        "phone-phone_pc": audio,
+    }
+
+
+def events(v: dict, argo: list[dict], alerts: list[dict] | None, nodes: list[dict], top_blocked: str | None) -> list[dict]:
+    """Ticker lines, most important first. level: ok, info, warn, bad."""
+    out: list[dict] = []
+    for a in alerts or []:
+        out.append({"level": "bad", "text": f"Alert: {a.get('summary') or a.get('name')}"})
+    for n in nodes:
+        if not n["ready"]:
+            out.append({"level": "warn", "text": f"Node {n['name']} is not ready"})
+    unsynced = [a["name"] for a in argo if a["sync_status"] != "Synced" or a["health_status"] != "Healthy"]
+    if argo:
+        out.append(
+            {"level": "warn", "text": f"Argo CD: {', '.join(unsynced)} not synced and healthy"}
+            if unsynced
+            else {"level": "ok", "text": f"Argo CD: all {len(argo)} apps synced and healthy"}
+        )
+    age = v["backup_age_h"]
+    if age is not None:
+        bad = age > 30 or (v["backup_exit"] or 0) != 0
+        out.append({"level": "bad" if bad else "ok", "text": f"Last backup {age:.0f} h ago" + (" - check it" if bad else "")})
+    if v["blocked_today"] is not None and v["dns_today"]:
+        pct = 100 * v["blocked_today"] / v["dns_today"]
+        out.append({"level": "info", "text": f"AdGuard blocked {v['blocked_today']:,.0f} of {v['dns_today']:,.0f} queries today ({pct:.0f}%)"})
+    if top_blocked:
+        out.append({"level": "info", "text": f"Most blocked: {top_blocked}"})
+    if v["phone_connected"] is not None:
+        if flag(v["phone_call"]):
+            out.append({"level": "info", "text": "On a call"})
+        else:
+            out.append({"level": "ok" if flag(v["phone_connected"]) else "warn",
+                        "text": "iPhone connected" if flag(v["phone_connected"]) else "iPhone not connected"})
+    if v["api_p95_s"] is not None:
+        out.append({"level": "info", "text": f"API p95 {v['api_p95_s'] * 1000:.0f} ms over the last hour"})
+    if v["targets"]:
+        out.append({"level": "ok" if v["targets_up"] == v["targets"] else "warn",
+                    "text": f"Prometheus: {v['targets_up']:.0f} of {v['targets']:.0f} targets up"})
+    return out
+
+
+async def gather(k8s_client: httpx.AsyncClient, http: httpx.AsyncClient, argo_task, alerts_task, nodes_task) -> dict:
+    (pods, rates, values, top_blocked, dns, rustdesk, wx, argo, alerts, nodes) = await asyncio.gather(
+        list_pods(k8s_client),
+        _queries(http, RATE_QUERIES),
+        _queries(http, VALUE_QUERIES),
+        _top_blocked(http),
+        probe_dns(HOST_IP),
+        probe_tcp(HOST_IP, 21116),
+        weather(http),
+        argo_task,
+        alerts_task,
+        nodes_task,
+        return_exceptions=True,
+    )
+    pods = [] if isinstance(pods, BaseException) else pods
+    argo = [] if isinstance(argo, BaseException) else argo
+    nodes = [] if isinstance(nodes, BaseException) else nodes
+    alerts = None if isinstance(alerts, BaseException) else alerts
+    wx = None if isinstance(wx, BaseException) else wx
+    dns = "unknown" if isinstance(dns, BaseException) else dns
+    rustdesk = "unknown" if isinstance(rustdesk, BaseException) else rustdesk
+    top_blocked = None if isinstance(top_blocked, BaseException) else top_blocked
+
+    svc = services(pods, values, dns, rustdesk)
+    running = [p for p in pods if p["ready"]]
+    blocked_share = (
+        rates["dns_blocked"] / rates["dns"] if rates["dns"] and rates["dns_blocked"] is not None else 0.0
+    )
+    return {
+        "services": svc,
+        "rates": edge_rates(rates, values),
+        "blocked_share": min(max(blocked_share, 0.0), 1.0),
+        "stats": {
+            "dns_per_min": None if rates["dns"] is None else rates["dns"] * 60,
+            "blocked_pct": None if not values["dns_today"] else 100 * (values["blocked_today"] or 0) / values["dns_today"],
+            "pods_ready": len(running),
+            "pods_total": len(pods),
+            "api_rps": rates["api"],
+            "pi_temp_c": values["pi_temp_c"],
+            "pi_cpu": values["pi_cpu"],
+            "pi_mem": values["pi_mem"],
+        },
+        "phone": {
+            "connected": flag(values["phone_connected"]),
+            "in_call": flag(values["phone_call"]),
+            "pc_present": flag(values["phone_pc"]),
+        },
+        "nodes": [{"name": n["name"], "ready": n["ready"]} for n in nodes],
+        "pods": pods,
+        "alerts": alerts,
+        "events": events(values, argo, alerts, nodes, top_blocked),
+        "weather": wx,
+        "time": time.time(),
+    }
