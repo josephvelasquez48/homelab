@@ -1,5 +1,10 @@
 """Register the nightly backup as a LaunchAgent.
 
+It runs mac-backup.py --if-due at 03:00, at login and every 15 minutes; the
+script backs up only when no backup has succeeded since the last 03:00 and
+the Pi answers. So a Mac that missed 03:00 (off, asleep, logged out, or the
+network not up yet at login) catches up soon after it's back.
+
 Pass --replace to reinstall over an existing agent, for example after a
 change to the interpreter below. Without it an existing agent is left alone,
 because it may have been edited by hand and deserves a look first.
@@ -33,9 +38,10 @@ if path.exists():
     subprocess.run(['launchctl', 'bootout', domain, str(path)])
 data = {
     'Label': 'local.homelab.backup',
-    'ProgramArguments': [PYTHON, str(config / 'mac-backup.py')],
+    'ProgramArguments': [PYTHON, str(config / 'mac-backup.py'), '--if-due'],
     'StartCalendarInterval': {'Hour': 3, 'Minute': 0},
     'RunAtLoad': True,
+    'StartInterval': 900,
     'StandardOutPath': str(config / 'backup.log'),
     'StandardErrorPath': str(config / 'backup-error.log'),
     'Umask': 63,
@@ -43,4 +49,4 @@ data = {
 with path.open('wb') as f:
     plistlib.dump(data, f)
 subprocess.run(['launchctl', 'bootstrap', domain, str(path)], check=True)
-print('Nightly 03:00 local-time backup registered, plus a run at login')
+print('Backup registered: 03:00 local time, and within 15 minutes of the Mac being back after a missed night')

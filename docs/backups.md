@@ -11,6 +11,15 @@ Pi: pi-snapshot.py (root) ──tar over SSH──► Mac: mac-backup.py ──�
                                             (03:00 nightly, LaunchAgent)   ~/Backups/homelab/repository
 ```
 
+**Missed nights catch up.** The LaunchAgent runs `mac-backup.py --if-due`
+at 03:00, at login and every 15 minutes. It backs up only when nothing has
+succeeded since the most recent 03:00 (`~/Backups/homelab/last-success`)
+and the Pi answers on SSH, so a Mac that was off, asleep or logged out at
+03:00 backs up within 15 minutes of being back. A due backup that can't
+reach the Pi yet (the network often isn't up right at login) logs "waiting
+for the Pi" and exits 0 rather than tripping `HomelabBackupAgentFailed`;
+a Pi that stays unreachable shows up as `HomelabBackupStale`.
+
 **Captured, each consistent on its own** (there's no single atomic moment
 across all of them):
 
@@ -102,7 +111,7 @@ Command Line Tools.
 ## Running it (on the Mac)
 
 ```sh
-/opt/homebrew/bin/python3 ~/.config/homelab-backup/mac-backup.py     # back up now
+/opt/homebrew/bin/python3 ~/.config/homelab-backup/mac-backup.py     # back up now (without --if-due, always)
 export RESTIC_REPOSITORY="$HOME/Backups/homelab/repository"
 export RESTIC_PASSWORD_FILE="$HOME/.config/homelab-backup/password"
 /opt/homebrew/bin/restic snapshots                                   # pick the pi or recovery tag
