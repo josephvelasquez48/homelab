@@ -214,12 +214,13 @@ body.popup.incoming button.round { width: 72px; height: 72px; }
 body.popup.incoming button.round svg { width: 30px; height: 30px; }
 
 /* The Pi's 7" touchscreen (?touch=1): the call fills the screen at any
-   stage, with finger-sized buttons. No mic or speakers there, so no Mute,
-   volume or audio controls. */
+   stage, with finger-sized buttons. No mic or speakers there, so no volume
+   or audio controls; Mute is the shared one, shown while the PC has the
+   call's audio (app.js). */
 body.popup.touch main { max-width: none; min-height: 100vh; padding: 16px; }
 body.popup.touch main > :not(#call-card) { display: none !important; }
 body.popup.touch .call-card { flex: 1; margin: 0; display: flex; flex-direction: column; justify-content: center; }
-body.popup.touch #mute, body.popup.touch #to-pc-row, body.popup.touch #to-phone-row, body.popup.touch #meter-row { display: none !important; }
+body.popup.touch #to-pc-row, body.popup.touch #to-phone-row, body.popup.touch #meter-row { display: none !important; }
 body.popup.touch .avatar { width: 120px; height: 120px; font-size: 48px; margin-bottom: 18px; }
 body.popup.touch .call-state { font-size: 16px; }
 body.popup.touch .caller { font-size: 40px; }
