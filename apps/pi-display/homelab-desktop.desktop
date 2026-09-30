@@ -1,0 +1,11 @@
+# Opens homelab-desktop:// links: the display's Desktop button (static/display.js)
+# follows one, Chromium hands it to xdg-open, and this closes the display so
+# the Pi's desktop shows. install.sh fills in @BIN@ and makes it the handler.
+# (A script, not an inline sh -c: this xdg-open splits Exec on spaces.)
+[Desktop Entry]
+Type=Application
+Name=Show the Pi desktop
+Comment=Close the homelab display (apps/pi-display) to reach the desktop
+Exec=@BIN@/pi-display-show-desktop %u
+NoDisplay=true
+MimeType=x-scheme-handler/homelab-desktop;

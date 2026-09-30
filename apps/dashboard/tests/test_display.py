@@ -123,6 +123,7 @@ def test_display_page(client):
     assert '<script src="/static/tank.js">' in res.text  # the aquarium, before display.js uses it
     assert '<script src="/static/display.js">' in res.text
     assert res.text.index("/static/tank.js") < res.text.index("/static/display.js")
+    assert 'id="to-desktop"' in res.text and 'id="desk-confirm" hidden' in res.text  # the Desktop button, confirm first
 
 
 def test_tank_script_is_served(client):

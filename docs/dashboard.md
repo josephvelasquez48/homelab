@@ -87,6 +87,17 @@ Chromium's certificate store (name-constrained to `.home`) and installs
 the page. An autostart entry starts it at desktop login. A call's screen
 (`apps/phone/screen`) opens on top and closes back to it.
 
+**Getting to the desktop:** the **Desktop** button in the bottom bar asks
+first, then closes the display so the Pi's desktop shows; **Homelab
+display** on the desktop (or in the menu) brings it back. A page can't stop
+its own service, so the button follows a `homelab-desktop://` link that
+Chromium hands to xdg-open, and `install.sh` makes
+`apps/pi-display/show-desktop.sh` its handler. `install.sh` also
+pre-approves that link for `https://dashboard.home` in the display's
+Chromium profile, so there is no "open this application?" prompt. Without a
+keyboard or the button, `systemctl --user stop pi-display.service` over SSH
+does the same.
+
 **Cost:** animation is capped at 24 fps. At 60 the Pi's Chromium used
 about 1.5 cores; at 24 it's about a quarter of one.
 
