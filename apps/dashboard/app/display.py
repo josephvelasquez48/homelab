@@ -79,7 +79,10 @@ POD_SERVICES = {
 }
 
 WEATHER_TTL_S = 600
-_weather: dict = {"at": 0.0, "value": None}
+# "at" is time.monotonic(), which counts from boot: starting it at 0 made a
+# freshly booted machine (the Pi after a reboot, a CI runner) treat the empty
+# cache as fresh for its first 10 minutes. None means never fetched.
+_weather: dict = {"at": None, "value": None}
 
 
 async def _query(client: httpx.AsyncClient, expr: str) -> float | None:
@@ -241,7 +244,7 @@ async def weather(client: httpx.AsyncClient) -> dict | None:
     """Current conditions from Open-Meteo (no key), cached; None when no location is set."""
     if not (WEATHER_LAT and WEATHER_LON):
         return None
-    if time.monotonic() - _weather["at"] < WEATHER_TTL_S:
+    if _weather["at"] is not None and time.monotonic() - _weather["at"] < WEATHER_TTL_S:
         return _weather["value"]
     try:
         r = await client.get(
