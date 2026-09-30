@@ -4,7 +4,8 @@ def test_health(client):
     assert res.json() == {"status": "ok"}
 
 
-def test_index_serves_html(client):
-    res = client.get("/")
-    assert res.status_code == 200
-    assert "text/html" in res.headers["content-type"]
+def test_index_goes_to_the_display(client):
+    # The status page is gone; the bare address opens the display.
+    res = client.get("/", follow_redirects=False)
+    assert res.status_code == 307
+    assert res.headers["location"] == "/display"

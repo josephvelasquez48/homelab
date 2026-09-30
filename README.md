@@ -196,7 +196,7 @@ homelab/
 ├── terraform/             # GitHub repo settings as code
 ├── load-testing/          # k6 scripts - see docs/load-testing.md
 ├── failure-testing/        # Fault-injection scripts - see docs/failure-testing.md
-├── apps/dashboard/          # Status UI, GPU release, the Pi's always-on display, runs in-cluster - see docs/dashboard.md
+├── apps/dashboard/          # The Pi's always-on display, runs in-cluster - see docs/dashboard.md
 ├── apps/pi-display/         # Opens the display full screen on the Pi's touchscreen - see docs/dashboard.md
 ├── apps/phone/              # iPhone calls on the desktop via the Pi's Bluetooth, host service - see docs/phone.md
 ├── backup/                 # Encrypted backup + restore-rehearsal tooling - see docs/backups.md

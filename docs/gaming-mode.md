@@ -1,19 +1,26 @@
 # Gaming mode
 
-Frees the desktop's GPU for a game: **Free the GPU** on the dashboard
-(`POST /api/gpu/release`, login required - [dashboard.md](dashboard.md)).
-Not on the original roadmap.
+Freeing the desktop's GPU for a game. Not on the original roadmap.
 
 ## How it works now
 
-Ollama holds ~4.7 GB of the RTX 3070 Ti's 8 GB while a model is loaded. The
-button asks Ollama to unload it: `POST /api/generate` with `keep_alive: 0`
-and no prompt. Ollama replies `done_reason: unload` and generates nothing
-(checked against v0.32.5, not taken from the docs).
+Ollama holds ~4.7 GB of the RTX 3070 Ti's 8 GB while a model is loaded, and
+**unloads it by itself after 5 minutes without a request** (its default
+`OLLAMA_KEEP_ALIVE`; nothing here overrides it). So usually the GPU is
+already free by the time a game starts. To free it at once, on the desktop:
 
-**There's no "off" button, on purpose.** The next AI request loads the model
-again by itself, so an "off" would do nothing. Ollama also unloads on its
-own after sitting idle - this just makes it immediate.
+```powershell
+ollama ps            # what's loaded
+ollama stop <model>  # unload it now
+```
+
+The next AI request loads the model again by itself, so there is nothing
+to switch back on.
+
+Until 2026-09-30 a **Free the GPU** button on the dashboard's status page
+did the same over the network (`POST /api/generate` with `keep_alive: 0`,
+behind a login). It went with the status page: with the idle unload and
+`ollama stop`, it wasn't needed.
 
 ## How it used to work
 

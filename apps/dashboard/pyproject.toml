@@ -1,14 +1,12 @@
 [project]
 name = "homelab-dashboard"
 version = "0.1.0"
-description = "Status UI + gaming-mode trigger for the homelab cluster"
+description = "The Pi's always-on homelab display (architecture map and cluster aquarium)"
 requires-python = ">=3.12"
 dependencies = [
     "fastapi>=0.115",
     "uvicorn[standard]>=0.32",
     "httpx>=0.28",
-    # Signs the session cookie for starlette's SessionMiddleware.
-    "itsdangerous>=2.2",
 ]
 
 [dependency-groups]
