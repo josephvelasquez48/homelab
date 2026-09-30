@@ -1,0 +1,14 @@
+// Let joe's PipeWire run its audio threads at realtime priority through
+// rtkit (docs/phone.md). polkit grants rtkit's actions only to processes in
+// a logged-in desktop session, but PipeWire runs in joe's lingering user
+// manager, outside any session, so every request was denied and call audio
+// ran at normal priority. rtkit still caps what it hands out (priority 20,
+// a CPU-time limit, a watchdog that demotes runaway threads).
+// Installed to /etc/polkit-1/rules.d/ by apps/phone/install.sh.
+polkit.addRule(function (action, subject) {
+    if ((action.id == "org.freedesktop.RealtimeKit1.acquire-real-time" ||
+         action.id == "org.freedesktop.RealtimeKit1.acquire-high-priority") &&
+        subject.user == "joe") {
+        return polkit.Result.YES;
+    }
+});

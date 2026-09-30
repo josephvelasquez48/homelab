@@ -35,6 +35,7 @@ iPhone ──Bluetooth──► Pi: PipeWire / WirePlumber, hands-free role (+ A
 |---|---|---|
 | Pi | Call control, call-audio bridge, media stream, contacts, history, reconnects, metrics | `apps/phone/app/` |
 | Pi | WirePlumber settings | `apps/phone/wireplumber/51-phone-bridge.conf`, plus `52-phone-media.conf` written by the service |
+| Pi | Realtime priority for PipeWire (rtkit) | `apps/phone/pipewire/60-realtime.conf`, `50-rtkit-joe.rules` |
 | Desktop | The Phone window, tray, hotkeys, taskbar pin, watchdog | `apps/phone/agent/phone_agent.pyw` and friends |
 | Desktop | Media player (its own process) | `apps/phone/agent/media_player.py` |
 
@@ -97,6 +98,15 @@ Ctrl+Alt+M mutes. The X hides the window; *Quit* in the tray stops the app.
 - **No automatic gain control on the mic.** The Samson has a hardware gain
   knob; the browser's AGC fought it, lifting the room's echo between
   sentences ("sounds like a bathroom"). The knob alone sets the level.
+- **Realtime audio thread.** PipeWire's audio thread runs at realtime
+  priority 20 through rtkit, so a busy Pi (the display's animation, K3s)
+  can't delay call audio. Two things stood in the way: polkit gives rtkit's
+  actions only to logged-in desktop sessions, and PipeWire runs in the
+  lingering user manager, outside one (`pipewire/50-rtkit-joe.rules` allows
+  joe); and PipeWire asks xdg-desktop-portal first, which reports no
+  allowance and never reaches rtkit (`pipewire/60-realtime.conf` skips it).
+  Check: `ps -eLo cls,rtprio,comm | grep data-loop` has a `RR 20` line
+  (PipeWire's; WirePlumber's and pipewire-pulse's stay `TS`).
 - **Mic only during calls.** The window opens the mic while a call rings
   (that also wakes the Samson, which sleeps) and closes it 5 s after the
   call ends.
