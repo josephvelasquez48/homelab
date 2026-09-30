@@ -48,6 +48,20 @@ def test_reused_call_path_is_a_new_call(tmp_path):
     assert log.counts() == {("in", "missed"): 1, ("out", "unanswered"): 1}
 
 
+def test_connected_at_is_per_call_even_on_a_reused_path(tmp_path):
+    log = CallLog(tmp_path / "calls.db")
+    log.observe([c("/ag1/call1", "dialing")], bridged=False, now=100)
+    assert log.connected_at("/ag1/call1") is None  # not connected yet
+    log.observe([c("/ag1/call1", "active")], bridged=True, now=105)
+    log.observe([c("/ag1/call1", "active")], bridged=True, now=200)
+    assert log.connected_at("/ag1/call1") == 105  # when it connected, not the latest poll
+    log.observe([], bridged=False, now=300)
+    assert log.connected_at("/ag1/call1") is None
+    # The redial comes back on the same path: its own time, not the last call's.
+    log.observe([c("/ag1/call1", "active")], bridged=True, now=400)
+    assert log.connected_at("/ag1/call1") == 400
+
+
 def test_history_survives_a_restart(tmp_path):
     CallLog(tmp_path / "calls.db").observe([c("/ag1/call1", "dialing")], bridged=False, now=1)
     assert len(CallLog(tmp_path / "calls.db").recent()) == 1

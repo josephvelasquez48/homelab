@@ -50,7 +50,6 @@ function savedMic() {
   return (state && state.settings && state.settings.micLabel) || "";
 }
 let muted = false;
-let callStartedAt = {};
 let ringer = null;
 
 // ---- socket ---------------------------------------------------------------
@@ -562,14 +561,15 @@ function render(s) {
     stopRinging();
     document.title = "Phone - on call";
   }
-  if (call.state === "active" && !callStartedAt[call.path]) callStartedAt[call.path] = Date.now();
 }
 
 setInterval(() => {
   const call = state && state.calls.find((c) => c.state === "active");
-  const started = call && callStartedAt[call.path];
+  // When the phone service saw the call connect, so every page shows the
+  // real length - not since this page opened, and never an earlier call's.
+  const started = call && call.connectedAt;
   if (!started) { $("call-timer").textContent = ""; return; }
-  const secs = Math.floor((Date.now() - started) / 1000);
+  const secs = Math.max(0, Math.floor(Date.now() / 1000 - started));
   $("call-timer").textContent = `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, "0")}`;
 }, 500);
 

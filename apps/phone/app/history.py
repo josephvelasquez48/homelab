@@ -81,6 +81,14 @@ class CallLog:
         self.db.commit()
         return missed
 
+    def connected_at(self, path: str) -> float | None:
+        """When a call still going first became active (epoch seconds)."""
+        row = self.live.get(path)
+        if row is None:
+            return None
+        r = self.db.execute("SELECT answered FROM calls WHERE id = ?", (row,)).fetchone()
+        return r["answered"] if r else None
+
     def _row(self, row_id: int) -> dict | None:
         r = self.db.execute("SELECT * FROM calls WHERE id = ?", (row_id,)).fetchone()
         return self._dict(r) if r else None

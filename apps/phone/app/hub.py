@@ -141,6 +141,10 @@ class Hub:
         state = self.tel.state.to_json()
         for call in state["calls"]:
             call["name"] = call["name"] or self.name_for(call["number"])
+            # For the call timer: the same for every page and across reloads,
+            # and a new call gets a new time even when the phone reuses its
+            # path (call1 again on a redial).
+            call["connectedAt"] = self.history.connected_at(call["path"]) if self.history else None
         state["bridged"] = self.bridge.running
         state["audioError"] = self._audio_error
         state["settings"] = dict(self.settings)
