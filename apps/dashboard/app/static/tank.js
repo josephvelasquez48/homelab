@@ -428,7 +428,8 @@ function drawFloor(sc, off, t) {
 
 // One sandcastle per node, flying its own flag. Its windows and gate are
 // lit while the node is ready - faintly by day, brightly at dusk and night -
-// and when it isn't, the lights go out and the flag hangs grey and limp.
+// and when it isn't, the lights go out, the flag hangs grey and limp, and
+// the name written in the sand in front turns red and says so.
 const FLAGS = ["#E24B4A", "#378ADD", "#EF9F27", "#8E5BB5"];
 function drawHouses(sc, off, t) {
   const nodes = state ? state.nodes : [];
@@ -497,26 +498,16 @@ function drawHouses(sc, off, t) {
     ctx.fillStyle = mix("#E6D5AE", sc.pal.deep, dim);
     ctx.beginPath(); ctx.ellipse(cx, base + H * 0.004, hw * 1.3, H * 0.014, 0, Math.PI, 0); ctx.fill();
     // The node's name written in the sand in front, like a finger drew it:
-    // a deep brown groove with a lit edge under it. The groove darkens only
-    // half as much as the sand at night, so it still stands out. Fish swim
-    // over it.
+    // a deep brown groove with a lit edge under it - red, and saying so,
+    // when the node isn't ready. The groove darkens only half as much as
+    // the sand at night, so it still stands out. Fish swim over it.
     ctx.font = `italic 700 ${Math.round(H * 0.028)}px Georgia, "DejaVu Serif", serif`;
     ctx.textAlign = "center"; ctx.textBaseline = "alphabetic";
-    const sandY = base + H * 0.037;
-    ctx.fillStyle = mix("#FFF4DA", sc.pal.deep, dim); ctx.globalAlpha = 0.7; ctx.fillText(n.name, cx, sandY + 1.5);
+    const sandY = base + H * 0.037, written = lit ? n.name : `${n.name} · not ready`;
+    ctx.fillStyle = mix("#FFF4DA", sc.pal.deep, dim); ctx.globalAlpha = 0.7; ctx.fillText(written, cx, sandY + 1.5);
     ctx.globalAlpha = 1;
-    ctx.fillStyle = mix("#4A3418", sc.pal.deep, dim * 0.5); ctx.fillText(n.name, cx, sandY);
-    n.labelX = cx; n.labelY = poleTop - H * 0.03; // named after the fish are drawn, so none hides it
+    ctx.fillStyle = mix(lit ? "#4A3418" : "#A32323", sc.pal.deep, dim * 0.5); ctx.fillText(written, cx, sandY);
   });
-}
-
-// Returns where the names went, so fish tags can keep clear of them.
-function drawHouseNames() {
-  const placed = [];
-  for (const n of state ? state.nodes : []) {
-    if (n.labelX != null) placed.push(pill(n.ready ? n.name : `${n.name} - not ready`, n.labelX, n.labelY, n.ready ? "#F1EFE8" : "#F09595", "rgba(4,12,26,0.62)", 16));
-  }
-  return placed;
 }
 
 // Where a pill of this text would sit, kept on screen: {x, y, w, h}, centred.
@@ -755,10 +746,11 @@ function drawFish(f, t, sc, off) {
 
 // Tags: always on a fish that needs attention; otherwise every fish of one
 // namespace at once, a namespace at a time, 10 s each, so you learn who is
-// who - the legend highlights which. A tag that would overlap another (or a
-// castle's name) moves up out of its way; warnings are placed first.
+// who - the legend highlights which. A tag that would overlap another moves
+// up out of its way; warnings are placed first.
 let spotNs = null, spotUntil = 0, spotTurn = 0;
-function drawTags(t, placed) {
+function drawTags(t) {
+  const placed = [];
   if (t > spotUntil) {
     const present = [...new Set([...fish.values()].filter((f) => !f.leaving).map((f) => f.pod.namespace))].sort();
     spotNs = present.length ? present[spotTurn++ % present.length] : null;
@@ -848,7 +840,7 @@ function drawTank(t, dt) {
   drawWeed(frontWeed, cam * PAR.front, H * 1.02, [mix("#12301A", sc.pal.deep, dim * 0.6), mix("#2E2A10", sc.pal.deep, dim * 0.6)], t);
   if (sc.kind === "fog") { ctx.fillStyle = "rgba(200,206,212,0.22)"; ctx.fillRect(0, 0, W, H); }
   drawLightning(dt);
-  drawTags(t, drawHouseNames());
+  drawTags(t);
   drawLegend();
 }
 
