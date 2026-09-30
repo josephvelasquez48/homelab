@@ -300,6 +300,29 @@ $("screen").addEventListener("click", (e) => {
   if (view === 1) Tank.resize();
 });
 
+// ---- The Pi's desktop ----
+// The Desktop button, once confirmed, follows a homelab-desktop:// link.
+// Chromium hands it to apps/pi-display's handler, which closes this display
+// (pi-display.service) so the desktop shows; its "Homelab display" icon
+// brings it back. install.sh pre-approves the link for this page, so there
+// is no "open this application?" prompt. Taps here don't switch views.
+const deskConfirm = $("desk-confirm");
+function closeDeskConfirm() { deskConfirm.hidden = true; clearTimeout(closeDeskConfirm.timer); }
+$("to-desktop").addEventListener("click", (e) => {
+  e.stopPropagation();
+  deskConfirm.hidden = false;
+  clearTimeout(closeDeskConfirm.timer);
+  closeDeskConfirm.timer = setTimeout(closeDeskConfirm, 15000); // unanswered: back to the display
+});
+deskConfirm.addEventListener("click", (e) => {
+  e.stopPropagation();
+  if (e.target === deskConfirm || e.target.id === "desk-cancel") closeDeskConfirm();
+});
+$("desk-go").addEventListener("click", () => {
+  closeDeskConfirm();
+  location.href = "homelab-desktop://show";
+});
+
 // ---- Loop ----
 
 // 24 fps, not the screen's 60: smooth enough for dots and fish, and at 60

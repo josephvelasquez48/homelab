@@ -35,6 +35,17 @@
   #detail { position: absolute; z-index: 5; display: none; background: #F1EFE8; color: #2C2C2A;
     font-size: 15px; line-height: 1.5; padding: 8px 12px; border-radius: 6px; pointer-events: none; max-width: 320px; }
   html.mouse, html.mouse body { cursor: auto; } /* a real mouse is moving: see the script below */
+  #to-desktop { pointer-events: auto; background: #2C2C2A; color: #D3D1C7; border: 0; border-radius: 999px;
+    font: inherit; font-size: 14px; padding: 5px 14px; }
+  #desk-confirm { position: absolute; inset: 0; z-index: 6; display: flex; align-items: center; justify-content: center;
+    background: rgba(0, 0, 0, .55); }
+  #desk-confirm[hidden] { display: none; }
+  #desk-confirm .box { background: #F1EFE8; color: #2C2C2A; border-radius: 12px; padding: 22px 26px; max-width: 460px; }
+  #desk-confirm b { font-size: 20px; }
+  #desk-confirm p { margin: 8px 0 18px; font-size: 16px; line-height: 1.45; color: #444441; }
+  #desk-confirm button { font: inherit; font-size: 17px; border: 0; border-radius: 999px; padding: 10px 22px; margin-right: 10px; }
+  #desk-go { background: #185FA5; color: #fff; }
+  #desk-cancel { background: #D3D1C7; color: #2C2C2A; }
 </style>
 </head>
 <body>
@@ -54,10 +65,18 @@
   <div class="bar" id="bottom">
     <span class="dot" id="ticker-dot"></span>
     <span id="ticker"></span>
+    <button id="to-desktop">Desktop</button>
     <span id="pager"><span class="on"></span><span></span></span>
   </div>
   <span class="pill bad" id="offline">No data - dashboard unreachable</span>
   <div id="detail"></div>
+  <div id="desk-confirm" hidden>
+    <div class="box">
+      <b>Show the Pi desktop?</b>
+      <p>The display closes. To bring it back, tap <b>Homelab display</b> on the desktop.</p>
+      <button id="desk-go">Show desktop</button><button id="desk-cancel">Cancel</button>
+    </div>
+  </div>
 </div>
 <script src="/static/tank.js"></script>
 <script src="/static/display.js"></script>
