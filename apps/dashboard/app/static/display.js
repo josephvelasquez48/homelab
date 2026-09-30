@@ -238,7 +238,7 @@ function syncFish() {
     if (!f) {
       // Already in the tank on the first load; new pods swim in from a side.
       const fromLeft = Math.random() < 0.5;
-      f = { x: firstSync ? rand(0.05, 0.95) : fromLeft ? -0.05 : 1.05, y: rand(0.2, 0.72), dir: fromLeft ? 1 : -1,
+      f = { x: firstSync ? rand(0.05, 0.95) : fromLeft ? -0.05 : 1.05, y: rand(0.31, 0.75), dir: fromLeft ? 1 : -1,
         s: sizeFor(p), sp: speedFor(p), jitter: rand(0.85, 1.15), ph: rand(0, 6), z: Math.random(), leaving: false };
       fish.set(p.name, f);
     }
@@ -305,16 +305,223 @@ function drawFish(f, t) {
   }
 }
 
-function drawTank(t, dt) {
-  const k = dt * 60; // speeds below are per 60th of a second
-  ctx.fillStyle = "#042C53"; ctx.fillRect(0, 0, W, H);
-  ctx.globalAlpha = 0.35; ctx.fillStyle = "#0C447C"; ctx.fillRect(0, 0, W, H * 0.32);
-  ctx.globalAlpha = 0.1; ctx.fillStyle = "#85B7EB";
-  for (let i = 0; i < 6; i++) {
-    const bx = (i * 0.19 + Math.sin(t / 5000 + i) * 0.03) * W;
-    ctx.beginPath(); ctx.moveTo(bx, 0); ctx.lineTo(bx + W * 0.05, 0); ctx.lineTo(bx + W * 0.17, H * 0.92); ctx.lineTo(bx + W * 0.09, H * 0.92); ctx.fill();
+// ---- Tank weather ----
+// The sky above the water, the water's colour and the light in it follow the
+// real weather and time of day (Open-Meteo via /api/display: sunrise and
+// sunset, weather code, cloud cover, rain, wind). Add ?wx=rain&phase=night
+// (or clear/partly/overcast/fog/drizzle/snow/storm, dawn/day/dusk) to the
+// page's address to preview any of them.
+const SURF = 0.245; // the water's surface, as a fraction of the height
+const TOP_BAR = 0.078;
+const params = new URLSearchParams(location.search);
+
+function wxKind(code) {
+  if (code == null || code <= 1) return "clear";
+  if (code === 2) return "partly";
+  if (code === 3) return "overcast";
+  if (code === 45 || code === 48) return "fog";
+  if (code >= 51 && code <= 57) return "drizzle";
+  if ((code >= 61 && code <= 67) || (code >= 80 && code <= 82)) return "rain";
+  if ((code >= 71 && code <= 77) || code === 85 || code === 86) return "snow";
+  if (code >= 95) return "storm";
+  return "clear";
+}
+
+function dayPhase(w, nowS) {
+  if (w && w.sunrise && w.sunset) {
+    const twilight = 45 * 60;
+    if (Math.abs(nowS - w.sunrise) < twilight) return "dawn";
+    if (Math.abs(nowS - w.sunset) < twilight) return "dusk";
+    return nowS > w.sunrise && nowS < w.sunset ? "day" : "night";
+  }
+  if (w) return w.is_day ? "day" : "night";
+  const h = new Date().getHours();
+  return h >= 6 && h < 19 ? "day" : "night";
+}
+
+const PHASES = {
+  day: { sky: ["#5E9AD6", "#A9CFEF"], top: "#1C6FB3", deep: "#042C53", ray: "#CFE8FF", grey: "#8A929B" },
+  dawn: { sky: ["#5E5588", "#F2A07B"], top: "#3C5D8F", deep: "#06203F", ray: "#FFD2A8", grey: "#77737D" },
+  dusk: { sky: ["#35336A", "#E8845A"], top: "#34507F", deep: "#051A35", ray: "#FFC08A", grey: "#5E5A66" },
+  night: { sky: ["#040A1A", "#13224A"], top: "#0B2447", deep: "#020A18", ray: "#B5C8E8", grey: "#1C222C" },
+};
+// How grey the sky goes, how strong the light rays are, and how many clouds.
+const KINDS = {
+  clear: { grey: 0, rays: 1, clouds: 0 },
+  partly: { grey: 0.15, rays: 0.75, clouds: 4 },
+  overcast: { grey: 0.7, rays: 0.2, clouds: 9 },
+  fog: { grey: 0.6, rays: 0.15, clouds: 0 },
+  drizzle: { grey: 0.65, rays: 0.15, clouds: 8 },
+  rain: { grey: 0.8, rays: 0.08, clouds: 10 },
+  snow: { grey: 0.55, rays: 0.12, clouds: 8 },
+  storm: { grey: 0.9, rays: 0, clouds: 11 },
+};
+
+function hexRgb(h) { return [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16)); }
+function mix(a, b, t) {
+  const x = hexRgb(a), y = hexRgb(b);
+  return `rgb(${x.map((v, i) => Math.round(v + (y[i] - v) * t)).join(",")})`;
+}
+
+function scene() {
+  const w = state && state.weather;
+  const nowS = Date.now() / 1000;
+  const kind = params.get("wx") || wxKind(w && w.code);
+  const phase = params.get("phase") || dayPhase(w, nowS);
+  const cover = w && w.cloud_cover != null && !params.get("wx") ? w.cloud_cover / 100 : null;
+  // Sun or moon across the sky: sunrise to sunset, then sunset to sunrise.
+  let arc = 0.5;
+  if (w && w.sunrise && w.sunset && !params.get("phase")) {
+    const day = w.sunset - w.sunrise;
+    arc = phase === "night" ? ((nowS - w.sunset + 86400) % 86400) / (86400 - day) : (nowS - w.sunrise) / day;
+  }
+  return { kind, phase, pal: PHASES[phase] || PHASES.day, k: KINDS[kind] || KINDS.clear, cover,
+    precip: w && w.precip_mm, wind: (w && w.wind_mph) || 4, arc: Math.min(1, Math.max(0, arc)) };
+}
+
+const stars = Array.from({ length: 60 }, () => [Math.random(), rand(TOP_BAR, SURF - 0.02), Math.random() * 6]);
+const clouds = Array.from({ length: 12 }, () => ({ x: Math.random() * 1.3 - 0.15, y: rand(0.1, SURF - 0.045), w: rand(0.08, 0.16) }));
+const drops = [], ripples = [], flakes = [];
+let flash = 0, bolt = null, nextBolt = 0, dropCarry = 0;
+
+function drawSkyAndWater(t, dt, k) {
+  const sc = scene(), pal = sc.pal, surf = SURF * H;
+  // Sky, greyed by the weather.
+  const sky = ctx.createLinearGradient(0, 0, 0, surf);
+  sky.addColorStop(0, mix(pal.sky[0], pal.grey, sc.k.grey));
+  sky.addColorStop(1, mix(pal.sky[1], pal.grey, sc.k.grey));
+  ctx.fillStyle = sky; ctx.fillRect(0, 0, W, surf);
+  if (sc.phase === "night" && sc.k.grey < 0.5) {
+    ctx.fillStyle = "#F1EFE8";
+    for (const [x, y, ph] of stars) {
+      ctx.globalAlpha = Math.max(0, (0.35 + 0.35 * Math.sin(t / 900 + ph)) * (1 - sc.k.grey * 2));
+      ctx.fillRect(x * W, y * H, 2, 2);
+    }
+    ctx.globalAlpha = 1;
+  }
+  if (sc.k.grey < 0.5) {
+    // Sun by day, moon by night, crossing the sky - kept below the legend
+    // rows, a little higher at midday.
+    const bx = (0.08 + sc.arc * 0.84) * W;
+    const by = surf - H * 0.04 - Math.sin(sc.arc * Math.PI) * H * 0.025;
+    const r = H * 0.028;
+    const night = sc.phase === "night";
+    const glow = ctx.createRadialGradient(bx, by, r * 0.5, bx, by, r * 4);
+    glow.addColorStop(0, night ? "rgba(230,235,245,0.35)" : "rgba(255,240,200,0.55)");
+    glow.addColorStop(1, "rgba(255,240,200,0)");
+    ctx.fillStyle = glow; ctx.fillRect(bx - r * 4, by - r * 4, r * 8, r * 8);
+    ctx.fillStyle = night ? "#E6E9F0" : sc.phase === "day" ? "#FFF1C4" : "#FFC98A";
+    ctx.beginPath(); ctx.arc(bx, by, r, 0, 7); ctx.fill();
+  }
+  // Clouds drift with the wind; how many from the real cloud cover.
+  const nClouds = sc.cover != null ? Math.round(sc.cover * 11) : sc.k.clouds;
+  ctx.fillStyle = sc.phase === "night" ? "#2A3350" : mix("#F4F3EE", "#7C838C", sc.k.grey);
+  const drift = 0.000012 * (1 + sc.wind / 4) * k;
+  ctx.globalAlpha = 0.9;
+  for (let i = 0; i < nClouds; i++) {
+    const c = clouds[i];
+    c.x += drift;
+    if (c.x > 1.15) c.x = -0.2;
+    for (let j = 0; j < 4; j++) {
+      const px = (c.x + (j - 1.5) * c.w * 0.28) * W, py = c.y * H + (j % 2 ? -1 : 1) * H * 0.008;
+      ctx.beginPath(); ctx.ellipse(px, py, c.w * W * 0.24, H * 0.022 * (j % 2 ? 1.3 : 1), 0, 0, 7); ctx.fill();
+    }
   }
   ctx.globalAlpha = 1;
+  // Water, darker under a grey sky or at night.
+  const water = ctx.createLinearGradient(0, surf, 0, H);
+  water.addColorStop(0, mix(pal.top, pal.grey, sc.k.grey * 0.5));
+  water.addColorStop(1, pal.deep);
+  ctx.fillStyle = water; ctx.fillRect(0, surf, W, H - surf);
+  // Light rays from the surface: strong on a clear day, faint moonlight at night.
+  const rays = sc.k.rays * (sc.phase === "night" ? 0.35 : sc.phase === "day" ? 1 : 0.7);
+  if (rays > 0.02) {
+    ctx.fillStyle = pal.ray;
+    for (let i = 0; i < 6; i++) {
+      const bx = (i * 0.19 + Math.sin(t / 5000 + i) * 0.03) * W;
+      // A cloud passing over dims the ray under it.
+      let shade = 1;
+      for (let j = 0; j < nClouds; j++) if (Math.abs(clouds[j].x * W - (bx + W * 0.07)) < clouds[j].w * W * 0.6) shade = 0.4;
+      ctx.globalAlpha = 0.12 * rays * shade;
+      ctx.beginPath(); ctx.moveTo(bx, surf); ctx.lineTo(bx + W * 0.05, surf); ctx.lineTo(bx + W * 0.17, H * 0.92); ctx.lineTo(bx + W * 0.09, H * 0.92); ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+  }
+  // The surface: a gently moving line.
+  ctx.strokeStyle = "rgba(255,255,255,0.35)"; ctx.lineWidth = 2; ctx.beginPath();
+  for (let i = 0; i <= 40; i++) {
+    const x = (i / 40) * W, y = surf + Math.sin(i * 0.9 + t / 700) * H * 0.004;
+    if (i) ctx.lineTo(x, y); else ctx.moveTo(x, y);
+  }
+  ctx.stroke();
+  drawPrecipitation(sc, t, dt, k, surf);
+  if (sc.kind === "fog") { ctx.fillStyle = "rgba(200,206,212,0.22)"; ctx.fillRect(0, 0, W, H); }
+}
+
+function drawPrecipitation(sc, t, dt, k, surf) {
+  const raining = sc.kind === "rain" || sc.kind === "drizzle" || sc.kind === "storm";
+  if (raining) {
+    // Drops per second: a drizzle, a rain that follows the real mm/h, a storm.
+    const rate = sc.kind === "drizzle" ? 25 : sc.kind === "storm" ? 150 : Math.min(160, 50 + 25 * (sc.precip || 0));
+    dropCarry += rate * dt;
+    while (dropCarry >= 1 && drops.length < 400) { dropCarry -= 1; drops.push({ x: Math.random() * W, y: TOP_BAR * H * rand(0.8, 1.2) }); }
+  }
+  ctx.strokeStyle = "rgba(210,225,240,0.6)"; ctx.lineWidth = 1.2; ctx.beginPath();
+  for (let i = drops.length - 1; i >= 0; i--) {
+    const d = drops[i];
+    d.y += H * 0.02 * k; d.x += sc.wind * 0.05 * k;
+    if (d.y >= surf) { if (ripples.length < 120) ripples.push({ x: d.x, r: 1, a: 0.6 }); drops.splice(i, 1); continue; }
+    ctx.moveTo(d.x, d.y); ctx.lineTo(d.x - sc.wind * 0.3, d.y - H * 0.018);
+  }
+  ctx.stroke();
+  ctx.strokeStyle = "#DCE8F4"; ctx.lineWidth = 1;
+  for (let i = ripples.length - 1; i >= 0; i--) {
+    const r = ripples[i];
+    r.r += 0.6 * k; r.a -= 0.025 * k;
+    if (r.a <= 0) { ripples.splice(i, 1); continue; }
+    ctx.globalAlpha = r.a; ctx.beginPath(); ctx.ellipse(r.x, surf + 2, r.r * 2, r.r * 0.5, 0, 0, 7); ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
+  if (sc.kind === "snow") {
+    if (flakes.length < 160 && Math.random() < 0.8 * k) flakes.push({ x: Math.random() * W, y: TOP_BAR * H, ph: Math.random() * 6 });
+    ctx.fillStyle = "#F4F7FB";
+    for (let i = flakes.length - 1; i >= 0; i--) {
+      const f = flakes[i];
+      const inWater = f.y > surf;
+      f.y += H * (inWater ? 0.0006 : 0.0025) * k; f.x += Math.sin(t / 700 + f.ph) * 0.4 * k;
+      if (f.y > H * 0.55) { flakes.splice(i, 1); continue; }
+      ctx.globalAlpha = inWater ? Math.max(0, 0.7 - (f.y - surf) / (H * 0.35)) : 0.9;
+      ctx.beginPath(); ctx.arc(f.x, f.y, 2.2, 0, 7); ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+  }
+  if (sc.kind === "storm") {
+    const now = t / 1000;
+    if (!nextBolt) nextBolt = now + rand(4, 12);
+    if (now > nextBolt) {
+      flash = 1; nextBolt = now + rand(5, 14);
+      let x = rand(0.1, 0.9) * W, y = TOP_BAR * H;
+      bolt = [[x, y]];
+      while (y < surf) { y += rand(8, 16); x += rand(-12, 12); bolt.push([x, Math.min(y, surf)]); }
+    }
+  }
+}
+
+// Over everything, fish included: a lightning flash lights the whole tank.
+function drawLightning(dt) {
+  if (flash <= 0) return;
+  if (bolt && flash > 0.6) {
+    ctx.strokeStyle = "#FFFFFF"; ctx.lineWidth = 2.5; ctx.beginPath();
+    bolt.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
+    ctx.stroke();
+  }
+  ctx.fillStyle = `rgba(235,240,255,${0.45 * flash})`; ctx.fillRect(0, 0, W, H);
+  flash -= dt * 3;
+}
+
+function drawTank(t, dt) {
+  const k = dt * 60; // speeds below are per 60th of a second
+  drawSkyAndWater(t, dt, k);
   ctx.fillStyle = "#633806"; ctx.beginPath(); ctx.moveTo(0, H);
   for (let i = 0; i <= 30; i++) ctx.lineTo((i / 30) * W, H * 0.88 + Math.sin(i * 1.3) * H * 0.015);
   ctx.lineTo(W, H); ctx.fill();
@@ -343,7 +550,7 @@ function drawTank(t, dt) {
   ctx.fillStyle = "#B5D4F4";
   for (const b of bubbles) {
     b.y -= b.v * k; b.x += Math.sin(t / 600 + b.r * 9) * 0.0003 * k;
-    if (b.y < 0.1) { b.y = 0.93; b.x = rand(0.05, 0.95); }
+    if (b.y < SURF + 0.01) { b.y = 0.93; b.x = rand(0.05, 0.95); }
     ctx.globalAlpha = 0.4; ctx.beginPath(); ctx.arc(b.x * W, b.y * H, b.r * 2, 0, 7); ctx.fill();
   }
   ctx.globalAlpha = 1;
@@ -354,7 +561,7 @@ function drawTank(t, dt) {
     f.s += (f.targetS - f.s) * Math.min(1, 0.03 * k);
     f.sp += (f.targetSp - f.sp) * Math.min(1, 0.05 * k);
     if (f.leaving) { f.x += f.dir * 0.004 * k; if (f.x > 1.1 || f.x < -0.1) { fish.delete(name); continue; } }
-    else if (sick) f.y = Math.max(0.16, f.y - 0.0004 * k);
+    else if (sick) f.y = Math.max(SURF + 0.03, f.y - 0.0004 * k);
     else if (p.phase === "Pending") f.y = Math.min(0.8, f.y + 0.0003 * k);
     else {
       f.x += f.dir * f.sp * k;
@@ -362,18 +569,22 @@ function drawTank(t, dt) {
     }
     drawFish(f, t);
   }
-  // Namespace legend, under the top bar.
+  drawLightning(dt);
+  // Namespace legend, under the top bar - over the sky, so shadowed to stay
+  // readable against a bright day.
+  ctx.shadowColor = "rgba(0,0,0,0.75)"; ctx.shadowBlur = 4;
   let lx = W * 0.02;
   ctx.font = `${Math.round(H * 0.024)}px system-ui, sans-serif`; ctx.textAlign = "left";
   const present = [...new Set(state ? state.pods.map((p) => p.namespace) : [])].sort();
   for (const ns of present) {
     ctx.fillStyle = NS_COLOR[ns] || "#D3D1C7"; ctx.beginPath(); ctx.arc(lx + 6, H * 0.115, 6, 0, 7); ctx.fill();
-    ctx.fillStyle = "#B5D4F4"; ctx.fillText(ns, lx + 17, H * 0.123);
+    ctx.fillStyle = "#F1EFE8"; ctx.fillText(ns, lx + 17, H * 0.123);
     lx += ctx.measureText(ns).width + 44;
   }
-  ctx.fillStyle = "#85B7EB";
+  ctx.fillStyle = "#E6F1FB";
   ctx.font = `${Math.round(H * 0.021)}px system-ui, sans-serif`;
-  ctx.fillText("size = memory  ·  speed = CPU  ·  puffed = near its memory limit", W * 0.02, H * 0.165);
+  ctx.fillText("size = memory  ·  speed = CPU  ·  puffed = near its memory limit", W * 0.02, H * 0.152);
+  ctx.shadowBlur = 0; ctx.shadowColor = "transparent";
 }
 
 // ---- Top and bottom bars ----
