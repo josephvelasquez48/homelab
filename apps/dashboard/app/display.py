@@ -249,16 +249,29 @@ async def weather(client: httpx.AsyncClient) -> dict | None:
             params={
                 "latitude": WEATHER_LAT,
                 "longitude": WEATHER_LON,
-                "current": "temperature_2m,weather_code,is_day",
+                # The aquarium draws the weather above its water: time of
+                # day from sunrise/sunset, clouds, rain and wind.
+                "current": "temperature_2m,weather_code,is_day,cloud_cover,precipitation,wind_speed_10m",
+                "daily": "sunrise,sunset",
+                "forecast_days": 1,
+                "timezone": "auto",
+                "timeformat": "unixtime",
                 "temperature_unit": "fahrenheit",
+                "wind_speed_unit": "mph",
             },
         )
         r.raise_for_status()
-        cur = r.json()["current"]
+        body = r.json()
+        cur, daily = body["current"], body.get("daily", {})
         _weather["value"] = {
             "temp_f": round(cur["temperature_2m"]),
             "code": cur["weather_code"],
             "is_day": bool(cur.get("is_day", 1)),
+            "cloud_cover": cur.get("cloud_cover"),
+            "precip_mm": cur.get("precipitation"),
+            "wind_mph": cur.get("wind_speed_10m"),
+            "sunrise": (daily.get("sunrise") or [None])[0],
+            "sunset": (daily.get("sunset") or [None])[0],
         }
     except Exception:
         pass  # keep the last good value

@@ -162,3 +162,20 @@ def test_display_endpoint_attaches_usage(client, monkeypatch):
     monkeypatch.setattr(display, "probe_tcp", AsyncMock(return_value="up"))
     pod = client.get("/api/display").json()["pods"][0]
     assert (pod["cpu_m"], pod["mem_bytes"], pod["mem_limit"]) == (12.0, 2**27, 256 * 2**20)
+
+
+@pytest.mark.asyncio
+async def test_weather_carries_what_the_aquarium_sky_needs(monkeypatch):
+    monkeypatch.setattr(display, "WEATHER_LAT", "33.92")
+    monkeypatch.setattr(display, "WEATHER_LON", "-117.49")
+    monkeypatch.setitem(display._weather, "at", 0.0)
+    body = {"current": {"temperature_2m": 71.8, "weather_code": 61, "is_day": 0, "cloud_cover": 88,
+                        "precipitation": 1.2, "wind_speed_10m": 9.5},
+            "daily": {"sunrise": [1790689389], "sunset": [1790732203]}}
+    http = MagicMock()
+    http.get = AsyncMock(return_value=MagicMock(raise_for_status=lambda: None, json=lambda: body))
+    wx = await display.weather(http)
+    assert wx == {"temp_f": 72, "code": 61, "is_day": False, "cloud_cover": 88, "precip_mm": 1.2,
+                  "wind_mph": 9.5, "sunrise": 1790689389, "sunset": 1790732203}
+    params = http.get.call_args.kwargs["params"]
+    assert params["timeformat"] == "unixtime" and "sunrise" in params["daily"]

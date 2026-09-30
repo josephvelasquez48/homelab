@@ -45,6 +45,14 @@ to switch between two views:
   OOM kill; pods with no limit never puff. A pod that isn't ready floats
   belly-up with the reason; a pending one sinks; a pod that restarts while
   you watch says so.
+  The tank shows the real weather: a strip of sky above the water with
+  the sun or moon (placed by the day's real sunrise and sunset, with dawn
+  and dusk colours), stars on clear nights, clouds from the actual cloud
+  cover drifting with the wind, rain rippling the surface (heavier with
+  the real rainfall), snow, fog, and lightning in a storm. Add
+  `?wx=rain&phase=night` (clear, partly, overcast, fog, drizzle, rain,
+  snow, storm; dawn, day, dusk, night) to the address to preview any of
+  them.
 
 Tap a box or a fish for details. The top bar has the time, weather (if
 `WEATHER_LAT`/`WEATHER_LON` are set), overall health and the iPhone; the
