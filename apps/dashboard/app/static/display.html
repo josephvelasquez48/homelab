@@ -34,6 +34,7 @@
   #offline { position: absolute; top: 66px; right: 22px; z-index: 4; display: none; }
   #detail { position: absolute; z-index: 5; display: none; background: #F1EFE8; color: #2C2C2A;
     font-size: 15px; line-height: 1.5; padding: 8px 12px; border-radius: 6px; pointer-events: none; max-width: 320px; }
+  html.mouse, html.mouse body { cursor: auto; } /* a real mouse is moving: see the script below */
 </style>
 </head>
 <body>
@@ -60,5 +61,16 @@
 </div>
 <script src="/static/tank.js"></script>
 <script src="/static/display.js"></script>
+<script>
+// The screen is a touchscreen, so the pointer stays hidden - except while a
+// real mouse (Bluetooth) is being moved; it hides again after 3 s still.
+// Touches don't count: their pointerType is "touch".
+addEventListener("pointermove", (e) => {
+  if (e.pointerType !== "mouse") return;
+  document.documentElement.classList.add("mouse");
+  clearTimeout(window.mouseIdle);
+  window.mouseIdle = setTimeout(() => document.documentElement.classList.remove("mouse"), 3000);
+});
+</script>
 </body>
 </html>
