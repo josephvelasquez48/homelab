@@ -59,6 +59,18 @@ if ! cmp -s "$APP_DIR/wireplumber/51-phone-bridge.conf" "$wp_conf"; then
   systemctl --user restart wireplumber
 fi
 
+# Realtime priority for PipeWire's audio thread, through rtkit - see
+# pipewire/60-realtime.conf and pipewire/50-rtkit-joe.rules.
+dpkg -s rtkit >/dev/null 2>&1 || sudo apt-get install -y rtkit
+sudo install -o root -g root -m 644 "$APP_DIR/pipewire/50-rtkit-joe.rules" /etc/polkit-1/rules.d/
+pw_conf="$HOME/.config/pipewire/pipewire.conf.d/60-realtime.conf"
+mkdir -p "$(dirname "$pw_conf")"
+if ! cmp -s "$APP_DIR/pipewire/60-realtime.conf" "$pw_conf"; then
+  cp "$APP_DIR/pipewire/60-realtime.conf" "$pw_conf"
+  # Drops a call's audio if one is on the Pi right now - only on change.
+  systemctl --user restart pipewire pipewire-pulse wireplumber
+fi
+
 # obexd as a client only - see obex-override.conf.
 mkdir -p "$HOME/.config/systemd/user/obex.service.d"
 if ! cmp -s "$APP_DIR/obex-override.conf" "$HOME/.config/systemd/user/obex.service.d/phone-bridge.conf"; then
