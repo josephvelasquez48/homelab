@@ -92,9 +92,14 @@ spec:
             - { name: WEATHER_LON, value: "-117.49" }
           ports:
             - containerPort: 8000
+          # The CPU limit is for bursts, not the average (~80m): every 5 s
+          # /api/display gathers about a dozen sources at once. At 200m it
+          # was throttled in about half of all 100 ms periods (5.5 s lost
+          # per 20 s) and each poll took 0.7-1.2 s, with the Pi's cores
+          # mostly idle. The request stays at 50m.
           resources:
             requests: { cpu: 50m, memory: 64Mi }
-            limits: { cpu: 200m, memory: 128Mi }
+            limits: { cpu: 1000m, memory: 128Mi }
           readinessProbe:
             httpGet: { path: /health, port: 8000 }
             initialDelaySeconds: 3
