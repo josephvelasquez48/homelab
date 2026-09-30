@@ -120,7 +120,15 @@ def test_display_endpoint(client, monkeypatch):
 def test_display_page(client):
     res = client.get("/display")
     assert res.status_code == 200
+    assert '<script src="/static/tank.js">' in res.text  # the aquarium, before display.js uses it
     assert '<script src="/static/display.js">' in res.text
+    assert res.text.index("/static/tank.js") < res.text.index("/static/display.js")
+
+
+def test_tank_script_is_served(client):
+    res = client.get("/static/tank.js")
+    assert res.status_code == 200
+    assert "window.Tank" in res.text
 
 
 def test_quantities():
