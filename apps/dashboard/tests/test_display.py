@@ -97,7 +97,7 @@ async def test_list_pods_skips_finished_jobs_and_reports_why():
     pods = await display.list_pods(k8s)
     assert [p["name"] for p in pods] == ["api-1", "api-2"]
     assert pods[0] == {"name": "api-1", "namespace": "backend", "node": "joe", "phase": "Running",
-                       "ready": False, "restarts": 4, "reason": "CrashLoopBackOff"}
+                       "ready": False, "restarts": 4, "reason": "CrashLoopBackOff", "mem_limit": None}
     assert pods[1]["ready"] is False and pods[1]["node"] is None
 
 
@@ -121,3 +121,44 @@ def test_display_page(client):
     res = client.get("/display")
     assert res.status_code == 200
     assert '<script src="/static/display.js">' in res.text
+
+
+def test_quantities():
+    assert display.memory_bytes("177664Ki") == 177664 * 1024
+    assert display.memory_bytes("256Mi") == 256 * 2**20
+    assert display.memory_bytes("1Gi") == 2**30
+    assert display.memory_bytes("32G") == 32e9
+    assert display.memory_bytes("1024") == 1024
+    assert display.cpu_millicores("3284811n") == pytest.approx(3.284811)
+    assert display.cpu_millicores("250m") == 250
+    assert display.cpu_millicores("500u") == pytest.approx(0.5)
+    assert display.cpu_millicores("2") == 2000
+
+
+def test_memory_limit_needs_every_container_limited():
+    spec = lambda *lims: {"containers": [{"resources": {"limits": {"memory": q}}} if q else {} for q in lims]}  # noqa: E731
+    assert display.memory_limit(spec("1Gi", "1Gi")) == 2 * 2**30
+    assert display.memory_limit(spec("256Mi", None)) is None  # one unlimited container: no ceiling to warn about
+    assert display.memory_limit({"containers": []}) is None
+
+
+@pytest.mark.asyncio
+async def test_pod_usage_sums_containers_and_tolerates_no_metrics_server():
+    items = [{"metadata": {"namespace": "kiwix", "name": "kiwix-1"},
+              "containers": [{"usage": {"cpu": "5m", "memory": "100Mi"}}, {"usage": {"cpu": "1500000n", "memory": "20Mi"}}]}]
+    k8s = MagicMock()
+    k8s.get = AsyncMock(return_value=MagicMock(raise_for_status=lambda: None, json=lambda: {"items": items}))
+    usage = await display.pod_usage(k8s)
+    assert usage[("kiwix", "kiwix-1")]["cpu_m"] == pytest.approx(6.5)
+    assert usage[("kiwix", "kiwix-1")]["mem_bytes"] == 120 * 2**20
+    k8s.get = AsyncMock(side_effect=Exception("503: metrics API not available"))
+    assert await display.pod_usage(k8s) == {}
+
+
+def test_display_endpoint_attaches_usage(client, monkeypatch):
+    monkeypatch.setattr(display, "list_pods", AsyncMock(return_value=[{**POD, "mem_limit": 256 * 2**20}]))
+    monkeypatch.setattr(display, "pod_usage", AsyncMock(return_value={("backend", "api-1"): {"cpu_m": 12.0, "mem_bytes": 2**27}}))
+    monkeypatch.setattr(display, "probe_dns", AsyncMock(return_value="up"))
+    monkeypatch.setattr(display, "probe_tcp", AsyncMock(return_value="up"))
+    pod = client.get("/api/display").json()["pods"][0]
+    assert (pod["cpu_m"], pod["mem_bytes"], pod["mem_limit"]) == (12.0, 2**27, 256 * 2**20)

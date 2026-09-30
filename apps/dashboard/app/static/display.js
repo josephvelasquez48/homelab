@@ -212,6 +212,24 @@ const bubbles = Array.from({ length: 40 }, () => ({ x: Math.random(), y: Math.ra
 const weeds = Array.from({ length: 16 }, (_, i) => ({ x: 0.02 + i * 0.064 + rand(0, 0.02), h: rand(0.1, 0.26), c: Math.random() < 0.5 ? "#27500A" : "#3B6D11" }));
 const sand = Array.from({ length: 160 }, () => [Math.random(), rand(0.9, 1), Math.random()]);
 
+// What a fish's look means (metrics from /api/display, via metrics-server):
+// size is memory in use, on a log scale (8 MiB small, 1 GiB big); speed is
+// CPU; a pod near its memory limit puffs up - the warning before an OOM kill.
+const MIB = 2 ** 20;
+const PUFF_AT = 0.85;
+function sizeFor(p) {
+  if (p.mem_bytes == null) return 0.9;
+  const t = Math.min(1, Math.max(0, (Math.log2(p.mem_bytes / MIB) - 3) / 7));
+  return 0.6 + t * 1.3;
+}
+function speedFor(p) {
+  if (p.cpu_m == null) return 0.0006;
+  return Math.min(0.0045, 0.00025 + 0.00045 * Math.log2(1 + p.cpu_m));
+}
+function memShare(p) {
+  return p.mem_bytes != null && p.mem_limit ? p.mem_bytes / p.mem_limit : null;
+}
+
 function syncFish() {
   const seen = new Set();
   for (const p of state.pods) {
@@ -220,14 +238,16 @@ function syncFish() {
     if (!f) {
       // Already in the tank on the first load; new pods swim in from a side.
       const fromLeft = Math.random() < 0.5;
-      f = { x: firstSync ? rand(0.05, 0.95) : fromLeft ? -0.05 : 1.05, y: rand(0.2, 0.72), v: rand(0.0005, 0.0012) * (fromLeft ? 1 : -1),
-        s: rand(0.8, 1.3), ph: rand(0, 6), z: Math.random(), leaving: false };
+      f = { x: firstSync ? rand(0.05, 0.95) : fromLeft ? -0.05 : 1.05, y: rand(0.2, 0.72), dir: fromLeft ? 1 : -1,
+        s: sizeFor(p), sp: speedFor(p), jitter: rand(0.85, 1.15), ph: rand(0, 6), z: Math.random(), leaving: false };
       fish.set(p.name, f);
     }
     const before = restartsSeen.get(p.name);
     if (before !== undefined && p.restarts > before) f.restartedAt = Date.now();
     restartsSeen.set(p.name, p.restarts);
     f.pod = p;
+    f.targetS = sizeFor(p);
+    f.targetSp = speedFor(p) * f.jitter;
     f.leaving = false;
   }
   for (const [name, f] of fish) if (!seen.has(name)) f.leaving = true;
@@ -236,19 +256,34 @@ function syncFish() {
 
 function drawFish(f, t) {
   const p = f.pod, sick = p.phase === "Running" && !p.ready || p.reason, pending = p.phase === "Pending";
-  const s = f.s * W * 0.017 * (0.75 + f.z * 0.45);
+  const s = f.s * W * 0.017;
+  const share = memShare(p), puffed = !sick && !pending && share !== null && share >= PUFF_AT;
   const X = f.x * W, Y = f.y * H + (sick ? 0 : Math.sin(t / 800 + f.ph) * H * 0.01);
   ctx.save();
   ctx.translate(X, Y);
   ctx.globalAlpha = pending ? 0.35 : 0.55 + f.z * 0.45;
   if (sick) ctx.rotate(Math.PI);
-  ctx.scale(f.v > 0 ? 1 : -1, 1);
-  ctx.fillStyle = sick || pending ? "#B4B2A9" : NS_COLOR[p.namespace] || "#D3D1C7";
-  ctx.beginPath();
-  ctx.moveTo(s * 1.1, 0);
-  ctx.quadraticCurveTo(s * 0.4, -s * 0.62, -s * 0.8, -s * 0.08);
-  ctx.quadraticCurveTo(s * 0.4, s * 0.62, s * 1.1, 0);
-  ctx.fill();
+  ctx.scale(f.dir, 1);
+  ctx.fillStyle = sick || pending ? "#B4B2A9" : puffed ? (share >= 0.95 ? "#E24B4A" : "#EF9F27") : NS_COLOR[p.namespace] || "#D3D1C7";
+  if (puffed) {
+    // A pufferfish: round, with spikes.
+    const r = s * 0.8;
+    ctx.beginPath(); ctx.arc(0, 0, r, 0, 7); ctx.fill();
+    ctx.beginPath();
+    for (let a = 0; a < 16; a++) {
+      const ang = (a / 16) * Math.PI * 2;
+      ctx.moveTo(Math.cos(ang - 0.12) * r, Math.sin(ang - 0.12) * r);
+      ctx.lineTo(Math.cos(ang) * r * 1.3, Math.sin(ang) * r * 1.3);
+      ctx.lineTo(Math.cos(ang + 0.12) * r, Math.sin(ang + 0.12) * r);
+    }
+    ctx.fill();
+  } else {
+    ctx.beginPath();
+    ctx.moveTo(s * 1.1, 0);
+    ctx.quadraticCurveTo(s * 0.4, -s * 0.62, -s * 0.8, -s * 0.08);
+    ctx.quadraticCurveTo(s * 0.4, s * 0.62, s * 1.1, 0);
+    ctx.fill();
+  }
   const wag = sick ? 0 : Math.sin(t / 140 + f.ph) * s * 0.2;
   ctx.beginPath();
   ctx.moveTo(-s * 0.7, 0); ctx.lineTo(-s * 1.35, -s * 0.45 + wag); ctx.lineTo(-s * 1.2, 0); ctx.lineTo(-s * 1.35, s * 0.45 + wag);
@@ -260,12 +295,13 @@ function drawFish(f, t) {
   ctx.fillStyle = "#042C53"; ctx.beginPath(); ctx.arc(s * 0.65, -s * 0.1, s * 0.055, 0, 7); ctx.fill();
   ctx.restore();
   const recent = f.restartedAt && Date.now() - f.restartedAt < 3600e3;
-  const label = p.reason || (pending ? "pending" : sick ? "not ready" : recent ? "restarted" : null);
+  const label = p.reason || (pending ? "pending" : sick ? "not ready"
+    : puffed ? `${Math.round(share * 100)}% of memory limit` : recent ? "restarted" : null);
   if (label) {
-    ctx.fillStyle = sick ? "#F09595" : "#FAC775";
+    ctx.fillStyle = sick || (puffed && share >= 0.95) ? "#F09595" : "#FAC775";
     ctx.font = `${Math.round(H * 0.024)}px system-ui, sans-serif`;
     ctx.textAlign = "center";
-    ctx.fillText(label, X, Y - s * 0.95);
+    ctx.fillText(label, X, Y - s * (puffed ? 1.25 : 0.95));
   }
 }
 
@@ -314,12 +350,15 @@ function drawTank(t, dt) {
   const list = [...fish.entries()].sort((a, b) => a[1].z - b[1].z);
   for (const [name, f] of list) {
     const p = f.pod, sick = (p.phase === "Running" && !p.ready) || p.reason;
-    if (f.leaving) { f.x += f.v * 3 * k; if (f.x > 1.1 || f.x < -0.1) { fish.delete(name); continue; } }
+    // Ease toward the latest size and speed, so a change reads as growth.
+    f.s += (f.targetS - f.s) * Math.min(1, 0.03 * k);
+    f.sp += (f.targetSp - f.sp) * Math.min(1, 0.05 * k);
+    if (f.leaving) { f.x += f.dir * 0.004 * k; if (f.x > 1.1 || f.x < -0.1) { fish.delete(name); continue; } }
     else if (sick) f.y = Math.max(0.16, f.y - 0.0004 * k);
     else if (p.phase === "Pending") f.y = Math.min(0.8, f.y + 0.0003 * k);
     else {
-      f.x += f.v * k;
-      if ((f.x > 0.97 && f.v > 0) || (f.x < 0.03 && f.v < 0)) f.v *= -1;
+      f.x += f.dir * f.sp * k;
+      if ((f.x > 0.97 && f.dir > 0) || (f.x < 0.03 && f.dir < 0)) f.dir *= -1;
     }
     drawFish(f, t);
   }
@@ -332,6 +371,9 @@ function drawTank(t, dt) {
     ctx.fillStyle = "#B5D4F4"; ctx.fillText(ns, lx + 17, H * 0.123);
     lx += ctx.measureText(ns).width + 44;
   }
+  ctx.fillStyle = "#85B7EB";
+  ctx.font = `${Math.round(H * 0.021)}px system-ui, sans-serif`;
+  ctx.fillText("size = memory  ·  speed = CPU  ·  puffed = near its memory limit", W * 0.02, H * 0.165);
 }
 
 // ---- Top and bottom bars ----
@@ -441,8 +483,12 @@ $("screen").addEventListener("click", (e) => {
     const f = fishAt((e.clientX - r.left) / r.width, (e.clientY - r.top) / r.height);
     if (f) {
       const p = f.pod;
+      const mib = (b) => `${Math.round(b / MIB)} MiB`;
+      const mem = p.mem_bytes == null ? "memory: no data"
+        : `memory ${mib(p.mem_bytes)}` + (p.mem_limit ? ` of ${mib(p.mem_limit)} (${Math.round(memShare(p) * 100)}%)` : ", no limit");
+      const cpu = p.cpu_m == null ? "CPU: no data" : `CPU ${p.cpu_m < 10 ? p.cpu_m.toFixed(1) : Math.round(p.cpu_m)}m`;
       return showDetail(`<b>${p.namespace}/${p.name}</b><br>${p.reason || (p.ready ? "running" : p.phase.toLowerCase())}` +
-        ` on ${p.node || "no node"}<br>${p.restarts} restart${p.restarts === 1 ? "" : "s"}`, e.clientX, e.clientY);
+        ` on ${p.node || "no node"}<br>${mem}<br>${cpu}<br>${p.restarts} restart${p.restarts === 1 ? "" : "s"}`, e.clientX, e.clientY);
     }
   }
   view = 1 - view;
