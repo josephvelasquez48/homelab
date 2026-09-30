@@ -53,6 +53,7 @@ const APP_NAMES = { grafana: "Grafana", argocd: "Argo CD", chat: "Chat", kiwix: 
 
 let state = null;
 let lastOk = 0;
+let pageVersion = null; // the page_version this page was loaded with, from its first poll
 let view = 0;
 const $ = (id) => document.getElementById(id);
 
@@ -241,7 +242,7 @@ function renderClock() {
   const now = new Date();
   $("clock").textContent = now.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
   $("date").textContent = now.toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" });
-  // Pick up new deploys: reload once a night.
+  // And once a night regardless - a fresh start (poll() picks up deploys).
   if (now.getHours() === 4 && now.getMinutes() === 0 && performance.now() > 120e3) location.reload();
 }
 
@@ -253,6 +254,10 @@ async function poll() {
     if (!r.ok) throw new Error(r.status);
     state = await r.json();
     lastOk = Date.now();
+    // A deploy changed this page: load the new one. The dashboard sends
+    // Cache-Control: no-cache, so the reload fetches the new files.
+    if (pageVersion && state.page_version && state.page_version !== pageVersion) location.reload();
+    pageVersion = pageVersion || state.page_version;
     renderMap();
     renderBars();
     Tank.sync(state);

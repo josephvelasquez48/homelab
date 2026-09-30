@@ -1,4 +1,5 @@
 import asyncio
+import hashlib
 import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -62,6 +63,29 @@ app.add_middleware(
 
 STATIC_DIR = Path(__file__).parent / "static"
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+
+
+# The pages and their scripts are rechecked on every load. Sent without a
+# Cache-Control, a browser picks its own freshness from Last-Modified (about
+# a tenth of the file's age), so after a deploy the Pi's display kept running
+# the old aquarium for hours - and restarting Chromium didn't help, the copies
+# live on disk. "no-cache" still lets it keep a copy; it only has to ask
+# first, and an unchanged static file comes back as a small 304.
+@app.middleware("http")
+async def revalidate_pages(request: Request, call_next):
+    response = await call_next(request)
+    path = request.url.path
+    if path in ("/", "/display") or path.startswith("/static/"):
+        response.headers.setdefault("Cache-Control", "no-cache")
+    return response
+
+
+# Which version of the display page this build serves: a hash of its files.
+# /api/display carries it, and a display still running an older page reloads
+# itself - so a deploy shows up within a poll, not at the 4 a.m. reload.
+PAGE_VERSION = hashlib.sha256(
+    b"".join((STATIC_DIR / name).read_bytes() for name in ("display.html", "display.js", "tank.js"))
+).hexdigest()[:12]
 
 
 @app.get("/")
@@ -179,13 +203,15 @@ async def status():
 @app.get("/api/display")
 async def display_state():
     k8s_client = app.state.k8s
-    return await display.gather(
+    state = await display.gather(
         k8s_client,
         app.state.http,
         k8s.get_argo_applications(k8s_client),
         _active_alerts(app.state.http),
         k8s.get_nodes(k8s_client),
     )
+    state["page_version"] = PAGE_VERSION
+    return state
 
 
 class LoginRequest(BaseModel):

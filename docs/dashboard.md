@@ -101,6 +101,14 @@ Chromium profile, so there is no "open this application?" prompt. Without a
 keyboard or the button, `systemctl --user stop pi-display.service` over SSH
 does the same.
 
+**Deploys reach the screen on their own:** the dashboard sends
+`Cache-Control: no-cache` for its pages and `/static` files, so a browser
+always rechecks them (an unchanged file is a cheap 304). Without it,
+Chromium chose its own freshness from `Last-Modified` and kept running the
+old page for hours after a deploy, even across restarts. `/api/display`
+also carries `page_version`, a hash of the display's files; a display
+still on an older page reloads itself on its next poll.
+
 **Cost:** animation is capped at 24 fps. At 60 the Pi's Chromium used
 about 1.5 cores; at 24 it's about a quarter of one.
 

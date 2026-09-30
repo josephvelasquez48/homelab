@@ -2,7 +2,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from app import display
+from app import display, main
 
 VALUES = dict.fromkeys(display.VALUE_QUERIES, None)
 RATES = dict.fromkeys(display.RATE_QUERIES, None)
@@ -111,6 +111,7 @@ def test_display_endpoint(client, monkeypatch):
     assert data["services"]["api"] == "up" and data["services"]["coredns"] == "up"
     assert data["stats"]["pods_ready"] == data["stats"]["pods_total"] == 1
     assert data["weather"] is None  # no location configured
+    assert data["page_version"] == main.PAGE_VERSION  # a display on an older page reloads
     assert set(data["rates"]) == {"-".join(e) for e in [
         ("lan", "coredns"), ("coredns", "adguard"), ("adguard", "internet"), ("lan", "traefik"),
         ("traefik", "api"), ("traefik", "apps"), ("api", "postgres"), ("api", "redis"), ("api", "ollama"),
@@ -124,6 +125,20 @@ def test_display_page(client):
     assert '<script src="/static/display.js">' in res.text
     assert res.text.index("/static/tank.js") < res.text.index("/static/display.js")
     assert 'id="to-desktop"' in res.text and 'id="desk-confirm" hidden' in res.text  # the Desktop button, confirm first
+
+
+def test_pages_and_scripts_are_rechecked_on_every_load(client):
+    # Without this the Pi's Chromium kept running old files after a deploy.
+    for path in ("/", "/display", "/static/display.js", "/static/tank.js"):
+        assert client.get(path).headers["cache-control"] == "no-cache", path
+
+
+def test_an_unchanged_script_comes_back_as_not_modified(client):
+    # Rechecking is cheap: the browser sends back the ETag and gets a 304.
+    etag = client.get("/static/tank.js").headers["etag"]
+    res = client.get("/static/tank.js", headers={"If-None-Match": etag})
+    assert res.status_code == 304
+    assert res.headers["cache-control"] == "no-cache"
 
 
 def test_tank_script_is_served(client):
