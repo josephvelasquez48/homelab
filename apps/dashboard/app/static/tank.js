@@ -496,24 +496,40 @@ function drawHouses(sc, off, t) {
     // Sand banked around the foot of the castle.
     ctx.fillStyle = mix("#E6D5AE", sc.pal.deep, dim);
     ctx.beginPath(); ctx.ellipse(cx, base + H * 0.004, hw * 1.3, H * 0.014, 0, Math.PI, 0); ctx.fill();
+    // The node's name written in the sand in front, like a finger drew it:
+    // a darker groove with a lit edge under it. Fish swim over it.
+    ctx.font = `italic 700 ${Math.round(H * 0.026)}px Georgia, "DejaVu Serif", serif`;
+    ctx.textAlign = "center"; ctx.textBaseline = "alphabetic";
+    const sandY = base + H * 0.036;
+    ctx.fillStyle = mix("#FFF4DA", sc.pal.deep, dim); ctx.globalAlpha = 0.55; ctx.fillText(n.name, cx, sandY + 1.5);
+    ctx.fillStyle = mix("#9C7F4E", sc.pal.deep, dim); ctx.globalAlpha = 0.9; ctx.fillText(n.name, cx, sandY);
+    ctx.globalAlpha = 1;
     n.labelX = cx; n.labelY = poleTop - H * 0.03; // named after the fish are drawn, so none hides it
   });
 }
 
+// Returns where the names went, so fish tags can keep clear of them.
 function drawHouseNames() {
+  const placed = [];
   for (const n of state ? state.nodes : []) {
-    if (n.labelX != null) pill(n.ready ? n.name : `${n.name} - not ready`, n.labelX, n.labelY, n.ready ? "#F1EFE8" : "#F09595", "rgba(4,12,26,0.62)", 16);
+    if (n.labelX != null) placed.push(pill(n.ready ? n.name : `${n.name} - not ready`, n.labelX, n.labelY, n.ready ? "#F1EFE8" : "#F09595", "rgba(4,12,26,0.62)", 16));
   }
+  return placed;
 }
 
-function pill(text, x, y, color, bg, size) {
+// Where a pill of this text would sit, kept on screen: {x, y, w, h}, centred.
+function pillBox(text, x, y, size) {
   ctx.font = `600 ${size}px system-ui, sans-serif`;
   const w = ctx.measureText(text).width + size * 1.2, h = size * 1.6;
-  x = Math.min(W - w / 2 - 8, Math.max(w / 2 + 8, x)); // keep it on screen
+  return { x: Math.min(W - w / 2 - 8, Math.max(w / 2 + 8, x)), y, w, h };
+}
+function pill(text, x, y, color, bg, size) {
+  const b = pillBox(text, x, y, size);
   ctx.fillStyle = bg;
-  ctx.beginPath(); ctx.roundRect(x - w / 2, y - h / 2, w, h, h / 2); ctx.fill();
+  ctx.beginPath(); ctx.roundRect(b.x - b.w / 2, b.y - b.h / 2, b.w, b.h, b.h / 2); ctx.fill();
   ctx.fillStyle = color; ctx.textAlign = "center"; ctx.textBaseline = "middle";
-  ctx.fillText(text, x, y + 1);
+  ctx.fillText(text, b.x, b.y + 1);
+  return b;
 }
 
 // ---- Fish ----
@@ -735,22 +751,37 @@ function drawFish(f, t, sc, off) {
   ctx.restore();
 }
 
-// Tags: always on a fish that needs attention; otherwise one fish at a
-// time, in turn, 6 s each, so you learn who is who.
-let spotlight = null, spotlightUntil = 0, spotlightTurn = 0;
-function drawTags(t) {
-  if (t > spotlightUntil) {
-    const calm = [...fish.values()].filter((f) => !f.leaving && !attention(f));
-    spotlight = calm.length ? calm[spotlightTurn++ % calm.length] : null;
-    spotlightUntil = t + 6000;
+// Tags: always on a fish that needs attention; otherwise every fish of one
+// namespace at once, a namespace at a time, 10 s each, so you learn who is
+// who - the legend highlights which. A tag that would overlap another (or a
+// castle's name) moves up out of its way; warnings are placed first.
+let spotNs = null, spotUntil = 0, spotTurn = 0;
+function drawTags(t, placed) {
+  if (t > spotUntil) {
+    const present = [...new Set([...fish.values()].filter((f) => !f.leaving).map((f) => f.pod.namespace))].sort();
+    spotNs = present.length ? present[spotTurn++ % present.length] : null;
+    spotUntil = t + 10000;
   }
+  const tags = [];
   for (const f of fish.values()) {
     if (f.leaving || f.sx == null) continue;
     const why = attention(f);
-    if (!why && f !== spotlight) continue;
-    const text = why ? `${shortName(f.pod)} · ${why}` : shortName(f.pod);
-    const y = Math.max(H * 0.2, f.sy - f.sr * 1.1 - 16);
-    pill(text, f.sx, y, why ? "#FAC775" : "#F1EFE8", why ? "rgba(120,60,8,0.85)" : "rgba(4,12,26,0.62)", 15);
+    if (!why && f.pod.namespace !== spotNs) continue;
+    tags.push({ why, text: why ? `${shortName(f.pod)} · ${why}` : shortName(f.pod),
+      x: f.sx, y: Math.max(H * 0.2, f.sy - f.sr * 1.1 - 16) });
+  }
+  // Warnings first, then from the bottom up, each nudged up past any overlap.
+  tags.sort((a, b) => (!!b.why - !!a.why) || b.y - a.y);
+  const hits = (a, b) => Math.abs(a.x - b.x) < (a.w + b.w) / 2 + 4 && Math.abs(a.y - b.y) < (a.h + b.h) / 2 + 3;
+  for (const tag of tags) {
+    let box = pillBox(tag.text, tag.x, tag.y, 15);
+    for (let tries = 0; tries < 12; tries++) {
+      const other = placed.find((o) => hits(box, o));
+      if (!other) break;
+      box = { ...box, y: other.y - (other.h + box.h) / 2 - 3 };
+    }
+    box.y = Math.max(H * 0.19, box.y);
+    placed.push(pill(tag.text, box.x, box.y, tag.why ? "#FAC775" : "#F1EFE8", tag.why ? "rgba(120,60,8,0.85)" : "rgba(4,12,26,0.62)", 15));
   }
 }
 
@@ -778,6 +809,11 @@ function drawLegend() {
   for (const ns of Object.keys(counts).sort()) {
     ctx.fillStyle = NS_COLOR[ns] || "#D3D1C7"; ctx.beginPath(); ctx.arc(lx + 6, H * 0.115, 6, 0, 7); ctx.fill();
     const label = `${ns} ${counts[ns]}`;
+    if (ns === spotNs) { // the namespace whose fish are named right now
+      const w = ctx.measureText(label).width + 30;
+      ctx.fillStyle = "rgba(241,239,232,0.2)";
+      ctx.beginPath(); ctx.roundRect(lx - 4, H * 0.115 - H * 0.02, w, H * 0.04, H * 0.02); ctx.fill();
+    }
     ctx.fillStyle = "#F1EFE8"; ctx.fillText(label, lx + 17, H * 0.123);
     lx += ctx.measureText(label).width + 44;
   }
@@ -810,8 +846,7 @@ function drawTank(t, dt) {
   drawWeed(frontWeed, cam * PAR.front, H * 1.02, [mix("#12301A", sc.pal.deep, dim * 0.6), mix("#2E2A10", sc.pal.deep, dim * 0.6)], t);
   if (sc.kind === "fog") { ctx.fillStyle = "rgba(200,206,212,0.22)"; ctx.fillRect(0, 0, W, H); }
   drawLightning(dt);
-  drawHouseNames();
-  drawTags(t);
+  drawTags(t, drawHouseNames());
   drawLegend();
 }
 
