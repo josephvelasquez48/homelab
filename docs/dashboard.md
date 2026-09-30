@@ -38,13 +38,24 @@ to switch between two views:
   light; dots move along a line at its real request rate. Red DNS dots
   are queries AdGuard blocked, turned back before the internet. Along the
   bottom: DNS rate, blocked share, pods, API load and the Pi's vitals.
-- **Cluster aquarium:** one fish per pod, coloured by namespace, one rock
-  per node. Size is memory in use (log scale, 8 MiB to 1 GiB) and speed is
-  CPU, both live from metrics-server. A pod at 85% of its memory limit
-  puffs up into an orange pufferfish (red at 95%) - the warning before an
-  OOM kill; pods with no limit never puff. A pod that isn't ready floats
-  belly-up with the reason; a pending one sinks; a pod that restarts while
-  you watch says so.
+- **Cluster aquarium:** a coral reef seen side-on (`static/tank.js`), one
+  fish per pod. Colour and species show the namespace - clownfish for
+  backend and kube-system, barracuda for argocd and chat, angelfish for
+  monitoring and ai, tang for dashboard and kiwix, a ray along the bottom
+  for data - and each fish wanders on its own. Size is memory in use (log
+  scale, 8 MiB to 1 GiB) and speed is CPU, both live from metrics-server.
+  A pod at 85% of its memory limit puffs up into an orange pufferfish (red
+  at 95%) - the warning before an OOM kill; pods with no limit never puff.
+  A pod that isn't ready floats belly-up; a pending one sinks; a pod that
+  restarts while you watch says so. A fish that needs attention always
+  carries a tag saying why, and one other fish at a time is named in turn.
+  Each node is a sandcastle flying its own flag, its windows lit while the
+  node is ready; a node that isn't goes dark, its flag hanging grey.
+  It's 2.5D: layers at different depths (far reef, back weed, the sand
+  with its coral and castles, the fish, weed against the glass) slide at
+  different speeds as the view drifts, so it reads as deep without 3D.
+  The far reef and the sand are drawn once per weather change and copied
+  in each frame, which keeps it at the 24 fps cap on the Pi.
   The tank shows the real weather: a strip of sky above the water with
   the sun or moon (placed by the day's real sunrise and sunset, with dawn
   and dusk colours), stars on clear nights, clouds from the actual cloud
