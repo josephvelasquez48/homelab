@@ -18,9 +18,13 @@ spec:
           envFrom:
             - configMapRef: { name: api-config }
             - secretRef: { name: api-secrets }
+          # Idle most of the time (a blocking BLPOP), but its bursts - the
+          # readiness probe below starts a fresh Python process every 30 s -
+          # hit a 500m limit in 25 of the 31 periods it ran (measured on the
+          # Pi). The limit caps bursts only; the request stays at 50m.
           resources:
             requests: { cpu: 50m, memory: 128Mi }
-            limits: { cpu: 500m, memory: 256Mi }
+            limits: { cpu: 1000m, memory: 256Mi }
           # This Deployment previously had no probes at all, which meant
           # Kubernetes treated the container as Ready the moment the
           # process started. When a worker was scheduled onto a node whose
