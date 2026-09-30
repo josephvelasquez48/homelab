@@ -168,7 +168,9 @@ def test_display_endpoint_attaches_usage(client, monkeypatch):
 async def test_weather_carries_what_the_aquarium_sky_needs(monkeypatch):
     monkeypatch.setattr(display, "WEATHER_LAT", "33.92")
     monkeypatch.setattr(display, "WEATHER_LON", "-117.49")
-    monkeypatch.setitem(display._weather, "at", 0.0)
+    monkeypatch.setitem(display._weather, "at", None)
+    # Fetches on a machine booted moments ago, too (the empty cache isn't "fresh").
+    monkeypatch.setattr(display.time, "monotonic", lambda: 5.0)
     body = {"current": {"temperature_2m": 71.8, "weather_code": 61, "is_day": 0, "cloud_cover": 88,
                         "precipitation": 1.2, "wind_speed_10m": 9.5},
             "daily": {"sunrise": [1790689389], "sunset": [1790732203]}}
