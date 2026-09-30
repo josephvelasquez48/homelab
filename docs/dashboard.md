@@ -52,7 +52,8 @@ to switch between two views:
   fish of it at once, 10 s each, highlighted in the legend.
   Each node is a sandcastle flying its own flag, its name written in the
   sand in front, its windows lit while the node is ready; a node that
-  isn't goes dark, its flag hanging grey.
+  isn't goes dark, its flag hanging grey, and its name in the sand turns
+  red and says "not ready".
   It's 2.5D: layers at different depths (far reef, back weed, the sand
   with its coral and castles, the fish, weed against the glass) slide at
   different speeds as the view drifts, so it reads as deep without 3D.
