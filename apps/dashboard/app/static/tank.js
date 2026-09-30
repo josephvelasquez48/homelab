@@ -497,13 +497,15 @@ function drawHouses(sc, off, t) {
     ctx.fillStyle = mix("#E6D5AE", sc.pal.deep, dim);
     ctx.beginPath(); ctx.ellipse(cx, base + H * 0.004, hw * 1.3, H * 0.014, 0, Math.PI, 0); ctx.fill();
     // The node's name written in the sand in front, like a finger drew it:
-    // a darker groove with a lit edge under it. Fish swim over it.
-    ctx.font = `italic 700 ${Math.round(H * 0.026)}px Georgia, "DejaVu Serif", serif`;
+    // a deep brown groove with a lit edge under it. The groove darkens only
+    // half as much as the sand at night, so it still stands out. Fish swim
+    // over it.
+    ctx.font = `italic 700 ${Math.round(H * 0.028)}px Georgia, "DejaVu Serif", serif`;
     ctx.textAlign = "center"; ctx.textBaseline = "alphabetic";
-    const sandY = base + H * 0.036;
-    ctx.fillStyle = mix("#FFF4DA", sc.pal.deep, dim); ctx.globalAlpha = 0.55; ctx.fillText(n.name, cx, sandY + 1.5);
-    ctx.fillStyle = mix("#9C7F4E", sc.pal.deep, dim); ctx.globalAlpha = 0.9; ctx.fillText(n.name, cx, sandY);
+    const sandY = base + H * 0.037;
+    ctx.fillStyle = mix("#FFF4DA", sc.pal.deep, dim); ctx.globalAlpha = 0.7; ctx.fillText(n.name, cx, sandY + 1.5);
     ctx.globalAlpha = 1;
+    ctx.fillStyle = mix("#4A3418", sc.pal.deep, dim * 0.5); ctx.fillText(n.name, cx, sandY);
     n.labelX = cx; n.labelY = poleTop - H * 0.03; // named after the fish are drawn, so none hides it
   });
 }
