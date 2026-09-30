@@ -151,11 +151,14 @@ async function startAudio() {
       if (ws && ws.readyState === WebSocket.OPEN && state && state.bridged) ws.send(e.data);
     };
     const player = new AudioWorkletNode(ctx, "player", { outputChannelCount: [2] });
-    // The phone sends call audio quiet - peaks ~1000 of 32767 on a live
-    // call, about -30 dBFS - so the default is 4x (+12 dB), with a limiter
-    // after it so a loud caller at a high setting doesn't clip.
+    // Call volume in dB (the slider), with a limiter after it so a loud
+    // caller at a high setting doesn't clip. The phone used to send calls
+    // quiet (peaks ~1000 of 32767); since the Pi also registers as a
+    // speaker it sends them near full scale, so the useful range is mostly
+    // below 0 dB - and a straight 0-10 multiplier crammed it all into the
+    // bottom tenth of the slider.
     const gain = ctx.createGain();
-    gain.gain.value = Number($("volume").value);
+    gain.gain.value = dbToGain($("volume").value);
     const limiter = ctx.createDynamicsCompressor();
     limiter.threshold.value = -3;
     limiter.knee.value = 0;
@@ -668,15 +671,25 @@ $("enable-audio").onclick = enableAudio;
 $("keep-phone").onchange = (e) => send({ action: "set-keep-phone", value: e.target.checked });
 $("media-on-pc").onchange = (e) => send({ action: "set-media-on-pc", value: e.target.checked });
 $("mic").onchange = (e) => switchMic(e.target.value);
+function dbToGain(db) {
+  return Math.pow(10, Number(db) / 20);
+}
+function renderVolume() {
+  const db = Number($("volume").value);
+  $("volume-db").textContent = `${db > 0 ? "+" : ""}${db} dB`;
+}
 // Remembered per browser; storage can be unavailable (private window),
-// in which case the slider just starts at its default.
+// in which case the slider just starts at its default. A new key: the old
+// "phone-volume" was a 0-10 multiplier, meaningless as dB.
 try {
-  const saved = localStorage.getItem("phone-volume");
+  const saved = localStorage.getItem("phone-volume-db");
   if (saved !== null) $("volume").value = saved;
 } catch {}
+renderVolume();
 $("volume").oninput = (e) => {
-  if (audio) audio.gain.gain.value = Number(e.target.value);
-  try { localStorage.setItem("phone-volume", e.target.value); } catch {}
+  if (audio) audio.gain.gain.value = dbToGain(e.target.value);
+  renderVolume();
+  try { localStorage.setItem("phone-volume-db", e.target.value); } catch {}
 };
 
 // Instant feedback on a tap: the button dims and says what's happening,

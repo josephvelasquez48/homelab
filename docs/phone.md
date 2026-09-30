@@ -43,8 +43,8 @@ iPhone ──Bluetooth──► Pi: PipeWire / WirePlumber, hands-free role (+ A
 **The Phone window** opens from the taskbar pin, the desktop shortcut or
 the tray. From the top:
 
-- **Audio** (folds to a one-line summary; click to open) - call volume, and
-  while the mic is on, which mic. Two switches:
+- **Audio** (folds to a one-line summary; click to open) - call volume
+  in dB (-40 to +12, starting at -10), and while the mic is on, which mic. Two switches:
   - *Music and videos on this PC* - off plays them on the iPhone. Calls
     come to the PC either way. The iPhone's volume buttons set the level.
   - *Keep iPhone-answered calls on the iPhone* - calls you pick up on the
