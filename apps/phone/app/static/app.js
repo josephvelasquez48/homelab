@@ -148,7 +148,8 @@ async function startAudio() {
     const rawAnalyser = ctx.createAnalyser();
     rawAnalyser.fftSize = 2048;
     capture.port.onmessage = (e) => {
-      if (!muted && ws && ws.readyState === WebSocket.OPEN && state && state.bridged) ws.send(e.data);
+      // Sent even when muted: the phone service swaps in silence (hub.audio_in).
+      if (ws && ws.readyState === WebSocket.OPEN && state && state.bridged) ws.send(e.data);
     };
     const player = new AudioWorkletNode(ctx, "player", { outputChannelCount: [2] });
     // The phone sends call audio quiet - peaks ~1000 of 32767 on a live
@@ -461,6 +462,12 @@ function render(s) {
   if (!s) return;
   const prev = state;
   state = s;
+  muted = !!s.muted;
+  renderMute();
+  // On the Pi's screen only while the PC has the call's audio: muting
+  // silences what the PC sends, and there's no Bluetooth command to mute
+  // the iPhone itself.
+  $("mute").hidden = TOUCH && !s.bridged;
 
   $("phone-dot").className = `dot ${s.connected ? "on" : "off"}`;
   $("phone-status").textContent = s.connected
@@ -722,10 +729,17 @@ $("to-pc").onclick = async () => {
   announceAudio(); // the Pi takes the audio only for a page that announced
   send({ action: "audio-to-pc" });
 };
-$("mute").onclick = () => {
-  muted = !muted;
+// Mute is the phone service's, shared by every page: the Pi's screen can
+// mute a call whose mic is on the PC. Shown at once here, confirmed by the
+// next state.
+function renderMute() {
   $("mute").setAttribute("aria-pressed", String(muted));
   $("mute-label").textContent = muted ? "Unmute" : "Mute";
+}
+$("mute").onclick = () => {
+  muted = !muted;
+  renderMute();
+  send({ action: "set-mute", value: muted });
 };
 $("show-keypad").onclick = () => { $("tone-pad").hidden = !$("tone-pad").hidden; };
 

@@ -116,6 +116,11 @@ class Hub:
         self.local_clients: set[WebSocket] = set()
         # The call the Pi's touchscreen asked the PC's window to take.
         self._handoff: str | None = None
+        # Mute, shared by every page: the PC's window and the Pi's screen
+        # show and set the same one. Held here rather than in the page with
+        # the mic, so the Pi's screen can mute a call whose mic is on the PC.
+        # There's no Bluetooth command to mute the iPhone itself.
+        self.muted = False
         self.audio_clients: list[WebSocket] = []
         self._last_state: dict | None = None
         self._reject_sco: tuple[str | None, bool] | None = None
@@ -140,6 +145,7 @@ class Hub:
         state["audioError"] = self._audio_error
         state["settings"] = dict(self.settings)
         state["handoff"] = self._handoff
+        state["muted"] = self.muted
         return state
 
     def extras(self) -> dict:
@@ -207,6 +213,7 @@ class Hub:
         if self._had_calls and not state.calls:
             self._pc_claimed = False
             self._phone_held = False
+            self.muted = False  # the next call starts unmuted
         self._had_calls = bool(state.calls)
         self._check_orphan_audio(state)
 
@@ -409,7 +416,9 @@ class Hub:
 
     def audio_in(self, ws: WebSocket, pcm: bytes) -> None:
         if ws is self.audio_owner and self.bridge.running:
-            self.bridge.write(pcm)
+            # Muted: silence of the same length, so the phone's audio link
+            # keeps its steady stream rather than running dry.
+            self.bridge.write(bytes(len(pcm)) if self.muted else pcm)
 
     async def command(self, ws: WebSocket, msg: dict) -> str | None:
         """Run one page action; returns an error message for the page, if any."""
@@ -432,6 +441,9 @@ class Hub:
                 if self.reconnector and self.reconnector.bus:
                     self.reconnector.media_changed()
                     asyncio.create_task(self.reconnector.check(time.monotonic()))
+            elif action == "set-mute":
+                self.muted = bool(msg.get("value"))
+                await self.broadcast_state()
             elif action == "set-mic":
                 self.settings["micLabel"] = str(msg.get("value", ""))[:200]
                 save_settings(self.settings_path, self.settings)

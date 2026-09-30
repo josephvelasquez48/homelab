@@ -368,3 +368,31 @@ async def test_touchscreen_answer_does_not_wait_when_no_pc_page_is_open(tmp_path
     await hub.command(touch, {"action": "answer-on-pc", "call": "/ag1/call1"})
     assert clock.monotonic() - started < 1  # not the 4 s handoff wait
     assert [path for path, _ in tel.answered] == ["/ag1/call1"]
+
+
+@pytest.mark.asyncio
+async def test_mute_is_shared_silences_the_uplink_and_resets_after_the_call():
+    hub, tel = make(transport="active", calls=[Call("/c1", "active", "+1555", "")])
+    written = []
+    hub.bridge.write = written.append
+    pc, pi = FakeSocket(), FakeSocket()
+    await hub.add(pc)
+    await hub.add(pi, local=True)
+    await hub.command(pc, {"action": "audio-ready"})
+    await hub.tick()
+    assert hub.bridge.running
+
+    # The Pi's screen mutes; every page is told, and the PC's mic is silenced.
+    await hub.command(pi, {"action": "set-mute", "value": True})
+    assert '"muted": true' in pc.sent[-1] and '"muted": true' in pi.sent[-1]
+    hub.audio_in(pc, b"\x01\x02\x03\x04")
+    assert written[-1] == b"\x00\x00\x00\x00"
+
+    await hub.command(pc, {"action": "set-mute", "value": False})
+    hub.audio_in(pc, b"\x01\x02\x03\x04")
+    assert written[-1] == b"\x01\x02\x03\x04"
+
+    await hub.command(pi, {"action": "set-mute", "value": True})
+    tel.state.calls = []
+    await hub.tick()
+    assert hub.muted is False  # the next call starts unmuted
