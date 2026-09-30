@@ -194,3 +194,10 @@
   failed_when:
     - pi_mpris_off.failed
     - "'Could not find' not in (pi_mpris_off.msg | default(''))"
+
+# Contact names with emoji (e.g. "🤍Name🤍") showed as empty boxes on the
+# Pi's call screen: the desktop image ships no emoji font.
+- name: Install a colour emoji font for the touchscreen
+  ansible.builtin.apt:
+    name: fonts-noto-color-emoji
+    state: present
