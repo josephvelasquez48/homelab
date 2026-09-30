@@ -4,7 +4,7 @@ metadata:
   name: dashboard
   namespace: dashboard
 ---
-# Read-only, cluster-scoped: the status page only ever GETs node/pod
+# Read-only, cluster-scoped: the display only ever GETs node/pod
 # state, never writes anything to the K8s API. Pod metrics (live CPU and
 # memory from metrics-server) size and speed the display's fish.
 apiVersion: rbac.authorization.k8s.io/v1
@@ -58,11 +58,9 @@ subjects:
     name: dashboard
     namespace: dashboard
 ---
-# No SSH key or known_hosts mount any more. The dashboard used to reach
-# the desktop over SSH to cordon and drain a K3s node; that node is gone
-# (docs/node-migration.md) and freeing the GPU is now an HTTP call to the
-# inference Service, so the private key, the host key, and remote
-# PowerShell execution all left with it. See apps/dashboard/app/gpu.py.
+# Serves the Pi's always-on display (dashboard.home/display) and nothing
+# else: the status page, its login and the Free the GPU button were
+# removed - Ollama unloads idle models by itself (docs/gaming-mode.md).
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -87,19 +85,6 @@ spec:
       containers:
         - name: dashboard
           image: ghcr.io/josephvelasquez48/homelab-dashboard:f7dec6b1329f
-          # DASHBOARD_PASSWORD + SESSION_SECRET for the session auth on
-          # /api/gpu/release (see apps/dashboard/app/auth.py).
-          #
-          # optional: true is deliberate. A required secretRef would leave
-          # the pod in CreateContainerConfigError until the Secret is
-          # applied - i.e. an unapplied Secret would take the whole status
-          # page down, including the part that tells you the cluster is
-          # unhealthy. Optional instead means the pod starts and the app
-          # fails closed on its own: with no password configured nobody can
-          # log in, so /api/gpu/release is unreachable rather than
-          # open. The page says so explicitly via /api/session.
-          envFrom:
-            - secretRef: { name: dashboard-auth, optional: true }
           # Weather on the Pi's display (Open-Meteo, no key): ZIP 92505,
           # Riverside CA. Unset hides it.
           env:

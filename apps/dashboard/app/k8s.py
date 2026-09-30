@@ -49,27 +49,6 @@ async def get_nodes(client: httpx.AsyncClient) -> list[dict]:
     return nodes
 
 
-async def get_pods(client: httpx.AsyncClient, namespace: str) -> list[dict]:
-    r = await client.get(f"/api/v1/namespaces/{namespace}/pods")
-    r.raise_for_status()
-    pods = []
-    for item in r.json()["items"]:
-        statuses = item["status"].get("containerStatuses", [])
-        ready = sum(1 for s in statuses if s.get("ready"))
-        pods.append(
-            {
-                "name": item["metadata"]["name"],
-                "namespace": namespace,
-                "phase": item["status"].get("phase", "Unknown"),
-                "ready": ready,
-                "total": len(statuses),
-                "restarts": sum(s.get("restartCount", 0) for s in statuses),
-                "node": item["spec"].get("nodeName"),
-            }
-        )
-    return pods
-
-
 async def get_argo_applications(client: httpx.AsyncClient) -> list[dict]:
     r = await client.get("/apis/argoproj.io/v1alpha1/namespaces/argocd/applications")
     r.raise_for_status()

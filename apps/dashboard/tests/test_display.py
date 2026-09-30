@@ -129,7 +129,7 @@ def test_display_page(client):
 
 def test_pages_and_scripts_are_rechecked_on_every_load(client):
     # Without this the Pi's Chromium kept running old files after a deploy.
-    for path in ("/", "/display", "/static/display.js", "/static/tank.js"):
+    for path in ("/display", "/static/display.js", "/static/tank.js"):
         assert client.get(path).headers["cache-control"] == "no-cache", path
 
 

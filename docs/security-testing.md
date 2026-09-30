@@ -23,7 +23,7 @@ on them is misconfigured, not reassuring.
 
 | # | Finding | Status |
 |---|---|---|
-| 1 | **The dashboard's POST endpoints ran remote commands with no auth.** A bodyless `POST` is a simple cross-site request, so any web page could make a LAN browser trigger a node drain; the NetworkPolicy only checks who *reaches* it | **Fixed**: session cookie + JSON-only ([dashboard.md](dashboard.md)). The endpoint now only unloads GPU models |
+| 1 | **The dashboard's POST endpoints ran remote commands with no auth.** A bodyless `POST` is a simple cross-site request, so any web page could make a LAN browser trigger a node drain; the NetworkPolicy only checks who *reaches* it | **Gone**: session cookie and JSON-only POST until 2026-09-30, when the status page and its one action (Free the GPU) were removed - the dashboard now has no POST routes |
 | 2 | **Most workloads run as root** - no `securityContext` | **Partly**: hardened - adguard-exporter, alertmanager, chat, kiwix. Not yet - api, worker, dashboard, redis, postgres, grafana, prometheus. The block to copy is in `kubernetes/monitoring/adguard-exporter.yaml` |
 | 3 | A `hostNetwork`, host-PID node-exporter on the desktop could read its whole disk | **Gone** with the desktop node |
 | 4 | **East-west traffic was allowed everywhere** - any pod could reach Redis and Postgres | **Partly**: Redis and Postgres now accept only the `backend` namespace. Redis still has no password; `inference` (Ollama) is open to any pod |
@@ -32,11 +32,8 @@ on them is misconfigured, not reassuring.
 
 ## Before you scan
 
-- **Don't fuzz `dashboard.home`'s POST routes or `argocd.home`.** The
-  dashboard's `/api/gpu/release` now needs a session and only unloads a
-  model, but Argo CD has cluster-wide write access. Use passive scans.
-- **Check the dashboard's auth against the deployed site**, not just unit
-  tests: `./scripts/verify-dashboard-auth.sh https://dashboard.home`.
+- **Don't fuzz `argocd.home`.** Argo CD has cluster-wide write access.
+  Use passive scans.
 
 ## How to scan
 
