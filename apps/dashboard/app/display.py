@@ -9,7 +9,9 @@ request every few seconds:
   Prometheus gauge. No data is "unknown", never "up".
 - **rates** - requests per second along each line on the map, from
   Prometheus. Zero means nothing is flowing, and the page draws no dots.
-- **pods** - every pod, for the aquarium: one fish each.
+- **pods** - every pod, for the aquarium: one fish each, with its live CPU
+  and memory (metrics-server) and memory limit - a fish's speed, size, and
+  whether it puffs up near its limit.
 - **events** - short lines for the ticker, built from the same data.
 
 Host services (CoreDNS, RustDesk) are probed at the Pi's own address. That
@@ -107,6 +109,50 @@ async def _top_blocked(client: httpx.AsyncClient) -> str | None:
         return None
 
 
+UNITS = {"Ki": 2**10, "Mi": 2**20, "Gi": 2**30, "Ti": 2**40, "k": 10**3, "M": 10**6, "G": 10**9, "T": 10**12}
+CPU_UNITS = {"n": 1e-6, "u": 1e-3, "m": 1.0}
+
+
+def memory_bytes(q: str) -> float:
+    """A Kubernetes memory quantity ("177664Ki", "256Mi", "1G", "1024") in bytes."""
+    for suffix in sorted(UNITS, key=len, reverse=True):
+        if q.endswith(suffix):
+            return float(q[: -len(suffix)]) * UNITS[suffix]
+    return float(q)
+
+
+def cpu_millicores(q: str) -> float:
+    """A CPU quantity ("3284811n", "250m", "2") in millicores."""
+    if q and q[-1] in CPU_UNITS:
+        return float(q[:-1]) * CPU_UNITS[q[-1]]
+    return float(q) * 1000
+
+
+def memory_limit(spec: dict) -> float | None:
+    """The pod's memory limit: the sum over its containers, or None if any has none."""
+    limits = [c.get("resources", {}).get("limits", {}).get("memory") for c in spec.get("containers", [])]
+    if not limits or None in limits:
+        return None
+    return sum(memory_bytes(q) for q in limits)
+
+
+async def pod_usage(k8s: httpx.AsyncClient) -> dict[tuple[str, str], dict]:
+    """(namespace, name) -> live cpu_m / mem_bytes from metrics-server; {} if it's unavailable."""
+    try:
+        r = await k8s.get("/apis/metrics.k8s.io/v1beta1/pods")
+        r.raise_for_status()
+    except Exception:
+        return {}
+    usage = {}
+    for item in r.json().get("items", []):
+        containers = item.get("containers", [])
+        usage[(item["metadata"]["namespace"], item["metadata"]["name"])] = {
+            "cpu_m": sum(cpu_millicores(c["usage"]["cpu"]) for c in containers),
+            "mem_bytes": sum(memory_bytes(c["usage"]["memory"]) for c in containers),
+        }
+    return usage
+
+
 async def list_pods(k8s: httpx.AsyncClient) -> list[dict]:
     """Every pod in the cluster, with why it isn't running when it isn't."""
     r = await k8s.get("/api/v1/pods")
@@ -130,6 +176,7 @@ async def list_pods(k8s: httpx.AsyncClient) -> list[dict]:
                 "ready": bool(statuses) and all(s.get("ready") for s in statuses),
                 "restarts": sum(s.get("restartCount", 0) for s in statuses),
                 "reason": reason,
+                "mem_limit": memory_limit(item["spec"]),
             }
         )
     return pods
@@ -298,8 +345,9 @@ def events(v: dict, argo: list[dict], alerts: list[dict] | None, nodes: list[dic
 
 
 async def gather(k8s_client: httpx.AsyncClient, http: httpx.AsyncClient, argo_task, alerts_task, nodes_task) -> dict:
-    (pods, rates, values, top_blocked, dns, rustdesk, wx, argo, alerts, nodes) = await asyncio.gather(
+    (pods, usage, rates, values, top_blocked, dns, rustdesk, wx, argo, alerts, nodes) = await asyncio.gather(
         list_pods(k8s_client),
+        pod_usage(k8s_client),
         _queries(http, RATE_QUERIES),
         _queries(http, VALUE_QUERIES),
         _top_blocked(http),
@@ -312,6 +360,10 @@ async def gather(k8s_client: httpx.AsyncClient, http: httpx.AsyncClient, argo_ta
         return_exceptions=True,
     )
     pods = [] if isinstance(pods, BaseException) else pods
+    usage = {} if isinstance(usage, BaseException) else usage
+    for p in pods:  # no metrics yet (just started, or metrics-server down): None
+        u = usage.get((p["namespace"], p["name"]), {})
+        p["cpu_m"], p["mem_bytes"] = u.get("cpu_m"), u.get("mem_bytes")
     argo = [] if isinstance(argo, BaseException) else argo
     nodes = [] if isinstance(nodes, BaseException) else nodes
     alerts = None if isinstance(alerts, BaseException) else alerts

@@ -39,8 +39,12 @@ to switch between two views:
   are queries AdGuard blocked, turned back before the internet. Along the
   bottom: DNS rate, blocked share, pods, API load and the Pi's vitals.
 - **Cluster aquarium:** one fish per pod, coloured by namespace, one rock
-  per node. A pod that isn't ready floats belly-up with the reason; a
-  pending one sinks; a pod that restarts while you watch says so.
+  per node. Size is memory in use (log scale, 8 MiB to 1 GiB) and speed is
+  CPU, both live from metrics-server. A pod at 85% of its memory limit
+  puffs up into an orange pufferfish (red at 95%) - the warning before an
+  OOM kill; pods with no limit never puff. A pod that isn't ready floats
+  belly-up with the reason; a pending one sinks; a pod that restarts while
+  you watch says so.
 
 Tap a box or a fish for details. The top bar has the time, weather (if
 `WEATHER_LAT`/`WEATHER_LON` are set), overall health and the iPhone; the
@@ -51,6 +55,7 @@ bottom ticker cycles alerts, down nodes, Argo CD, backups and AdGuard.
 | Shown | From |
 |---|---|
 | In-cluster boxes, fish | Pod readiness from the Kubernetes API |
+| Fish size, speed, puffing | Pod metrics (metrics-server) and each pod's memory limit; the dashboard's ClusterRole can read `metrics.k8s.io` pods |
 | CoreDNS, RustDesk | A DNS query / TCP connect to the Pi's own address - works because this pod is pinned to the Pi (same-node traffic isn't filtered by ufw) |
 | AdGuard, phone, Ollama, backups | Prometheus gauges; the phone counts as down when its gauges are 2 minutes stale |
 | Dots | Prometheus rates: AdGuard queries, Traefik per service, the api's own routes. No traffic, no dots |

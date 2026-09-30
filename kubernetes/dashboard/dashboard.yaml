@@ -5,9 +5,8 @@ metadata:
   namespace: dashboard
 ---
 # Read-only, cluster-scoped: the status page only ever GETs node/pod
-# state, never writes anything to the K8s API itself. The only writes
-# this app causes go through SSH to the desktop (see gaming-mode/), not
-# through the K8s API.
+# state, never writes anything to the K8s API. Pod metrics (live CPU and
+# memory from metrics-server) size and speed the display's fish.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
@@ -15,6 +14,9 @@ metadata:
 rules:
   - apiGroups: [""]
     resources: ["nodes", "pods"]
+    verbs: ["get", "list"]
+  - apiGroups: ["metrics.k8s.io"]
+    resources: ["pods"]
     verbs: ["get", "list"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
