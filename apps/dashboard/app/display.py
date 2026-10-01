@@ -41,6 +41,13 @@ RATE_QUERIES = {
     # Counters only appear once a route has been hit; no series is no traffic.
     "api": f'sum(rate(http_requests_total{{handler!~"{PROBE_HANDLERS}"}}[5m])) or vector(0)',
     "ollama": f'sum(rate(http_requests_total{{handler=~"{OLLAMA_HANDLERS}"}}[5m])) or vector(0)',
+    # The phone bridge's traffic (apps/phone, counters in its textfile). A
+    # 1m window, not 5m: a call or a song should show up within a minute
+    # and stop soon after it ends. Audio is in kB/s; check-ins per second.
+    "phone_call_rx_kbps": "sum(rate(phone_call_rx_bytes_total[1m])) / 1000 or vector(0)",
+    "phone_call_tx_kbps": "sum(rate(phone_call_tx_bytes_total[1m])) / 1000 or vector(0)",
+    "phone_media_kbps": "sum(rate(phone_media_sent_bytes_total[1m])) / 1000 or vector(0)",
+    "phone_checkins": "sum(rate(phone_pc_checkins_total[1m])) or vector(0)",
 }
 
 VALUE_QUERIES = {
@@ -54,7 +61,6 @@ VALUE_QUERIES = {
     "api_p95_s": f'histogram_quantile(0.95, sum by (le) (rate(http_request_duration_seconds_bucket{{handler!~"{PROBE_HANDLERS}"}}[1h])))',
     # The phone service writes its gauges every few seconds; stale means it's down.
     "phone_age_s": "time() - phone_bridge_last_update_timestamp_seconds",
-    "phone_audio": "phone_bridge_running",  # 1 while call audio is bridged to the PC
     "phone_connected": "phone_connected",
     "phone_call": "phone_call_active",
     "phone_pc": "phone_pc_present",
@@ -304,9 +310,13 @@ def services(pods: list[dict], v: dict, dns: str, rustdesk: str) -> dict[str, st
 
 def edge_rates(r: dict, v: dict) -> dict[str, float]:
     z = lambda x: max(x or 0.0, 0.0)  # noqa: E731
-    # Only call audio: the media stream stays open while nothing plays, and
-    # there's no gauge for "music is playing".
-    audio = 2.0 if flag(v["phone_audio"]) else 0.0
+    # The phone lines carry real traffic both ways: the caller's voice and
+    # music (only while audible) from the iPhone through the bridge to the
+    # PC, and the PC's mic plus its agent's once-a-second check-ins back.
+    # Audio rates are kB/s (a call ~32, music ~190), so streaming reads busy
+    # and check-ins a trickle; the page's log scale caps both.
+    down = z(r["phone_call_rx_kbps"]) + z(r["phone_media_kbps"])
+    mic = z(r["phone_call_tx_kbps"])
     return {
         "lan-coredns": z(r["dns"]),
         "coredns-adguard": z(r["dns"]),
@@ -317,8 +327,10 @@ def edge_rates(r: dict, v: dict) -> dict[str, float]:
         "api-postgres": z(r["api"]),
         "api-redis": z(r["api"]),
         "api-ollama": z(r["ollama"]),
-        "iphone-phone": audio,
-        "phone-phone_pc": audio,
+        "iphone-phone": down,
+        "phone-phone_pc": down,
+        "phone_pc-phone": mic + z(r["phone_checkins"]),
+        "phone-iphone": mic,
     }
 
 

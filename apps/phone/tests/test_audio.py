@@ -83,3 +83,41 @@ async def test_slow_media_listener_loses_the_oldest_audio():
         media._offer(q, bytes([i]))
     assert q.qsize() == QUEUE_CHUNKS
     assert q.get_nowait() == bytes([3])  # the first three were dropped
+
+
+@pytest.mark.asyncio
+async def test_media_counts_only_audible_bytes_per_listener():
+    # The display's dots for music: a paused phone keeps the stream open and
+    # sends silence, which mustn't count; each listener gets its own copy.
+    import array
+    import asyncio
+    from types import SimpleNamespace
+
+    from app.media import CHUNK_BYTES, MediaBridge
+
+    loud = array.array("h", [1200] * (CHUNK_BYTES // 2)).tobytes()
+    silent = bytes(CHUNK_BYTES)
+    stdout = asyncio.StreamReader()
+    stdout.feed_data(loud + silent + loud)
+    stdout.feed_eof()
+
+    media = MediaBridge()
+    a, b = media.subscribe(), media.subscribe()
+    media.proc = SimpleNamespace(stdout=stdout, returncode=0)
+    await media._pump()
+    assert media.sent_bytes == 2 * CHUNK_BYTES * 2  # two loud chunks, two listeners
+    assert a.qsize() == b.qsize() == 3  # silence is still delivered, just not counted
+
+
+def test_call_audio_bytes_count_what_is_written():
+    from types import SimpleNamespace
+
+    from app.audio import AudioBridge
+
+    written = []
+    bridge = AudioBridge()
+    bridge.tx = SimpleNamespace(stdin=SimpleNamespace(
+        is_closing=lambda: False, write=written.append,
+        transport=SimpleNamespace(get_write_buffer_size=lambda: 0)))
+    bridge.write(b"\x01\x00" * 160)
+    assert bridge.tx_bytes == 320 and written

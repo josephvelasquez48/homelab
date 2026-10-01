@@ -94,6 +94,10 @@ class AudioBridge:
         # (a sleeping or wrong mic), rx ~0 the "I can't hear them" one.
         self.rx_peak = 0
         self.tx_peak = 0
+        # Bytes of call audio each way since the service started, for the
+        # traffic dots on the Pi's display (rate() in Prometheus).
+        self.rx_bytes = 0
+        self.tx_bytes = 0
 
     def take_peaks(self) -> tuple[int, int]:
         peaks = (self.rx_peak, self.tx_peak)
@@ -159,6 +163,7 @@ class AudioBridge:
         except (asyncio.IncompleteReadError, ConnectionResetError):
             return b""
         self.rx_peak = max(self.rx_peak, peak(chunk))
+        self.rx_bytes += len(chunk)
         return chunk
 
     def write(self, pcm: bytes) -> None:
@@ -167,6 +172,7 @@ class AudioBridge:
         if self.tx.stdin.transport.get_write_buffer_size() > MAX_TX_BACKLOG:
             return
         self.tx_peak = max(self.tx_peak, peak(pcm))
+        self.tx_bytes += len(pcm)
         self.tx.stdin.write(pcm)
 
     async def stop(self) -> None:
