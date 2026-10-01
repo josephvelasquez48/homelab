@@ -8,4 +8,4 @@
     - firewall
     - k3s
     - dns_monitoring
-    - github_runner
+    # github_runner is not here on purpose: see playbooks/github-runner.yml.
