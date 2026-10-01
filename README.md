@@ -199,8 +199,9 @@ homelab/
 ├── apps/dashboard/          # The Pi's always-on display, runs in-cluster - see docs/dashboard.md
 ├── apps/pi-display/         # Opens the display full screen on the Pi's touchscreen - see docs/dashboard.md
 ├── apps/phone/              # iPhone calls on the desktop via the Pi's Bluetooth, host service - see docs/phone.md
+├── apps/argocd-refresh/     # Tells Argo CD when main moves (Pi host service) - see docs/argocd.md
 ├── backup/                 # Encrypted backup + restore-rehearsal tooling - see docs/backups.md
-├── scripts/                # Small host utilities (e.g. the deployed-auth verifier)
+├── scripts/                # Small host utilities (e.g. the database policy verifier)
 ├── diagrams/               # Architecture diagram
 └── docs/                   # Per-phase logs: what was built, bugs found, verification
 ```
