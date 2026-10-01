@@ -40,8 +40,18 @@ original commit again, so it fails the same way.
 
 ## The self-hosted runner
 
-A runner on the Pi (installed by the `github_runner` Ansible role) polls
-GitHub over outbound HTTPS, so nothing is exposed inbound. It ran the old
-deploy job, which used `kubectl` against the private cluster. Since Argo
-CD, deploys only write to git, and no workflow uses the runner - it stays
-installed in case something needs LAN access later.
+**Removed on 2026-09-30.** A runner on the Pi (installed by the
+`github_runner` Ansible role) polled GitHub over outbound HTTPS, so nothing
+was exposed inbound. It ran the old deploy job, which used `kubectl`
+against the private cluster. Since Argo CD, deploys only write to git, and
+no workflow used it - it stayed installed in case something needed LAN
+access later.
+
+It went because the repo is public: GitHub's approval gate only holds back
+pull requests from first-time contributors, so a returning contributor's
+PR could have added a workflow that ran on the Pi, inside the LAN and next
+to the cluster. GitHub advises against self-hosted runners on public repos.
+The one LAN-side job left - telling Argo CD that main moved - is done by
+`apps/argocd-refresh`, which only reads git. Unregistered on GitHub
+(`config.sh remove`), its service uninstalled; the role is kept, out of
+`site.yml`, in `ansible/playbooks/github-runner.yml`.

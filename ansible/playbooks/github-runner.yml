@@ -1,0 +1,15 @@
+---
+# The self-hosted GitHub Actions runner on the Pi - not installed, and kept
+# out of site.yml so a full run can't put it back. Removed on 2026-09-30:
+# nothing had used it since Argo CD took over deploys, and on a public repo
+# a returning contributor's pull request could run code on the Pi (GitHub's
+# approval gate only covers first-time contributors). See docs/cicd.md.
+#
+# Only if CI ever needs LAN access again, and the repo is private - with a
+# fresh registration token (they expire within the hour):
+#   ansible-playbook playbooks/github-runner.yml #     -e runner_token=$(gh api repos/josephvelasquez48/homelab/actions/runners/registration-token --jq .token)
+- name: Install the self-hosted Actions runner
+  hosts: pi
+  become: true
+  roles:
+    - github_runner

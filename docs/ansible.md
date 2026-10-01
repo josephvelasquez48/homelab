@@ -36,15 +36,14 @@ the Pi.
 | `firewall` | ufw: LAN-only rules for SSH, DNS, K3s; removes rules for retired IPv6 prefixes |
 | `k3s` | K3s server |
 | `dns_monitoring` | The repo checkout and the CoreDNS + AdGuard Compose stack |
-| `github_runner` | The self-hosted Actions runner (needs a fresh token, below) |
 
 Each depends on the one before it: Docker needs the cgroup fix, K3s needs
 Docker's iptables setup.
 
-```bash
-ansible-playbook playbooks/site.yml --tags github_runner \
-  -e runner_token=$(gh api repos/josephvelasquez48/homelab/actions/runners/registration-token --jq .token)
-```
+The `github_runner` role (the self-hosted Actions runner) is no longer in
+`site.yml`: the runner was removed on 2026-09-30 - see
+[cicd.md](cicd.md). Its own playbook, `playbooks/github-runner.yml`, says
+when and how to reinstall it.
 
 ## Safeguards built in
 
