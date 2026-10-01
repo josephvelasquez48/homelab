@@ -19,6 +19,14 @@ changed by hand.
 - **Repo access** with the Pi's existing read-only deploy key.
 - **`argocd-server --insecure`**: TLS ends at Traefik (`argocd.home`,
   [https.md](https.md)); only the hop inside the cluster is HTTP.
+- **Unused components scaled to 0** (2026-09-30, about 66 MB back on the
+  Pi): `argocd-dex-server` (single sign-on - none configured, the UI uses
+  the admin login), `argocd-notifications-controller` (no notifications
+  set up; cluster alerts go through Alertmanager) and
+  `argocd-applicationset-controller` (no ApplicationSets - the app of apps
+  above is hand-written). A live change, like the repo-server pin below,
+  so reapply it after a reinstall. To bring one back:
+  `kubectl -n argocd scale deploy argocd-dex-server --replicas=1`.
 - **Not managed by Argo CD:** Argo CD's own install, the Traefik overrides
   in `kubernetes/argocd/traefik-security.yaml`, and the secrets
   ([secrets.md](secrets.md)).
