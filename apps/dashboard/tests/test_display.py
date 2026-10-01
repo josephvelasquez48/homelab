@@ -73,6 +73,13 @@ def test_phone_lines_carry_their_real_traffic():
     assert music_only["phone-phone_pc"] == 190 and music_only["phone-iphone"] == 0
 
 
+def test_rustdesk_line_carries_its_traffic_both_ways():
+    # A session into the Pi: its screen streams out, input trickles in.
+    rates = display.edge_rates({**RATES, "rustdesk_out_kbps": 400, "rustdesk_in_kbps": 3}, values())
+    assert rates["rustdesk-lan"] == 400 and rates["lan-rustdesk"] == 3
+    assert display.edge_rates(RATES, values())["rustdesk-lan"] == 0  # no session, no dots
+
+
 def test_events_lead_with_problems():
     v = values(backup_age_h=250, backup_exit=0, dns_today=1000, blocked_today=200, phone_connected=1, phone_call=0,
                api_p95_s=0.04, targets=6, targets_up=5)
@@ -126,7 +133,8 @@ def test_display_endpoint(client, monkeypatch):
     assert set(data["rates"]) == {"-".join(e) for e in [
         ("lan", "coredns"), ("coredns", "adguard"), ("adguard", "internet"), ("lan", "traefik"),
         ("traefik", "api"), ("traefik", "apps"), ("api", "postgres"), ("api", "redis"), ("api", "ollama"),
-        ("iphone", "phone"), ("phone", "phone_pc"), ("phone_pc", "phone"), ("phone", "iphone")]}
+        ("iphone", "phone"), ("phone", "phone_pc"), ("phone_pc", "phone"), ("phone", "iphone"),
+        ("lan", "rustdesk"), ("rustdesk", "lan")]}
 
 
 def test_display_page(client):

@@ -10,6 +10,15 @@ RustDesk server on the Pi instead of RustDesk's public ones.
 | `hbbs` - ID/rendezvous server | `docker/rustdesk`, host network | 21115 tcp, 21116 tcp+udp |
 | `hbbr` - relay | same | 21117 tcp |
 | RustDesk client, as a service | the Pi (`rustdesk.service`, arm64 `.deb`) | - |
+| Traffic counter, for the display's map | the Pi (`rustdesk-traffic.service`, `apps/rustdesk-traffic`) | - |
+
+The map on the Pi's display ([dashboard.md](dashboard.md)) shows RustDesk's
+traffic on the Home network - RustDesk line: the Pi's screen streaming out
+to a viewer, input coming in. `apps/rustdesk-traffic` sums the kernel's
+per-connection byte counters (`ss -ti`) for the client, `hbbs` and `hbbr`
+every 10 s - connections to other machines only - and writes them for
+Prometheus like the phone bridge. Install or update it with
+`bash apps/rustdesk-traffic/install.sh` on the Pi.
 
 Name: `rustdesk.home` (CoreDNS `home.hosts`). Start or update the server:
 
