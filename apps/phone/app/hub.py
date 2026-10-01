@@ -109,6 +109,7 @@ class Hub:
         # When the PC last showed it's on (the agent's poll). Starts at
         # "now", so a restarted service gives the PC time to check in.
         self._pc_seen = time.monotonic()
+        self.pc_checkins = 0  # agent polls since the service started, for the display's dots
         self._orphan_reset = False
         self.clients: list[WebSocket] = []
         # Pages on the Pi's own touchscreen (loopback). They can answer and
@@ -253,6 +254,7 @@ class Hub:
 
     def pc_seen(self) -> None:
         self._pc_seen = time.monotonic()
+        self.pc_checkins += 1
 
     def pc_present(self) -> bool:
         """The agent polled lately, or a page is open (a browser counts) -
@@ -334,6 +336,10 @@ class Hub:
             "phone_contacts": len(self.contacts.names) if self.contacts else 0,
             "phone_reconnect_attempts_total": self.reconnector.attempts if self.reconnector else 0,
             "phone_reconnect_successes_total": self.reconnector.successes if self.reconnector else 0,
+            "phone_call_rx_bytes_total": self.bridge.rx_bytes,
+            "phone_call_tx_bytes_total": self.bridge.tx_bytes,
+            "phone_media_sent_bytes_total": self.media.sent_bytes if self.media else 0,
+            "phone_pc_checkins_total": self.pc_checkins,
         }
         try:
             metrics.write(values, self.history.counts() if self.history else {})

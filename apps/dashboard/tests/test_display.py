@@ -55,11 +55,22 @@ def test_services_stale_or_missing_data():
 
 def test_edge_rates():
     r = {**RATES, "dns": 0.5, "web": 2, "web_api": 1.5, "web_apps": 0.5, "api": 1, "ollama": None}
-    rates = display.edge_rates(r, values(phone_audio=0))
+    rates = display.edge_rates(r, values())
     assert rates["lan-coredns"] == rates["adguard-internet"] == 0.5
     assert rates["api-ollama"] == 0.0
-    assert rates["iphone-phone"] == 0.0  # no call audio, no dots
-    assert display.edge_rates(r, values(phone_audio=1))["phone-phone_pc"] > 0
+    assert rates["iphone-phone"] == rates["phone-iphone"] == rates["phone_pc-phone"] == 0.0  # nothing flowing
+
+
+def test_phone_lines_carry_their_real_traffic():
+    # The caller's voice and music flow iPhone -> bridge -> PC; the PC's mic
+    # flows back to the iPhone, and the agent's check-ins only as far as the bridge.
+    r = {**RATES, "phone_call_rx_kbps": 32, "phone_media_kbps": 190, "phone_call_tx_kbps": 32, "phone_checkins": 1}
+    rates = display.edge_rates(r, values())
+    assert rates["iphone-phone"] == rates["phone-phone_pc"] == 222
+    assert rates["phone-iphone"] == 32
+    assert rates["phone_pc-phone"] == 33
+    music_only = display.edge_rates({**RATES, "phone_media_kbps": 190}, values())
+    assert music_only["phone-phone_pc"] == 190 and music_only["phone-iphone"] == 0
 
 
 def test_events_lead_with_problems():
@@ -115,7 +126,7 @@ def test_display_endpoint(client, monkeypatch):
     assert set(data["rates"]) == {"-".join(e) for e in [
         ("lan", "coredns"), ("coredns", "adguard"), ("adguard", "internet"), ("lan", "traefik"),
         ("traefik", "api"), ("traefik", "apps"), ("api", "postgres"), ("api", "redis"), ("api", "ollama"),
-        ("iphone", "phone"), ("phone", "phone_pc")]}
+        ("iphone", "phone"), ("phone", "phone_pc"), ("phone_pc", "phone"), ("phone", "iphone")]}
 
 
 def test_display_page(client):

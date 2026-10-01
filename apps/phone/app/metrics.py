@@ -46,6 +46,10 @@ HELP = {
     "phone_contacts": "Phone numbers known from the iPhone's phonebook",
     "phone_reconnect_attempts_total": "Times the Pi asked a disconnected iPhone to reconnect",
     "phone_reconnect_successes_total": "Reconnect attempts that connected",
+    "phone_call_rx_bytes_total": "Bytes of the caller's audio bridged from the iPhone to a PC page",
+    "phone_call_tx_bytes_total": "Bytes of PC mic audio sent to the iPhone",
+    "phone_media_sent_bytes_total": "Bytes of audible music and video audio sent to the PC's listeners",
+    "phone_pc_checkins_total": "Times the PC's agent checked in (about once a second while it runs)",
 }
 
 

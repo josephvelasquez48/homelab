@@ -52,6 +52,9 @@ MEDIA_NODE = "phone-bridge-media"
 # its own), the LAN, the agent's ~60 ms start-up buffer and waveOut /
 # Windows output. An estimate - see the module docstring.
 TOTAL_LATENCY_NS = 180_000_000
+# A chunk peaking below this is silence (a paused phone keeps the stream
+# open and sends zeros); music measured live peaked in the thousands.
+SILENT_PEAK = 8
 # Per listener: past this many chunks (100 ms) a slow reader loses the
 # oldest, so delay can't build up behind it.
 QUEUE_CHUNKS = 10
@@ -100,6 +103,11 @@ class MediaBridge:
         self.proc: asyncio.subprocess.Process | None = None
         self.node: str | None = None
         self.peak = 0
+        # Bytes of audible media handed to the PC's listeners since the
+        # service started, for the traffic dots on the Pi's display. Silent
+        # chunks don't count: the stream stays open while the phone is
+        # paused, and the dots should mean something is playing.
+        self.sent_bytes = 0
 
     def subscribe(self) -> asyncio.Queue:
         q: asyncio.Queue = asyncio.Queue(QUEUE_CHUNKS)
@@ -160,8 +168,12 @@ class MediaBridge:
                 chunk = await self.proc.stdout.readexactly(CHUNK_BYTES)
             except (asyncio.IncompleteReadError, ConnectionResetError, AttributeError):
                 break
-            self.peak = max(self.peak, peak(chunk))
-            for q in list(self.listeners):
+            level = peak(chunk)
+            self.peak = max(self.peak, level)
+            listeners = list(self.listeners)
+            if level >= SILENT_PEAK:
+                self.sent_bytes += len(chunk) * len(listeners)
+            for q in listeners:
                 self._offer(q, chunk)
         await self._stop()
 
