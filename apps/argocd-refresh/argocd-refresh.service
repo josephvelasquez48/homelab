@@ -1,0 +1,22 @@
+# Installed to /etc/systemd/system/ by install.sh. Root, for k3s's
+# kubeconfig (/etc/rancher/k3s, mode 600) - but with the filesystem
+# read-only apart from its own state.
+[Unit]
+Description=Tell Argo CD when main moves (apps/argocd-refresh)
+After=network-online.target k3s.service
+Wants=network-online.target
+
+[Service]
+ExecStart=/usr/local/bin/argocd-refresh
+Restart=always
+RestartSec=30
+StateDirectory=argocd-refresh
+# kubectl keeps a discovery cache under $HOME; /root is hidden below.
+Environment=HOME=/var/lib/argocd-refresh
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+NoNewPrivileges=yes
+
+[Install]
+WantedBy=multi-user.target

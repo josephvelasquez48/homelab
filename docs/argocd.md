@@ -53,7 +53,7 @@ changed by hand.
 ```
 git push -> CI tests -> builds the image -> pushes to ghcr.io
          -> commits the new tag to kubernetes/ [skip ci]
-         -> Argo CD sees it on its next poll (~3 min) -> applies it
+         -> the Pi's refresh watcher sees main move (<= 15 s) -> Argo CD applies it
 ```
 
 Verified end to end: a trivial change went from push to running pods
@@ -71,8 +71,16 @@ access.
 
 ## Known gaps
 
-- **Polling, no webhook.** Changes take up to ~3 minutes. A webhook would
-  need a path from GitHub into the LAN, which nothing else here has.
+- **No webhook.** GitHub can't reach the LAN, so instead a watcher on the
+  Pi (`apps/argocd-refresh`, a small systemd service) checks `main` with
+  `git ls-remote` every 15 s and, when it has moved, annotates every
+  Application with `argocd.argoproj.io/refresh` so Argo CD fetches and
+  syncs at once. Before it, changes waited for Argo CD's own poll (up to ~3
+  minutes), which still runs as a fallback. Cost: ~0.09 s of CPU per check,
+  ~0.6% of one core (measured). Not the GitHub API: anonymous calls are
+  capped at 60 an hour and even a `304` counts. Not a timer: starting the
+  sandboxed unit every 15 s cost as much CPU as the check. Install or update: `bash apps/argocd-refresh/install.sh` on
+  the Pi; logs: `journalctl -u argocd-refresh`.
 - **The admin password** is still the install-time one. It's backed up,
   encrypted, in `kubernetes/secrets/reference/argocd-admin.enc.yaml`
   ([secrets.md](secrets.md)); `argocd-initial-admin-secret` still exists
