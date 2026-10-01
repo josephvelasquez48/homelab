@@ -48,6 +48,10 @@ RATE_QUERIES = {
     "phone_call_tx_kbps": "sum(rate(phone_call_tx_bytes_total[1m])) / 1000 or vector(0)",
     "phone_media_kbps": "sum(rate(phone_media_sent_bytes_total[1m])) / 1000 or vector(0)",
     "phone_checkins": "sum(rate(phone_pc_checkins_total[1m])) or vector(0)",
+    # RustDesk on the Pi (apps/rustdesk-traffic): out is mostly the Pi's
+    # screen to a viewer, in is input. kB/s, like the phone's audio.
+    "rustdesk_out_kbps": "sum(rate(rustdesk_sent_bytes_total[1m])) / 1000 or vector(0)",
+    "rustdesk_in_kbps": "sum(rate(rustdesk_received_bytes_total[1m])) / 1000 or vector(0)",
 }
 
 VALUE_QUERIES = {
@@ -331,6 +335,8 @@ def edge_rates(r: dict, v: dict) -> dict[str, float]:
         "phone-phone_pc": down,
         "phone_pc-phone": mic + z(r["phone_checkins"]),
         "phone-iphone": mic,
+        "lan-rustdesk": z(r["rustdesk_in_kbps"]),
+        "rustdesk-lan": z(r["rustdesk_out_kbps"]),
     }
 
 

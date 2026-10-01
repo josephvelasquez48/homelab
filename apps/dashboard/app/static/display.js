@@ -42,7 +42,7 @@ const EDGES = [
   ["lan", "coredns"], ["coredns", "adguard"], ["adguard", "internet"],
   ["lan", "traefik"], ["traefik", "api"], ["traefik", "apps"],
   ["api", "postgres"], ["api", "redis", "M968 300 C1012 300 1012 480 968 480"],
-  ["api", "ollama"], ["lan", "rustdesk"],
+  ["api", "ollama"], ["lan", "rustdesk"], ["rustdesk", "lan"], // input in, the Pi's screen out
   ["iphone", "phone"], ["phone", "phone_pc"],
   // The way back along the same lines: the PC's mic and its agent's
   // check-ins (to the bridge), and the mic on to the iPhone.

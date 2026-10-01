@@ -1,0 +1,19 @@
+# Installed to /etc/systemd/system/ by install.sh. Root, because ss shows
+# another user's sockets' processes (hbbs and hbbr run as root in
+# containers) only to root - but read-only apart from the textfile it writes.
+[Unit]
+Description=RustDesk traffic for the Pi's display (apps/rustdesk-traffic)
+After=network-online.target
+
+[Service]
+ExecStart=/usr/bin/python3 /usr/local/bin/rustdesk-traffic
+Restart=always
+RestartSec=30
+ProtectSystem=strict
+ReadWritePaths=/var/lib/node_exporter/textfile
+ProtectHome=yes
+PrivateTmp=yes
+NoNewPrivileges=yes
+
+[Install]
+WantedBy=multi-user.target
