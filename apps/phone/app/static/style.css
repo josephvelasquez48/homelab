@@ -187,9 +187,10 @@ input.switch:focus-visible { outline: 2px solid var(--accent); outline-offset: 2
 /* Compact window opened by the desktop ring agent for a call. */
 body.popup main { padding: 10px; }
 body.popup .top, body.popup .status-card, body.popup #recent-card, body.popup #contacts-card,
-body.popup #media-row, body.popup #keep-phone-row, body.popup #mic-row, body.popup #audio-setup,
-body.popup .settings h2, body.popup #filter-row, body.popup #audio-toggle { display: none !important; }
-/* The call pop-up always shows its volume slider, whatever the section's state. */
+body.popup #audio-setup, body.popup .settings h2, body.popup #audio-toggle { display: none !important; }
+/* The call pop-up always shows the whole Audio section - mic, noise filter,
+   volume and the two switches - whatever its folded state on the full page.
+   (It used to show only the volume; the window had room for the rest.) */
 body.popup #audio-body { display: block !important; margin-top: 0; }
 body.popup .card { margin-bottom: 8px; }
 /* Audio sits at the top of the full page; in the call pop-up the call comes first. */
@@ -197,7 +198,7 @@ body.popup #settings-card { order: 1; }
 body.popup .call-card { padding: 16px 12px 12px; }
 body.popup .avatar { width: 56px; height: 56px; font-size: 22px; }
 body.popup .settings { padding: 4px 16px; }
-body.popup .setting { border-bottom: 0; padding: 8px 0; }
+body.popup .setting, body.popup .switch-row { padding: 8px 0; }
 
 /* A call ringing in the pop-up fills the whole window: nothing else shows,
    and the call is centred and bigger. */
