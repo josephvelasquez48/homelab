@@ -1,0 +1,53 @@
+# Argo CD's own install, pinned, with this cluster's changes declared here
+# instead of patched in by hand. Argo CD does not manage itself (on
+# purpose - see docs/argocd.md); apply this by hand, from the Pi:
+#
+#   kubectl diff  -k kubernetes/argocd/install --server-side --force-conflicts
+#   kubectl apply -k kubernetes/argocd/install --server-side --force-conflicts
+#
+# --server-side: one CRD is too big for client-side apply's annotation
+# limit. --force-conflicts: take over the fields earlier `kubectl patch` and
+# `kubectl scale` calls own. To upgrade, change the version in the URL,
+# diff, then apply.
+#
+# Not here, applied separately: kubernetes/argocd/root-app.yaml (the app of
+# apps), ingress.yaml, traefik-security.yaml and the repo's deploy key.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: argocd
+resources:
+  - https://raw.githubusercontent.com/argoproj/argo-cd/v3.5.2/manifests/install.yaml
+
+patches:
+  # TLS ends at Traefik (argocd.home, docs/https.md); only the hop inside
+  # the cluster is plain HTTP.
+  - target: { kind: Deployment, name: argocd-server }
+    patch: |-
+      - op: add
+        path: /spec/template/spec/containers/0/args/-
+        value: --insecure
+
+  # A wedged git fetch once left repo-server failing its liveness probe on
+  # the old WSL2 worker, and every Application with it - keep it on the Pi.
+  - target: { kind: Deployment, name: argocd-repo-server }
+    patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: argocd-repo-server
+      spec:
+        template:
+          spec:
+            nodeSelector:
+              kubernetes.io/hostname: joe
+
+  # Unused here, so not running (about 66 MB on the Pi): Dex is single
+  # sign-on (none configured - the UI uses the admin login), notifications
+  # sends deploy messages (none set up; cluster alerts go through
+  # Alertmanager), and ApplicationSets generate apps from templates (none -
+  # the app of apps is hand-written). Set to 1 to bring one back.
+  - target: { kind: Deployment, name: "argocd-(dex-server|notifications-controller|applicationset-controller)" }
+    patch: |-
+      - op: add
+        path: /spec/replicas
+        value: 0
