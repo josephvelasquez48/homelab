@@ -9,7 +9,8 @@
 // glass - slide at different speeds as the view drifts, and that difference
 // reads as depth. The sky and water follow the real weather and time of day;
 // ?wx=rain&phase=night (or clear/partly/overcast/fog/drizzle/snow/storm,
-// dawn/day/dusk) previews them.
+// dawn/day/dusk) previews them. The night moon shows the real phase;
+// &moon=0.25 (0 new, 0.5 full) previews one.
 //
 // display.js owns the page: it polls /api/display, hands each state to
 // Tank.sync, and calls Tank.draw every frame while the aquarium is showing.
@@ -106,7 +107,44 @@ function scene() {
   // The water in the middle of the tank: what distance fades things toward.
   const haze = mixHex(mixHex(pal.top, pal.grey, k.grey * 0.5), pal.deep, 0.35);
   return { kind, phase, pal, k, cover, haze, precip: w && w.precip_mm, wind: (w && w.wind_mph) || 4,
-    arc: Math.min(1, Math.max(0, arc)) };
+    arc: Math.min(1, Math.max(0, arc)), moon: moonPhase(nowS * 1000) };
+}
+
+// The real moon's phase, 0 = new, 0.5 = full: days since a known new moon
+// (2000-01-06 18:14 UTC) over the mean synodic month. The true month runs
+// 29.3-29.8 days, so a given new or full moon can land up to about a day
+// off - a few percent of the lit fraction, not enough to see. ?moon=0.25
+// previews a phase.
+const SYNODIC_DAYS = 29.530588853;
+const NEW_MOON_MS = Date.UTC(2000, 0, 6, 18, 14);
+function moonPhase(nowMs) {
+  const preview = parseFloat(params.get("moon"));
+  if (!isNaN(preview)) return ((preview % 1) + 1) % 1;
+  const days = (nowMs - NEW_MOON_MS) / 86400000;
+  return (((days / SYNODIC_DAYS) % 1) + 1) % 1;
+}
+
+// The moon as seen from the northern hemisphere: lit from the right while
+// waxing, from the left while waning. The lit half-disc, closed by the
+// terminator - half an ellipse whose width follows the phase, bulging into
+// the lit half for a crescent and away from it for a gibbous moon.
+function drawMoon(x, y, r, p) {
+  ctx.fillStyle = "rgba(150,160,185,0.18)"; // the unlit part, faintly
+  ctx.beginPath(); ctx.arc(x, y, r, 0, 7); ctx.fill();
+  const lit = (1 - Math.cos(2 * Math.PI * p)) / 2;
+  if (lit < 0.01) return;
+  const waxing = p < 0.5, gibbous = lit > 0.5, rx = r * Math.abs(Math.cos(2 * Math.PI * p));
+  const top = -Math.PI / 2, bottom = Math.PI / 2;
+  ctx.fillStyle = "#E6E9F0";
+  ctx.beginPath();
+  if (waxing) {
+    ctx.arc(x, y, r, top, bottom); // the right half
+    ctx.ellipse(x, y, rx, r, 0, bottom, top, !gibbous); // back up: left for gibbous, right for crescent
+  } else {
+    ctx.arc(x, y, r, bottom, top + 2 * Math.PI); // the left half
+    ctx.ellipse(x, y, rx, r, 0, top, bottom, !gibbous); // back down: right for gibbous, left for crescent
+  }
+  ctx.fill();
 }
 
 const stars = Array.from({ length: 60 }, () => [Math.random(), rand(TOP_BAR, SURF - 0.02), Math.random() * 6]);
@@ -132,12 +170,17 @@ function drawSky(sc, t, k) {
     const bx = (0.08 + sc.arc * 0.84) * W;
     const by = surf - H * 0.04 - Math.sin(sc.arc * Math.PI) * H * 0.025;
     const r = H * 0.028, night = sc.phase === "night";
+    // A thin moon glows less: scale the halo by how much of it is lit.
+    const glowAlpha = night ? 0.35 * (1 - Math.cos(2 * Math.PI * sc.moon)) / 2 : 0.55;
     const glow = ctx.createRadialGradient(bx, by, r * 0.5, bx, by, r * 4);
-    glow.addColorStop(0, night ? "rgba(230,235,245,0.35)" : "rgba(255,240,200,0.55)");
+    glow.addColorStop(0, night ? `rgba(230,235,245,${glowAlpha.toFixed(3)})` : "rgba(255,240,200,0.55)");
     glow.addColorStop(1, "rgba(255,240,200,0)");
     ctx.fillStyle = glow; ctx.fillRect(bx - r * 4, by - r * 4, r * 8, r * 8);
-    ctx.fillStyle = night ? "#E6E9F0" : sc.phase === "day" ? "#FFF1C4" : "#FFC98A";
-    ctx.beginPath(); ctx.arc(bx, by, r, 0, 7); ctx.fill();
+    if (night) drawMoon(bx, by, r, sc.moon);
+    else {
+      ctx.fillStyle = sc.phase === "day" ? "#FFF1C4" : "#FFC98A";
+      ctx.beginPath(); ctx.arc(bx, by, r, 0, 7); ctx.fill();
+    }
   }
   const nClouds = sc.cover != null ? Math.round(sc.cover * 11) : sc.k.clouds;
   ctx.fillStyle = sc.phase === "night" ? "#2A3350" : mix("#F4F3EE", "#7C838C", sc.k.grey);

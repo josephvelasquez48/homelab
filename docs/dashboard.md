@@ -50,7 +50,10 @@ to switch between two views:
   in each frame, which keeps it at the 24 fps cap on the Pi.
   The tank shows the real weather: a strip of sky above the water with
   the sun or moon (placed by the day's real sunrise and sunset, with dawn
-  and dusk colours), stars on clear nights, clouds from the actual cloud
+  and dusk colours) - the moon in its real phase, worked out from the
+  date (within about a day), lit from the right while waxing and the left
+  while waning; `&moon=0.25` (0 new, 0.5 full) previews one - stars on
+  clear nights, clouds from the actual cloud
   cover drifting with the wind, rain rippling the surface (heavier with
   the real rainfall), snow, fog, and lightning in a storm. Add
   `?wx=rain&phase=night` (clear, partly, overcast, fog, drizzle, rain,
