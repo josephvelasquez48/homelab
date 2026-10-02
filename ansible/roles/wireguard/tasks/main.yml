@@ -52,3 +52,6 @@
     name: "wg-quick@{{ wireguard_interface }}"
     enabled: true
     state: started
+  # On a first --check the unit doesn't exist yet: the apt task above only
+  # pretended to install wireguard-tools, which is what provides it.
+  ignore_errors: "{{ ansible_check_mode }}"
