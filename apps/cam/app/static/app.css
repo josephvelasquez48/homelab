@@ -1,37 +1,42 @@
-/* cam.home - one stylesheet for every page. Dark by default (it's mostly a
-   video page, and often opened at night), light when the device asks. */
+/* Mustard Cam - one stylesheet for every page. A terrarium palette:
+   mustard (Mustard's shell) on deep moss by default, since it's mostly a
+   video page and often opened at night; warm sand when the device asks
+   for light. The background is a faint tortoise-shell pattern. */
 
 :root {
-  --bg: #0d0f12;
-  --surface: #161a1f;
-  --surface-2: #1d2228;
-  --border: #2a3038;
-  --text: #e8eaed;
-  --muted: #9aa3ad;
-  --accent: #5b9dff;
-  --accent-text: #0b1220;
-  --live: #3ddc84;
-  --warn: #ffb347;
-  --danger: #ff6b6b;
-  --radius: 14px;
-  --shadow: 0 10px 30px rgba(0, 0, 0, .35);
+  --bg: #0f1410;
+  --surface: #171e17;
+  --surface-2: #1f281f;
+  --border: #2d392c;
+  --text: #f1ecd9;
+  --muted: #a3a98f;
+  --accent: #e3a92b;
+  --accent-text: #1d1505;
+  --live: #8fd16a;
+  --warn: #f0b64a;
+  --danger: #ff7a6b;
+  --radius: 16px;
+  --shadow: 0 12px 34px rgba(0, 0, 0, .38);
+  --pattern: url("/static/scutes-dark.svg");
+  --rounded: ui-rounded, "SF Pro Rounded", "Nunito", "Varela Round", -apple-system, "Segoe UI", system-ui, sans-serif;
   color-scheme: dark;
 }
 
 @media (prefers-color-scheme: light) {
   :root {
-    --bg: #f4f5f7;
-    --surface: #ffffff;
-    --surface-2: #f0f2f5;
-    --border: #dde1e6;
-    --text: #15181c;
-    --muted: #5f6b77;
-    --accent: #1f6feb;
-    --accent-text: #ffffff;
-    --live: #1a9d55;
-    --warn: #b86e00;
-    --danger: #d23b3b;
-    --shadow: 0 10px 30px rgba(20, 30, 40, .12);
+    --bg: #f6efdc;
+    --surface: #fffaf0;
+    --surface-2: #f3e9cf;
+    --border: #e4d5ae;
+    --text: #2b2414;
+    --muted: #6f6448;
+    --accent: #c88a12;
+    --accent-text: #fffaf0;
+    --live: #3f8a26;
+    --warn: #a86a00;
+    --danger: #c4462f;
+    --shadow: 0 12px 30px rgba(90, 70, 20, .14);
+    --pattern: url("/static/scutes-light.svg");
     color-scheme: light;
   }
 }
@@ -41,7 +46,8 @@
 html, body { margin: 0; height: 100%; }
 
 body {
-  background: var(--bg);
+  background: var(--bg) var(--pattern) repeat;
+  background-attachment: fixed;
   color: var(--text);
   font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
@@ -68,12 +74,15 @@ a:hover { text-decoration: underline; }
   display: flex;
   align-items: center;
   gap: 10px;
-  font-weight: 650;
-  font-size: 16px;
+  font-family: var(--rounded);
+  font-weight: 800;
+  font-size: 17px;
+  letter-spacing: -.01em;
   color: var(--text);
 }
 .brand:hover { text-decoration: none; }
-.brand svg { width: 22px; height: 22px; color: var(--accent); }
+.brand img { width: 34px; height: auto; }
+.brand-name b { color: var(--accent); font-weight: 800; }
 
 .topbar nav {
   margin-left: auto;
@@ -259,12 +268,11 @@ a:hover { text-decoration: underline; }
   box-shadow: var(--shadow);
 }
 .card + .card { margin-top: 20px; }
-.card h1 { margin: 0 0 4px; font-size: 22px; }
-.card h2 { margin: 0 0 14px; font-size: 17px; }
+.card h1 { margin: 0 0 4px; font-size: 23px; font-family: var(--rounded); font-weight: 800; letter-spacing: -.01em; }
+.card h2 { margin: 0 0 14px; font-size: 18px; font-family: var(--rounded); font-weight: 750; }
 .card .lede { margin: 0 0 18px; color: var(--muted); }
 
-.narrow .brand { justify-content: center; margin-bottom: 22px; font-size: 18px; }
-.narrow .brand svg { width: 28px; height: 28px; }
+.narrow .brand { justify-content: center; margin-bottom: 6px; font-size: 26px; }
 
 label { display: block; font-size: 13.5px; font-weight: 600; margin: 14px 0 6px; }
 label.check { display: flex; align-items: center; gap: 8px; font-weight: 500; }
@@ -378,3 +386,66 @@ td.actions .btn + .btn { margin-left: 6px; }
 }
 
 .hint { margin: 16px 0 0; font-size: 13px; color: var(--muted); }
+
+/* Mustard (common.js draws the SVG; these are the poses) */
+
+.mustard { color: var(--muted); }
+.mustard svg { display: block; width: 100%; height: auto; overflow: visible; }
+.mustard .m-eye-closed, .mustard .m-zzz { display: none; }
+.mustard .m-leg, .mustard .m-head, .mustard .m-body { transform-box: fill-box; }
+.mustard .m-leg { transform-origin: 50% 0; }
+.mustard .m-head { transform-origin: 0% 100%; }
+
+.mustard.hello .m-head { animation: m-nod 3.2s ease-in-out infinite; }
+@keyframes m-nod { 0%, 70%, 100% { transform: rotate(0); } 80% { transform: rotate(-7deg); } 90% { transform: rotate(3deg); } }
+
+.mustard.walk .m-body { animation: m-bob .9s ease-in-out infinite; }
+.mustard.walk .m-leg-near-front, .mustard.walk .m-leg-far-back { animation: m-step .9s ease-in-out infinite; }
+.mustard.walk .m-leg-near-back, .mustard.walk .m-leg-far-front { animation: m-step .9s ease-in-out infinite -.45s; }
+.mustard.walk .m-head { animation: m-peer .9s ease-in-out infinite; }
+@keyframes m-bob { 50% { transform: translateY(-2.5px); } }
+@keyframes m-step { 0%, 100% { transform: rotate(11deg); } 50% { transform: rotate(-11deg); } }
+@keyframes m-peer { 50% { transform: translateX(2px); } }
+
+.mustard.sleep .m-eye-open { display: none; }
+.mustard.sleep .m-eye-closed, .mustard.sleep .m-zzz { display: inline; }
+.mustard.sleep .m-head { transform: translate(-12px, 7px) rotate(4deg); }
+.mustard.sleep .m-body { animation: m-breathe 3.6s ease-in-out infinite; }
+.mustard.sleep .m-z1 { animation: m-z 3s ease-in-out infinite; }
+.mustard.sleep .m-z2 { animation: m-z 3s ease-in-out infinite .5s; }
+.mustard.sleep .m-z3 { animation: m-z 3s ease-in-out infinite 1s; }
+@keyframes m-breathe { 50% { transform: scaleY(1.015); } }
+@keyframes m-z { 0% { opacity: 0; transform: translateY(6px); } 30%, 60% { opacity: .9; } 100% { opacity: 0; transform: translateY(-8px); } }
+
+@media (prefers-reduced-motion: reduce) {
+  .mustard *, .mustard { animation: none !important; }
+}
+
+/* The sign-in pages: Mustard and a dandelion on a strip of ground. */
+
+.hero { position: relative; margin: 0 auto 12px; max-width: 360px; }
+.hero .mustard { width: 78%; margin-left: 4%; }
+.hero .dandelion { position: absolute; right: 2%; bottom: 8px; width: 13%; }
+.hero::after {
+  content: "";
+  position: absolute;
+  left: 0; right: 0; bottom: 6px;
+  height: 3px;
+  border-radius: 3px;
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--accent) 45%, transparent) 20%, color-mix(in srgb, var(--accent) 45%, transparent) 80%, transparent);
+}
+.tagline { text-align: center; color: var(--muted); font-size: 14px; margin: 0 0 18px; }
+
+/* The viewer's overlay: Mustard walks while connecting, naps when offline. */
+
+/* Sized by height: a phone's 16:9 stage is only ~210 px tall, and the
+   overlay has to fit Mustard, two lines and a button in it. */
+.overlay .mustard { height: clamp(56px, 36%, 150px); aspect-ratio: 270 / 160; color: #c9c3a6; flex: none; }
+.overlay .mustard svg { height: 100%; width: 100%; }
+
+@media (max-width: 640px) {
+  .overlay { gap: 6px; padding: 10px 16px; }
+  .overlay p { font-size: 14px; }
+  .overlay .sub { font-size: 12.5px; }
+  .overlay .btn { padding: 6px 12px; font-size: 13px; }
+}

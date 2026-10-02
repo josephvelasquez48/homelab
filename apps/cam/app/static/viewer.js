@@ -2,7 +2,7 @@
 // relays it to MediaMTX on the Mac) and plays what comes back. The video
 // flows straight from the Mac; this page and the app only set it up.
 
-import { fillNav, me } from "/static/common.js";
+import { drawMustard, fillNav, me, setMustardPose } from "/static/common.js";
 
 const $ = (id) => document.getElementById(id);
 const video = $("video");
@@ -22,12 +22,13 @@ function setStatus(kind, label) {
   pill.textContent = label;
 }
 
-function showOverlay({ title, sub = "", spinner = false, retry = false }) {
+// Mustard walks while we connect and naps when the camera is away.
+function showOverlay({ title, sub = "", pose = "walk", retry = false }) {
   $("overlay").hidden = false;
   $("overlay-title").textContent = title;
   $("overlay-sub").textContent = sub;
   $("overlay-sub").hidden = !sub;
-  $("spinner").hidden = !spinner;
+  setMustardPose($("mascot"), pose);
   $("retry").hidden = !retry;
 }
 
@@ -47,7 +48,7 @@ async function start() {
   clearTimeout(retryTimer);
   stop();
   setStatus("connecting", "Connecting");
-  showOverlay({ title: "Connecting to the camera…", spinner: true });
+  showOverlay({ title: "Finding Mustard…" });
 
   const peer = new RTCPeerConnection();
   pc = peer;
@@ -63,11 +64,11 @@ async function start() {
       $("overlay").hidden = true;
       startStats();
     } else if (peer.connectionState === "failed") {
-      fail("Lost the stream", "Reconnecting…");
+      fail("Lost sight of Mustard", "Reconnecting…");
     } else if (peer.connectionState === "disconnected") {
       // Often a Wi-Fi blip that recovers by itself; give it a few seconds.
       setTimeout(() => {
-        if (peer === pc && peer.connectionState === "disconnected") fail("Lost the stream", "Reconnecting…");
+        if (peer === pc && peer.connectionState === "disconnected") fail("Lost sight of Mustard", "Reconnecting…");
       }, 4000);
     }
   });
@@ -91,7 +92,7 @@ async function start() {
     if (peer !== pc) return;  // replaced while we waited
     await peer.setRemoteDescription({ type: "answer", sdp: answer });
   } catch (err) {
-    if (peer === pc) fail("Camera offline", err.message);
+    if (peer === pc) fail("Mustard Cam is napping", err.message);
   }
 }
 
@@ -100,7 +101,7 @@ function fail(title, sub) {
   setStatus("offline", "Offline");
   const seconds = Math.round(retryDelay / 1000);
   const sentence = /[.!?…]$/.test(sub) ? sub : `${sub}.`;
-  showOverlay({ title, sub: `${sentence} Retrying in ${seconds} s.`, retry: true });
+  showOverlay({ title, sub: `${sentence} Trying again in ${seconds} s.`, pose: "sleep", retry: true });
   if (wanted) retryTimer = setTimeout(start, retryDelay);
   retryDelay = Math.min(retryDelay * 2, 30000);
 }
@@ -154,7 +155,7 @@ function snapshot() {
     const stamp = new Date().toISOString().slice(0, 19).replace("T", "-").replaceAll(":", "");
     const link = document.createElement("a");
     link.href = URL.createObjectURL(blob);
-    link.download = `camera-${stamp}.jpg`;
+    link.download = `mustard-${stamp}.jpg`;
     link.click();
     setTimeout(() => URL.revokeObjectURL(link.href), 10000);
   }, "image/jpeg", 0.92);
@@ -180,7 +181,7 @@ document.addEventListener("visibilitychange", () => {
       clearTimeout(retryTimer);
       stop();
       setStatus("connecting", "Paused");
-      showOverlay({ title: "Paused while the tab was in the background" });
+      showOverlay({ title: "Paused while you were away", sub: "Come back to this tab and Mustard reappears.", pose: "sleep" });
     }, 30000);
   } else if (!wanted) {
     wanted = true;
@@ -201,4 +202,5 @@ stage.addEventListener("touchstart", () => {
   controlsTimer = setTimeout(() => stage.classList.remove("show-controls"), 3000);
 }, { passive: true });
 
+drawMustard();
 me().then((user) => { fillNav(user); start(); }).catch(() => {});

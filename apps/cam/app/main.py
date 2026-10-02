@@ -120,6 +120,11 @@ async def security_headers(request: Request, call_next):
     response.headers["Referrer-Policy"] = "no-referrer"
     if request.url.path.startswith("/api/"):
         response.headers["Cache-Control"] = "no-store"
+    elif request.url.path.startswith("/static/"):
+        # Revalidate every load (a cheap 304 when unchanged). Without this,
+        # browsers cached the scripts by heuristic, and after the switch to
+        # passkeys a phone kept running the old password page's script.
+        response.headers["Cache-Control"] = "no-cache"
     return response
 
 
@@ -227,7 +232,11 @@ def finish_ceremony(request: Request, kind: str) -> Ceremony:
     """The ceremony this browser started - usable once, then gone."""
     state = request.cookies.get(CEREMONY_COOKIE, "")
     ceremony = request.app.state.ceremonies.pop(state, None)
-    if not ceremony or ceremony.kind != kind or ceremony.expires < time.monotonic():
+    if not ceremony or ceremony.kind != kind:
+        # No sign-in was started from this page - typically a page loaded
+        # before an update, still running its old script.
+        raise HTTPException(400, "This page is out of date - reload it and try again")
+    if ceremony.expires < time.monotonic():
         raise HTTPException(400, "That took too long - try again")
     return ceremony
 

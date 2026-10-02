@@ -160,3 +160,15 @@ def test_account_from_before_passkeys_can_add_one(app, client, make_user):
     assert client.post("/api/account/passkeys", json=first.create(options)).status_code == 200
     client.cookies.clear()
     assert sign_in(client, first).status_code == 200
+
+
+def test_scripts_are_revalidated_on_every_load(client):
+    """A cached old script outlived the password-to-passkey switch on a phone."""
+    assert client.get("/static/login.js").headers["cache-control"] == "no-cache"
+
+
+def test_an_old_page_is_told_to_reload(client, make_user):
+    make_user("alice", sign_in=False)
+    # What the password-era page sent, with no passkey sign-in started.
+    r = client.post("/api/login", json={"username": "alice", "password": "hunter2hunter2"})
+    assert r.status_code == 400 and "reload" in r.json()["detail"]

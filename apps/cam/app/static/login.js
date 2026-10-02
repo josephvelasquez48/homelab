@@ -1,4 +1,4 @@
-import { api, passkeysSupported, showMessage, usePasskey } from "/static/common.js";
+import { api, drawMustard, passkeysSupported, showMessage, usePasskey } from "/static/common.js";
 
 const msg = document.getElementById("msg");
 const button = document.getElementById("signin");
@@ -22,3 +22,5 @@ button.addEventListener("click", async () => {
     button.disabled = !passkeysSupported();
   }
 });
+
+drawMustard();

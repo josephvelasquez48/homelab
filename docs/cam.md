@@ -1,4 +1,16 @@
-# Webcam
+# Mustard Cam
+
+The webcam is for **Mustard**, a tortoise. The site is branded for him
+(2026-10-02): "Mustard Cam" everywhere a person sees it, including the
+passkey prompt (`RP_NAME`), a terrarium palette (mustard on moss green,
+sand in light mode), a tortoise-shell hexagon background
+(`static/scutes-*.svg`, generated tiles), and Mustard himself as an SVG
+drawing in `static/common.js` - nodding on the sign-in pages, walking
+while the stream connects, napping (with z's) when the camera is offline.
+CSS-animated, off under reduced motion, presentation attributes only so
+the strict CSP needs no exceptions. The address stayed
+`cam.taile847cc.ts.net`: passkeys are bound to it.
+
 
 Watch the Logitech C922 plugged into the MacBook from a phone or computer,
 at home or away. Not on the original roadmap.

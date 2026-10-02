@@ -3,8 +3,10 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#0d0f12">
-  <title>People · Camera</title>
+  <meta name="theme-color" content="#0f1410" media="(prefers-color-scheme: dark)">
+  <meta name="theme-color" content="#f6efdc" media="(prefers-color-scheme: light)">
+  <meta name="apple-mobile-web-app-title" content="Mustard Cam">
+  <title>People · Mustard Cam</title>
   <link rel="icon" href="/static/icon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/static/app.css">
   <script type="module" src="/static/admin.js"></script>
@@ -12,15 +14,15 @@
 <body>
   <header class="topbar">
     <a class="brand" href="/">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg>
-      <span class="brand-name">Camera</span>
+      <img src="/static/mustard-mark.svg" alt="">
+      <span class="brand-name"><b>Mustard</b> Cam</span>
     </a>
     <nav></nav>
   </header>
 
   <main class="page">
     <form id="invite-form" class="card" novalidate>
-      <h2>Invite someone</h2>
+      <h2>Invite someone to see Mustard</h2>
       <p class="lede">You'll get a link to send them. They open it and make a passkey with Face ID, their fingerprint or their PIN - nothing to install. It works once and expires in <span id="invite-hours">24 hours</span>.</p>
       <div class="row">
         <div class="grow">
@@ -40,7 +42,7 @@
     </form>
 
     <section class="card">
-      <h2>People</h2>
+      <h2>Who can visit</h2>
       <table>
         <thead><tr><th>Name</th><th>Last signed in</th><th></th></tr></thead>
         <tbody id="users"></tbody>

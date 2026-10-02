@@ -25,7 +25,7 @@ INVITE_HOURS = int(os.environ.get("INVITE_HOURS", "24"))
 # Passkeys belong to one site: the public address. cam.home redirects there
 # (main.py), so every passkey is made and used on the same origin.
 RP_ID = PUBLIC_URL.split("://", 1)[1].split("/", 1)[0].split(":", 1)[0]
-RP_NAME = "Camera"
+RP_NAME = "Mustard Cam"
 
 # Addresses that redirect to PUBLIC_URL instead of serving the app, so there
 # is only ever one origin (see RP_ID). Comma-separated.
