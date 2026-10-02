@@ -32,6 +32,12 @@ mkdir -p "$HOME/.local/bin" "$HOME/.local/share/applications" "$HOME/Desktop"
 install -m 755 "$APP_DIR/show-desktop.sh" "$HOME/.local/bin/pi-display-show-desktop"
 sed "s|@BIN@|$HOME/.local/bin|" "$APP_DIR/homelab-desktop.desktop" > "$HOME/.local/share/applications/homelab-desktop.desktop"
 xdg-mime default homelab-desktop.desktop x-scheme-handler/homelab-desktop
+# Its Call button follows homelab-call:// to bring back a call screen that
+# was sent home - show-call.sh asks the phone service over loopback.
+install -m 755 "$APP_DIR/show-call.sh" "$HOME/.local/bin/pi-display-show-call"
+sed -i "s|@CA@|$(realpath "$CA")|" "$HOME/.local/bin/pi-display-show-call"
+sed "s|@BIN@|$HOME/.local/bin|" "$APP_DIR/homelab-call.desktop" > "$HOME/.local/share/applications/homelab-call.desktop"
+xdg-mime default homelab-call.desktop x-scheme-handler/homelab-call
 update-desktop-database "$HOME/.local/share/applications"
 # And the way back: "Homelab display" in the menu and on the desktop.
 cp "$APP_DIR/pi-display.desktop" "$HOME/.local/share/applications/"
@@ -49,6 +55,7 @@ path = pathlib.Path(sys.argv[1])
 prefs = json.loads(path.read_text()) if path.exists() else {}
 pairs = prefs.setdefault("protocol_handler", {}).setdefault("allowed_origin_protocol_pairs", {})
 pairs.setdefault("https://dashboard.home", {})["homelab-desktop"] = True
+pairs["https://dashboard.home"]["homelab-call"] = True
 path.write_text(json.dumps(prefs))
 EOF
 

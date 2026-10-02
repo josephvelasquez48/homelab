@@ -124,12 +124,23 @@ async def agent_ringing(screen: bool = False):
         # can be moved to the PC at any point.
         "call": live.__dict__ if live else None,
         "inCall": live is not None,
+        # Home was tapped on the Pi's call screen for the calls up now: its
+        # watcher keeps the screen closed (screen/phone_screen.py).
+        "screenHidden": hub.screen_hidden(),
         "connected": hub.tel.state.connected,  # for the tray icon
         # A page with PC audio on already rings by itself; the agent stays quiet.
         "audioPages": len(hub.audio_clients),
         # For the missed-call notification: the agent remembers which it has shown.
         "missed": hub.history.last_missed() if hub.history else None,
     }
+
+
+@app.post("/api/agent/screen-show", dependencies=[Depends(require_agent)])
+async def agent_screen_show():
+    # The display's Call button (apps/pi-display/show-call.sh): bring the
+    # Pi's call screen back after Home sent it away.
+    hub.show_screen()
+    return {"screenHidden": hub.screen_hidden()}
 
 
 @app.get("/api/agent/media", dependencies=[Depends(require_agent)])

@@ -1,0 +1,11 @@
+# Opens homelab-call:// links: the display's Call button (static/display.js)
+# follows one, Chromium hands it to xdg-open, and this brings the Pi's call
+# screen back. install.sh fills in @BIN@ and makes it the handler.
+# (A script, not an inline sh -c: this xdg-open splits Exec on spaces.)
+[Desktop Entry]
+Type=Application
+Name=Show the call screen
+Comment=Bring back the Pi's call screen (apps/pi-display, apps/phone)
+Exec=@BIN@/pi-display-show-call %u
+NoDisplay=true
+MimeType=x-scheme-handler/homelab-call;

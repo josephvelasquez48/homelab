@@ -4,7 +4,9 @@ Runs in the logged-in desktop session (phone-screen.service, a systemd user
 unit). It polls the phone service on loopback; while a call rings or is up
 it wakes the display and opens Chromium full screen on the call page
 (/popup?touch=1), and closes it when the call is over. The desktop is left
-alone otherwise.
+alone otherwise. Home on the call screen closes it early: the service
+reports screenHidden for the calls up at the time, and a new call brings
+the screen back.
 
 The page has no login: Chromium maps phone.home to 127.0.0.1, so it arrives
 on loopback, which the service trusts (main.py, is_local). The certificate
@@ -142,7 +144,10 @@ class Screen:
         log.info("call over: screen closed")
 
     def step(self) -> None:
-        in_call = bool(self.status().get("inCall"))
+        status = self.status()
+        # Home on the call screen hides it for the calls up at the time; the
+        # service brings it back for a new one.
+        in_call = bool(status.get("inCall")) and not status.get("screenHidden")
         running = self.browser is not None and self.browser.poll() is None
         if in_call:
             self.idle_since = None

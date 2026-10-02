@@ -93,6 +93,13 @@ Chromium profile, so there is no "open this application?" prompt. Without a
 keyboard or the button, `systemctl --user stop pi-display.service` over SSH
 does the same.
 
+**Back to a call:** during a call the bottom bar also has a **Call** button.
+The Pi's call screen covers this page, but its **Home screen** button sends
+it away for the rest of the call; **Call** brings it back. The same trick as
+Desktop: a `homelab-call://` link, pre-approved by `install.sh`, whose
+handler `apps/pi-display/show-call.sh` asks the phone service on loopback
+(docs/phone.md).
+
 **Deploys reach the screen on their own:** the dashboard sends
 `Cache-Control: no-cache` for its pages and `/static` files, so a browser
 always rechecks them (an unchanged file is a cheap 304). Without it,

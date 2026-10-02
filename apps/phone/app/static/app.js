@@ -548,6 +548,9 @@ function render(s) {
   // Only from the page that has the call: elsewhere it would take the
   // audio away from whoever is actually talking on the PC.
   $("to-phone-row").hidden = !(call.state === "active" && s.bridged && audio && audio.ctx.state === "running");
+  // Only on the Pi's screen: back to the homelab display for the rest of
+  // this call (the screen's watcher closes this window; a new call brings it back).
+  $("home-row").hidden = !TOUCH;
 
   if (ringing) {
     // Wake the mic while it rings: the Samson on this desktop sleeps when
@@ -731,6 +734,7 @@ $("answer").onclick = async () => {
 $("decline").onclick = () => { pressed("decline", "Declining…"); send({ action: "hangup", call: currentCall().path }); };
 $("hangup").onclick = () => { pressed("hangup", "Ending…"); send({ action: "hangup", call: currentCall().path }); };
 $("to-phone").onclick = () => send({ action: "audio-to-phone" });
+$("screen-home").onclick = () => { $("screen-home").disabled = true; send({ action: "screen-home" }); };
 $("refresh-contacts").onclick = () => send({ action: "refresh-contacts" });
 $("recent-more").onclick = () => {
   recentExpanded = !recentExpanded;

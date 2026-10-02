@@ -225,6 +225,9 @@ function renderBars() {
     : ph.in_call ? ["#D4537E", "On a call"]
     : ph.connected ? [COLOR.ok, "iPhone connected"] : [COLOR.unknown, "iPhone away"];
   $("phone").innerHTML = `<span class="dot" style="background:${color}"></span>${text}`;
+  // Only seen while a call is up and its screen was sent home: it covers
+  // this page otherwise.
+  $("to-call").hidden = !ph.in_call;
 }
 
 let tickIndex = 0;
@@ -325,6 +328,15 @@ $("to-desktop").addEventListener("click", (e) => {
 deskConfirm.addEventListener("click", (e) => {
   e.stopPropagation();
   if (e.target === deskConfirm || e.target.id === "desk-cancel") closeDeskConfirm();
+});
+// ---- Back to a call ----
+// The Pi's call screen has a Home button that sends it away for the rest
+// of the call; Call brings it back. Like Desktop, a page can't reach the
+// phone service, so it follows a homelab-call:// link that apps/pi-display's
+// handler turns into a loopback request to the service.
+$("to-call").addEventListener("click", (e) => {
+  e.stopPropagation();
+  location.href = "homelab-call://show";
 });
 $("desk-go").addEventListener("click", () => {
   closeDeskConfirm();
