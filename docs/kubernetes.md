@@ -63,6 +63,22 @@ the phone bridge (it needs the Bluetooth radio - [phone.md](phone.md)).
   `k3s_role: agent` for m1-node ([ansible.md](ansible.md)). Check:
   `dig @10.43.0.10 phone.home` answers `192.168.1.253`, and
   `dig @10.43.0.10 doubleclick.net` comes back blocked.
+- **One CoreDNS per node, each node using its own** (since 2026-10-02):
+  two replicas spread across the nodes, and `trafficDistribution:
+  PreferSameNode` on the `kube-dns` Service, so a pod's lookups stay on its
+  own node unless there's no CoreDNS there. Before, K3s ran one replica,
+  and it sat on m1-node - a VM behind the Mac's Wi-Fi. Every network change
+  on the Mac (an extender, a 5 GHz to 2.4 GHz switch, a router blip) cut
+  cluster DNS off from the Pi: Argo CD went Unknown on every app and
+  stopped deploying, and Pi pods' lookups took up to 10 s - enough to
+  starve the dashboard's 4-thread uvloop resolver and blank the display.
+  **K3s no longer manages CoreDNS** for this to stick:
+  `/var/lib/rancher/k3s/server/manifests/coredns.yaml.skip` stops it
+  re-applying its packaged version on start, which would undo the patches.
+  The cost is that K3s upgrades leave CoreDNS's version alone - after an
+  upgrade, compare `kubectl -n kube-system get deploy coredns -o
+  jsonpath='{..image}'` with the K3s release notes and bump it by hand if
+  needed. All of it is `roles/k3s` (`--tags k3s`).
 - **ufw doesn't filter pod traffic.** K3s's iptables chains run before
   ufw's, so ufw rules don't apply to anything reaching a pod. The real
   boundaries are the NetworkPolicies above - found by testing from outside
