@@ -117,6 +117,10 @@ class Hub:
         self.local_clients: set[WebSocket] = set()
         # The call the Pi's touchscreen asked the PC's window to take.
         self._handoff: str | None = None
+        # The calls up when Home was tapped on the Pi's call screen: the
+        # screen stays closed while only those are around, and comes back
+        # for any new one (see screen_hidden).
+        self._screen_hidden_for: frozenset[str] | None = None
         # Mute, shared by every page: the PC's window and the Pi's screen
         # show and set the same one. Held here rather than in the page with
         # the mic, so the Pi's screen can mute a call whose mic is on the PC.
@@ -255,6 +259,21 @@ class Hub:
     def pc_seen(self) -> None:
         self._pc_seen = time.monotonic()
         self.pc_checkins += 1
+
+    def screen_hidden(self) -> bool:
+        """Should the Pi's call screen stay closed? Yes after Home was tapped
+        on it, while only the calls up at the time are around - a new call
+        (another ringing, say) brings it back, and so does the next call
+        once these have ended."""
+        live = frozenset(c.path for c in self.tel.state.calls if c.state != "disconnected")
+        if not live:
+            self._screen_hidden_for = None
+        return self._screen_hidden_for is not None and live <= self._screen_hidden_for
+
+    def show_screen(self) -> None:
+        """Undo Home: the Pi's call screen comes back for the calls up now
+        (the display's Call button, via apps/pi-display/show-call.sh)."""
+        self._screen_hidden_for = None
 
     def pc_present(self) -> bool:
         """The agent polled lately, or a page is open (a browser counts) -
@@ -486,6 +505,14 @@ class Hub:
                     await self.tel.activate_audio()
             elif action == "audio-to-phone":
                 await self.release_audio()
+            elif action == "screen-home":
+                # Home on the Pi's call screen: close it, back to the display.
+                # Only that screen asks; the PC's window has nothing to hide.
+                if ws not in self.local_clients:
+                    return "Only the Pi's screen can do that"
+                self._screen_hidden_for = frozenset(
+                    c.path for c in self.tel.state.calls if c.state != "disconnected")
+                return None
             elif action == "refresh-contacts":
                 if self.contacts and self.tel.state.connected:
                     self.contacts.updated = 0  # due now; the extras loop picks it up

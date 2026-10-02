@@ -396,3 +396,28 @@ async def test_mute_is_shared_silences_the_uplink_and_resets_after_the_call():
     tel.state.calls = []
     await hub.tick()
     assert hub.muted is False  # the next call starts unmuted
+
+
+@pytest.mark.asyncio
+async def test_home_on_the_pi_screen_hides_it_until_a_new_call():
+    # Home on the Pi's call screen: closed for the call up now, back for a new one.
+    active = Call("/ag1/call1", "active", "+15555550123", "")
+    hub, tel = make(transport="active", calls=[active])
+    touch, pc = FakeSocket(), FakeSocket()
+    await hub.add(touch, local=True)
+    await hub.add(pc)
+    assert not hub.screen_hidden()
+
+    assert await hub.command(pc, {"action": "screen-home"}) == "Only the Pi's screen can do that"
+    assert not hub.screen_hidden()
+
+    assert await hub.command(touch, {"action": "screen-home"}) is None
+    assert hub.screen_hidden()  # same call: stays home
+
+    tel.state.calls.append(Call("/ag1/call2", "waiting", "+15555550199", ""))
+    assert not hub.screen_hidden()  # another call rings: the screen comes back
+
+    tel.state.calls.clear()
+    assert not hub.screen_hidden()  # all over: forgotten
+    tel.state.calls.append(Call("/ag1/call1", "incoming", "+15555550123", ""))
+    assert not hub.screen_hidden()  # even a reused path is a new call

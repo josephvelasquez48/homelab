@@ -35,8 +35,10 @@
   #detail { position: absolute; z-index: 5; display: none; background: #F1EFE8; color: #2C2C2A;
     font-size: 15px; line-height: 1.5; padding: 8px 12px; border-radius: 6px; pointer-events: none; max-width: 320px; }
   html.mouse, html.mouse body { cursor: auto; } /* a real mouse is moving: see the script below */
-  #to-desktop { pointer-events: auto; background: #2C2C2A; color: #D3D1C7; border: 0; border-radius: 999px;
+  #to-desktop, #to-call { pointer-events: auto; background: #2C2C2A; color: #D3D1C7; border: 0; border-radius: 999px;
     font: inherit; font-size: 14px; padding: 5px 14px; }
+  #to-call { background: #D4537E; color: #fff; margin-right: 8px; }
+  #to-call[hidden] { display: none; }
   #desk-confirm { position: absolute; inset: 0; z-index: 6; display: flex; align-items: center; justify-content: center;
     background: rgba(0, 0, 0, .55); }
   #desk-confirm[hidden] { display: none; }
@@ -65,6 +67,7 @@
   <div class="bar" id="bottom">
     <span class="dot" id="ticker-dot"></span>
     <span id="ticker"></span>
+    <button id="to-call" hidden>Call</button>
     <button id="to-desktop">Desktop</button>
     <span id="pager"><span class="on"></span><span></span></span>
   </div>

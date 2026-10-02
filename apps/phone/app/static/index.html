@@ -15,6 +15,7 @@
     <symbol id="i-mic" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" d="M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3zM5 11a7 7 0 0 0 14 0M12 18v3"/></symbol>
     <symbol id="i-keypad" viewBox="0 0 24 24"><g fill="currentColor"><circle cx="6" cy="5" r="1.7"/><circle cx="12" cy="5" r="1.7"/><circle cx="18" cy="5" r="1.7"/><circle cx="6" cy="11" r="1.7"/><circle cx="12" cy="11" r="1.7"/><circle cx="18" cy="11" r="1.7"/><circle cx="6" cy="17" r="1.7"/><circle cx="12" cy="17" r="1.7"/><circle cx="18" cy="17" r="1.7"/><circle cx="12" cy="22" r="1.5"/></g></symbol>
     <symbol id="i-computer" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" d="M3 5h18v11H3zM9 20h6M12 16v4"/></symbol>
+    <symbol id="i-home" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" d="M3 11l9-7 9 7M5 9.5V20h5v-6h4v6h5V9.5"/></symbol>
     <symbol id="i-iphone" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" d="M7 2h10a1 1 0 0 1 1 1v18a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1zM11 18h2"/></symbol>
   </svg>
 
@@ -89,6 +90,7 @@
       <div class="keypad" id="tone-pad" hidden></div>
       <div class="row" id="to-pc-row" hidden><button class="primary" id="to-pc"><svg><use href="#i-computer"/></svg>Move call audio to this PC</button></div>
       <div class="row" id="to-phone-row" hidden><button class="soft" id="to-phone"><svg><use href="#i-iphone"/></svg>Send call audio to iPhone</button></div>
+      <div class="row" id="home-row" hidden><button class="soft" id="screen-home"><svg><use href="#i-home"/></svg>Home screen</button></div>
     </section>
 
     <div class="card sub popup-idle" id="popup-idle" hidden>No call right now.</div>

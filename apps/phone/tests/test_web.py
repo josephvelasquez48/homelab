@@ -95,6 +95,20 @@ def test_agent_status_reports_the_live_call(client, monkeypatch):
     assert client.get("/api/agent/ringing", headers=auth).json()["call"] is None
 
 
+def test_the_displays_call_button_brings_the_pi_screen_back(client, monkeypatch):
+    # Home on the Pi's call screen hid it; the display's Call button (via
+    # apps/pi-display/show-call.sh) shows it again - with the agent token only.
+    from app.telephony import Call
+
+    auth = {"Authorization": "Bearer agent-token"}
+    monkeypatch.setattr(main.hub.tel.state, "calls", [Call("/ag1/call1", "active", "+15555550123", "")])
+    monkeypatch.setattr(main.hub, "_screen_hidden_for", frozenset({"/ag1/call1"}))
+    assert client.get("/api/agent/ringing?screen=1", headers=auth).json()["screenHidden"] is True
+    assert client.post("/api/agent/screen-show").status_code == 401
+    assert client.post("/api/agent/screen-show", headers=auth).json() == {"screenHidden": False}
+    assert client.get("/api/agent/ringing?screen=1", headers=auth).json()["screenHidden"] is False
+
+
 def test_media_stream_needs_the_token_and_all_audio_mode(client):
     assert client.get("/api/agent/media").status_code == 401
     # "Calls only" (and no media bridge in tests): nothing to stream, ask later.

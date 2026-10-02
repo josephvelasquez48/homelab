@@ -67,7 +67,13 @@ appears underneath.
 shows it full screen - Answer, Decline, then Keypad and End. It's a remote
 control: the Pi has no speakers or mic, so Answer there sends the call to
 the PC, exactly as if you'd answered on the PC. The rest of the time the
-Pi's always-on display (docs/dashboard.md) shows underneath.
+Pi's always-on display (docs/dashboard.md) shows underneath. **Home screen**
+on the call screen sends it away for the rest of that call: the service
+answers `screenHidden` to `phone-screen.service`, which closes it. A new
+call brings it back by itself, and the display's **Call** button (bottom
+bar, shown during a call) brings it back on demand - through a
+`homelab-call://` link whose handler (`apps/pi-display/show-call.sh`) posts
+to `/api/agent/screen-show` on loopback with the agent token.
 
 **Tray and hotkeys:** the tray icon is green (connected), amber (on a
 call) or grey. Ctrl+Alt+A answers, Ctrl+Alt+H declines or hangs up,
