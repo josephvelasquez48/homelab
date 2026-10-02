@@ -30,4 +30,3 @@ retired_ipv6_prefixes:
 retired_ipv6_ports:
   - { port: "53", proto: any }
   - { port: "3000", proto: tcp }
-
