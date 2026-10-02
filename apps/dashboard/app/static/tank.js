@@ -859,18 +859,6 @@ function drawTags(t) {
   }
 }
 
-const bubbles = Array.from({ length: 36 }, () => ({ x: Math.random(), y: rand(SURF, 0.9), r: rand(0.6, 2.4), v: rand(0.0006, 0.002), z: Math.random() }));
-function drawBubbles(t, k, off) {
-  ctx.fillStyle = "#B5D4F4";
-  for (const b of bubbles) {
-    b.y -= b.v * k; b.x += Math.sin(t / 600 + b.r * 9) * 0.0003 * k;
-    if (b.y < SURF + 0.01) { b.y = 0.9; b.x = rand(0.05, 0.95); }
-    ctx.globalAlpha = 0.2 + 0.3 * b.z;
-    ctx.beginPath(); ctx.arc(b.x * W + off * (0.4 + 0.6 * b.z), b.y * H, b.r * (1 + b.z), 0, 7); ctx.fill();
-  }
-  ctx.globalAlpha = 1;
-}
-
 // Namespaces with their pod counts under the top bar, and what the fish
 // mean - over the sky, so shadowed to stay readable on a bright day.
 function drawLegend() {
@@ -914,7 +902,6 @@ function drawTank(t, dt) {
   drawFloor(sc, cam * PAR.floor, t);
   drawHouses(sc, cam * PAR.floor, t);
   stepFish(t, k);
-  drawBubbles(t, k, cam);
   const list = [...fish.values()].sort((a, b) => a.z - b.z);
   for (const f of list) drawFish(f, t, sc, cam);
   drawWeed(frontWeed, cam * PAR.front, H * 1.02, [mix("#12301A", sc.pal.deep, dim * 0.6), mix("#2E2A10", sc.pal.deep, dim * 0.6)], t);
