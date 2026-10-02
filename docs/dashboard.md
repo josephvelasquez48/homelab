@@ -47,7 +47,7 @@ to switch between two views:
   with its coral and castles, the fish, weed against the glass) slide at
   different speeds as the view drifts, so it reads as deep without 3D.
   The far reef and the sand are drawn once per weather change and copied
-  in each frame, which keeps it at the 24 fps cap on the Pi.
+  in each frame, which keeps it at the frame-rate cap on the Pi.
   The tank shows the real weather: a strip of sky above the water with
   the sun or moon (placed by the day's real sunrise and sunset, with dawn
   and dusk colours) - the moon in its real phase, worked out from the
@@ -108,8 +108,12 @@ old page for hours after a deploy, even across restarts. `/api/display`
 also carries `page_version`, a hash of the display's files; a display
 still on an older page reloads itself on its next poll.
 
-**Cost:** animation is capped at 24 fps. At 60 the Pi's Chromium used
-about 1.5 cores; at 24 it's about a quarter of one.
+**Cost:** animation is capped at 16 fps, and the aquarium drops to 12 at
+night (with no light rays). At 60 the Pi's Chromium used about 1.5 cores;
+at 24 the map alone measured about half a core (49%, 2026-10-01). Dots and
+fish move per second, not per frame, so a lower rate only makes their steps
+bigger. The aquarium's bubbles were removed the same day: decoration that
+meant nothing.
 
 ## Worth knowing from the SSH era
 

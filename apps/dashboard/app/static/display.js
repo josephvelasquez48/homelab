@@ -353,15 +353,15 @@ $("desk-go").addEventListener("click", () => {
 
 // ---- Loop ----
 
-// 24 fps, not the screen's 60: smooth enough for dots and fish, and at 60
-// the Pi's Chromium spent about a core and a half redrawing. Frames come on
-// the screen's refresh (every 16.7 ms), so skipping any under 41.7 ms since
-// the last drew only every third - 20 fps. Keep a schedule instead: draw at
-// the first refresh past each 24th of a second.
-// The aquarium at night: 12 fps. It's calm and dark then, the fish swim
-// at the same speed (their motion is per second, not per frame), and it
-// halves what Chromium redraws. The map keeps 24: its dots move fast.
-const FRAME_MS = 1000 / 24;
+// 16 fps, not the screen's 60: at 60 the Pi's Chromium spent about a core
+// and a half redrawing, and 24 still cost about half a core on the map
+// alone. Dots and fish move per second, not per frame, so they keep their
+// speed at any rate - only the steps get a little bigger. Frames come on
+// the screen's refresh (every 16.7 ms), so skipping any too soon after the
+// last would round the rate down; keep a schedule instead: draw at the
+// first refresh past each 16th of a second.
+// The aquarium at night: 12 fps. It's calm and dark then.
+const FRAME_MS = 1000 / 16;
 const NIGHT_FRAME_MS = 1000 / 12;
 let prev = performance.now(), next = prev;
 function frame(t) {
