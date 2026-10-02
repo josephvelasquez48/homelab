@@ -354,7 +354,14 @@ def edge_states(rates: dict[str, float], svc: dict[str, str], v: dict) -> dict[s
     - idle: both ends up, nothing measured (or nothing to measure - the
       scrapes, Argo CD's checks of GitHub, the backups): a slow trickle
     """
-    status = lambda box: "up" if box == "lan" else svc.get(box, "unknown")  # noqa: E731
+    def status(box: str) -> str:
+        if box == "lan":
+            return "up"
+        if box == "apps":  # four apps in one box: as the page colours it
+            apps = [svc.get(a, "unknown") for a in ("grafana", "argocd", "chat", "kiwix")]
+            return "down" if "down" in apps else "up" if all(a == "up" for a in apps) else "unknown"
+        return svc.get(box, "unknown")
+
     out = {}
     for edge in [*rates, "apps-internet", "backup-mac", *EDGE_SCRAPE]:
         a, b = EDGE_ENDS.get(edge) or edge.split("-", 1)
