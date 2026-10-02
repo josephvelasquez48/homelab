@@ -35,8 +35,14 @@ if not password_file.exists():
     password_file.write_text(secrets.token_urlsafe(32) + '\n')
 password = password_file.read_text().strip()
 
+# Built here rather than shipped: the Command Line Tools' swiftc is already
+# on the Mac, and a binary in git would be one nobody can read.
+subprocess.run(['swiftc', '-O', str(here / 'capture.swift'), '-o', str(config / 'cam-capture')],
+               check=True)
+
 template = (here / 'mediamtx.yml').read_text()
-(config / 'mediamtx.yml').write_text(template.replace('{{VIEWER_PASSWORD}}', password))
+(config / 'mediamtx.yml').write_text(
+    template.replace('{{VIEWER_PASSWORD}}', password).replace('{{CONFIG_DIR}}', str(config)))
 
 agent = Path.home() / 'Library/LaunchAgents' / (LABEL + '.plist')
 domain = 'gui/%d' % os.getuid()

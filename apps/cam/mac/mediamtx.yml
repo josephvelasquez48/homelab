@@ -1,7 +1,7 @@
 # MediaMTX on the Mac: the C922 webcam as a WebRTC stream.
 #
-# A template - install.py fills in the viewer password and writes the result
-# to ~/.config/homelab-cam/mediamtx.yml. Anything not set here is MediaMTX's
+# A template - install.py fills in the viewer password and its own folder,
+# and writes the result to ~/.config/homelab-cam/mediamtx.yml. Anything not set here is MediaMTX's
 # default; see the commented default config in
 # /opt/homebrew/etc/mediamtx/mediamtx.yml for what each key does.
 #
@@ -57,13 +57,21 @@ webrtcIPsFromInterfacesList: [en0]
 paths:
   cam:
     # On demand: the camera (and its light) is on only while someone is
-    # watching, and goes off 15 s after the last viewer leaves. h264_videotoolbox
-    # is the Mac's hardware encoder; baseline profile with no B-frames is what
-    # every browser's WebRTC stack decodes, and a 1 s keyframe interval keeps
-    # joining quick.
+    # watching, and goes off 15 s after the last viewer leaves.
+    #
+    # cam-capture (capture.swift) opens the camera, because ffmpeg can't put
+    # the C922 in its 30 fps mode, and pipes raw frames to the ffmpeg after
+    # `--`. ffmpeg stamps them by arrival and evens them out to a steady
+    # 30 fps (-fps_mode cfr -r 30): without that the encoder's timestamps
+    # came out in the wrong units and the stream claimed 0.01 s per 14 s of
+    # video. h264_videotoolbox is the Mac's hardware encoder; baseline with
+    # no B-frames is what every browser's WebRTC decodes, and a keyframe a
+    # second keeps joining quick.
     runOnDemand: >-
+      {{CONFIG_DIR}}/cam-capture "C922 Pro Stream Webcam" 1920 1080 30 --
       /opt/homebrew/bin/ffmpeg -hide_banner -loglevel warning
-      -f avfoundation -framerate 30 -video_size 1920x1080 -i "C922 Pro Stream Webcam"
+      -f rawvideo -pix_fmt nv12 -video_size 1920x1080 -use_wallclock_as_timestamps 1 -i -
+      -fps_mode cfr -r 30
       -c:v h264_videotoolbox -realtime 1 -profile:v baseline -bf 0 -g 30
       -b:v 4M -maxrate 5M -bufsize 4M
       -f rtsp -rtsp_transport tcp rtsp://127.0.0.1:$RTSP_PORT/$MTX_PATH
