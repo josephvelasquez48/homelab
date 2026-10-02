@@ -6,8 +6,10 @@ os.environ.setdefault("API_KEY", "test-api-key")
 
 from unittest.mock import AsyncMock, MagicMock
 
+import asyncio
 import datetime
 
+import httpx
 import pytest
 from fastapi.testclient import TestClient
 
@@ -207,9 +209,15 @@ class FakeOllamaClient:
         # Set to an exception to simulate an unreachable Ollama - the
         # case /ready exists to catch on the desktop node.
         self.fail_with = None
+        # Set to simulate a sleeping desktop: no refusal, the connect
+        # just hangs until the caller's timeout runs out.
+        self.hang = False
 
     async def get(self, url, **kwargs):
         self.requests.append((url, None))
+        if self.hang:
+            await asyncio.sleep(kwargs["timeout"])
+            raise httpx.ConnectTimeout("timed out")
         if self.fail_with is not None:
             raise self.fail_with
         if url == "/api/tags":
