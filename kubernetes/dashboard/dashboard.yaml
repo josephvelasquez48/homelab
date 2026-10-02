@@ -84,7 +84,7 @@ spec:
         kubernetes.io/hostname: joe
       containers:
         - name: dashboard
-          image: ghcr.io/josephvelasquez48/homelab-dashboard:3c8422cc23bd
+          image: ghcr.io/josephvelasquez48/homelab-dashboard:aa33c41202f3
           # Weather on the Pi's display (Open-Meteo, no key): ZIP 92505,
           # Riverside CA. Unset hides it.
           env:
