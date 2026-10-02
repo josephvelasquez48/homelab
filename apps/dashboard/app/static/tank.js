@@ -19,6 +19,16 @@
 
 const NS_COLOR = { backend: "#5DCAA5", data: "#EF9F27", monitoring: "#AFA9EC", argocd: "#F0997B", chat: "#97C459",
   kiwix: "#85B7EB", ai: "#ED93B1", dashboard: "#FAC775", "kube-system": "#E6F1FB" };
+// The same namespaces in neon, for night: saturated and bright, and still
+// apart from each other (and from the warning orange and red of a puffed
+// fish). nsColor() blends toward these through dusk and dawn.
+const NS_NEON = { backend: "#00FFB0", data: "#FFB21F", monitoring: "#B47CFF", argocd: "#FF5A8C", chat: "#B6FF2E",
+  kiwix: "#2ED8FF", ai: "#FF3EE0", dashboard: "#FFF23A", "kube-system": "#9DF4FF" };
+let nightK = 0; // how much night it is this frame, 0-1 (set by drawTank)
+function nsColor(ns) {
+  const day = NS_COLOR[ns] || "#D3D1C7";
+  return nightK > 0 ? mixHex(day, NS_NEON[ns] || "#E8F6FF", nightK) : day;
+}
 const NS_SPECIES = { backend: "classic", "kube-system": "classic", data: "ray", monitoring: "angel", ai: "angel",
   argocd: "slender", chat: "slender", dashboard: "tang", kiwix: "tang" };
 const MIB = 2 ** 20;
@@ -765,6 +775,9 @@ function halo(hex) {
     grad.addColorStop(0.7, `rgba(${r},${gr},${b},0.08)`);
     grad.addColorStop(1, `rgba(${r},${gr},${b},0)`);
     g.fillStyle = grad; g.fillRect(0, 0, 64, 64);
+    // Colours blend through dusk and dawn, so new ones keep coming: start
+    // over now and then rather than keep every one.
+    if (halos.size > 48) halos.clear();
     halos.set(hex, img);
   }
   return img;
@@ -772,25 +785,39 @@ function halo(hex) {
 
 // Glowing plankton at night: specks that twinkle on their own and flash
 // when a fish swims through them, like a wake in dinoflagellates.
-const plankton = Array.from({ length: 40 }, () => ({ x: Math.random(), y: rand(SURF + 0.05, FLOOR - 0.04), z: Math.random(), ph: rand(0, 6), flash: 0 }));
+// 120 of them: one additive pass, small dots - cheap even on the Pi.
+const plankton = Array.from({ length: 120 }, () => ({ x: Math.random(), y: rand(SURF + 0.05, FLOOR - 0.04), z: Math.random(), ph: rand(0, 6), flash: 0 }));
 function drawPlankton(sc, t, dt, off) {
   const night = (GLOW[sc.phase] || 0) * (1 - sc.k.grey * 0.4);
   if (night <= 0.02) return;
-  ctx.globalCompositeOperation = "lighter";
-  ctx.fillStyle = "#8FFFE6";
+  // Batched by brightness: each fill call has a fixed cost, so 120 specks
+  // drawn one by one cost more than everything else in the frame. Five
+  // brightness levels, one path each - five fills.
+  const fishes = [...fish.values()];
+  const levels = [[], [], [], [], []];
   for (const p of plankton) {
     p.y -= 0.000015 * dt * 60; // drifting up, very slowly
     if (p.y < SURF + 0.03) { p.y = FLOOR - 0.04; p.x = Math.random(); }
-    for (const f of fish.values()) {
+    for (const f of fishes) {
       if (Math.abs(f.x - p.x) < 0.025 && Math.abs(f.y - p.y) < 0.035) { p.flash = 1; break; }
     }
     p.flash = Math.max(0, p.flash - dt * 1.4);
-    const twinkle = 0.12 + 0.38 * Math.max(0, Math.sin(t / 900 + p.ph)) ** 4;
-    ctx.globalAlpha = Math.min(1, (twinkle + p.flash * 0.85) * night);
-    ctx.beginPath();
-    ctx.arc(p.x * W + off * (0.4 + 0.5 * p.z), p.y * H, 1 + p.z * 0.8 + p.flash * 1.6, 0, 7);
-    ctx.fill();
+    const twinkle = 0.25 + 0.45 * Math.max(0, Math.sin(t / 900 + p.ph)) ** 4;
+    const a = Math.min(1, twinkle + p.flash * 0.85);
+    levels[Math.min(4, Math.floor(a * 5))].push(p);
   }
+  ctx.globalCompositeOperation = "lighter";
+  ctx.fillStyle = "#8FFFE6";
+  levels.forEach((ps, i) => {
+    if (!ps.length) return;
+    ctx.globalAlpha = ((i + 0.5) / 5) * night;
+    ctx.beginPath();
+    for (const p of ps) {
+      const x = p.x * W + off * (0.4 + 0.5 * p.z), y = p.y * H, r = 1 + p.z * 0.8 + p.flash * 1.6;
+      ctx.moveTo(x + r, y); ctx.arc(x, y, r, 0, 7);
+    }
+    ctx.fill();
+  });
   ctx.globalCompositeOperation = "source-over";
   ctx.globalAlpha = 1;
 }
@@ -808,13 +835,15 @@ function placeFish(f, t, sc, off) {
   const s = f.s * W * 0.021 * depth;
   const X = f.x * W + off * (0.45 + 0.5 * f.z), Y = f.y * H + (sick ? 0 : Math.sin(t / 900 + f.ph) * H * 0.006);
   f.sx = X; f.sy = Y; f.sr = s; // for taps and tags
-  const base = sick || pending ? "#B4B2A9" : puffed ? (share >= 0.95 ? "#E24B4A" : "#EF9F27") : NS_COLOR[p.namespace] || "#D3D1C7";
+  const base = sick || pending ? "#B4B2A9" : puffed ? (share >= 0.95 ? "#E24B4A" : "#EF9F27") : nsColor(p.namespace);
   // A sick or pending fish doesn't glow: the healthy ones stand out.
   // Nearer fish (higher z) glow more; far ones fade into the water anyway.
   const glow = (GLOW[sc.phase] || 0) * (1 - sc.k.grey * 0.4) * (0.65 + 0.35 * f.z);
   const face = Math.abs(f.face) < 0.12 ? 0.12 * Math.sign(f.face || 1) : f.face;
   f.look = { sick, pending, puffed, s, X, Y, base, glow, face, lit: glow > 0.02 && !sick && !pending,
-    light: puffed ? base : mixHex(base, BIOLUME, 0.55),
+    // Neon at night: the glow is the fish's own colour (base is already
+    // neon then); by day's edges, a touch of bioluminescent blue-green.
+    light: puffed ? base : mixHex(base, BIOLUME, 0.25 * (1 - nightK)),
     // The halo breathes - slowly, each fish on its own beat.
     pulse: 0.72 + 0.28 * Math.sin(t / 1400 + f.ph * 3) };
 }
@@ -835,16 +864,26 @@ function drawHalos(list) {
 // Photophores: a row of small light organs along the flank, each pulsing
 // a little after the one before, like a lanternfish's. Over the bodies.
 function drawLightOrgans(list, t) {
-  ctx.globalCompositeOperation = "lighter";
+  // Batched like the plankton: one path per colour and brightness level
+  // (~20 fills) rather than one fill per dot (~125).
+  const groups = new Map();
   for (const f of list) {
     const g = f.look;
     if (!g.lit || g.puffed) continue;
-    ctx.fillStyle = mixHex(g.light, "#FFFFFF", 0.45);
-    const r = Math.max(1, g.s * 0.055);
+    const color = mixHex(g.light, "#FFFFFF", 0.45), r = Math.max(1, g.s * 0.055);
     for (let i = 0; i < 5; i++) {
-      ctx.globalAlpha = g.glow * (0.35 + 0.65 * Math.max(0, Math.sin(t / 650 + f.ph * 5 - i * 0.8)));
-      ctx.beginPath(); ctx.arc(g.X + g.face * (-0.5 + i * 0.22) * g.s, g.Y + 0.12 * g.s, r, 0, 7); ctx.fill();
+      const a = g.glow * (0.35 + 0.65 * Math.max(0, Math.sin(t / 650 + f.ph * 5 - i * 0.8)));
+      const key = color + Math.min(3, Math.floor(a * 4));
+      if (!groups.has(key)) groups.set(key, { color, a: (Math.min(3, Math.floor(a * 4)) + 0.5) / 4, dots: [] });
+      groups.get(key).dots.push([g.X + g.face * (-0.5 + i * 0.22) * g.s, g.Y + 0.12 * g.s, r]);
     }
+  }
+  ctx.globalCompositeOperation = "lighter";
+  for (const { color, a, dots } of groups.values()) {
+    ctx.fillStyle = color; ctx.globalAlpha = a;
+    ctx.beginPath();
+    for (const [x, y, r] of dots) { ctx.moveTo(x + r, y); ctx.arc(x, y, r, 0, 7); }
+    ctx.fill();
   }
   ctx.globalCompositeOperation = "source-over";
   ctx.globalAlpha = 1;
@@ -852,17 +891,18 @@ function drawLightOrgans(list, t) {
 
 function drawFish(f, t, sc) {
   const p = f.pod, { sick, pending, puffed, s, X, Y, base, face } = f.look;
-  const fade = (1 - f.z) * 0.5 + sc.pal.dim * 0.25;
+  // Glowing things don't fade into the dark the way lit ones fade into
+  // water: at night far fish fade half as much, and the deep's dimming
+  // doesn't apply to their neon.
+  const fade = ((1 - f.z) * 0.5 + sc.pal.dim * 0.25) * (1 - 0.5 * nightK) - sc.pal.dim * 0.25 * nightK * 0.5;
   S = s;
-  const night = GLOW[sc.phase] || 0;
-  // At night the bodies darken toward the deep, so their own light stands out.
-  const own = mixHex(base, "#06121F", 0.4 * night);
+  const own = base; // neon at night (nsColor), the day colour by day
   const c = {
     body: mix(own, sc.haze, fade),
-    back: mix(mixHex(own, "#0B1A30", 0.35), sc.haze, fade),
-    belly: mix(mixHex(own, "#FFFFFF", 0.4 - 0.25 * night), sc.haze, fade),
+    back: mix(mixHex(own, "#0B1A30", 0.35 - 0.15 * nightK), sc.haze, fade),
+    belly: mix(mixHex(own, "#FFFFFF", 0.4), sc.haze, fade),
     fin: mix(mixHex(own, "#FFFFFF", 0.2), sc.haze, fade + 0.1),
-    band: mix(mixHex("#F4F3EE", "#06121F", 0.4 * night), sc.haze, fade),
+    band: mix("#F4F3EE", sc.haze, fade),
   };
   ctx.save();
   ctx.translate(X, Y);
@@ -940,7 +980,7 @@ function drawLegend() {
   for (const p of state.pods) counts[p.namespace] = (counts[p.namespace] || 0) + 1;
   let lx = W * 0.02;
   for (const ns of Object.keys(counts).sort()) {
-    ctx.fillStyle = NS_COLOR[ns] || "#D3D1C7"; ctx.beginPath(); ctx.arc(lx + 6, H * 0.115, 6, 0, 7); ctx.fill();
+    ctx.fillStyle = nsColor(ns); ctx.beginPath(); ctx.arc(lx + 6, H * 0.115, 6, 0, 7); ctx.fill();
     const label = `${ns} ${counts[ns]}`;
     if (ns === spotNs) { // the namespace whose fish are named right now
       const w = ctx.measureText(label).width + 30;
@@ -961,6 +1001,7 @@ function drawLegend() {
 function drawTank(t, dt) {
   const k = dt * 60; // speeds are per 60th of a second
   const sc = scene(), cam = drift(t);
+  nightK = (GLOW[sc.phase] || 0) * (1 - sc.k.grey * 0.4);
   if (farKey !== sc.phase + sc.kind + W + "x" + H) paintFar(sc);
   const nClouds = drawSky(sc, t, k);
   ctx.drawImage(far, -W * 0.06 + cam * PAR.far, 0);
