@@ -63,6 +63,11 @@ the homelab CA trusted for `cam.home` to open without a warning
 ([https.md](https.md)). Turning on **On-Demand** in the tunnel's settings
 (cellular and other Wi-Fi, not home Wi-Fi) makes it connect by itself.
 
+**Other people don't need this any more**: since the public link
+([cam.md](cam.md), "Sharing by link"), an invite link alone works anywhere.
+The VPN stays for your own devices, and for anything that should never be
+public.
+
 A VPN account and a camera account are separate: `wg-peer` lets a device
 reach the camera; the cam.home invite lets a person sign in to it.
 

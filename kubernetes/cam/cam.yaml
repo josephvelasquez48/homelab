@@ -14,7 +14,10 @@ data:
   MEDIAMTX_URL: "http://192.168.1.180:8889"
   MEDIAMTX_PATH: "cam"
   MEDIAMTX_USER: "cam-app"
-  PUBLIC_URL: "https://cam.home"
+  # The Tailscale Funnel address, not cam.home: invite links have to open
+  # on anyone's phone, anywhere, with no VPN or homelab CA. cam.home still
+  # works at home and over the VPN. docs/cam.md, "Sharing by link".
+  PUBLIC_URL: "https://cam.taile847cc.ts.net"
 ---
 apiVersion: apps/v1
 kind: Deployment
