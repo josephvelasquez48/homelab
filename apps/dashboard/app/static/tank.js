@@ -740,6 +740,28 @@ function stepFish(t, k) {
   }
 }
 
+// Fish glow at night, like bioluminescence: a soft halo in each fish's own
+// colour behind it, added to the water (globalCompositeOperation "lighter").
+// One halo image per colour, drawn once and then only stamped - a
+// shadowBlur on every fish every frame would cost the Pi far more.
+const GLOW = { day: 0, dawn: 0.35, dusk: 0.45, night: 1 };
+const halos = new Map();
+function halo(hex) {
+  let img = halos.get(hex);
+  if (!img) {
+    img = document.createElement("canvas");
+    img.width = img.height = 64;
+    const g = img.getContext("2d"), [r, gr, b] = hexRgb(hex);
+    const grad = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+    grad.addColorStop(0, `rgba(${r},${gr},${b},0.4)`);
+    grad.addColorStop(0.45, `rgba(${r},${gr},${b},0.13)`);
+    grad.addColorStop(1, `rgba(${r},${gr},${b},0)`);
+    g.fillStyle = grad; g.fillRect(0, 0, 64, 64);
+    halos.set(hex, img);
+  }
+  return img;
+}
+
 function drawFish(f, t, sc, off) {
   const p = f.pod, sick = isSick(p), pending = p.phase === "Pending";
   const share = memShare(p), puffed = !sick && !pending && share !== null && share >= PUFF_AT;
@@ -757,6 +779,17 @@ function drawFish(f, t, sc, off) {
     fin: mix(mixHex(base, "#FFFFFF", 0.2), sc.haze, fade + 0.1),
     band: mix("#F4F3EE", sc.haze, fade),
   };
+  // A sick or pending fish doesn't glow: the healthy ones stand out.
+  // Nearer fish (higher z) glow more; far ones fade into the water anyway.
+  const glow = (GLOW[sc.phase] || 0) * (1 - sc.k.grey * 0.4) * (0.65 + 0.35 * f.z);
+  if (glow > 0.02 && !sick && !pending) {
+    const R = s * (puffed ? 3.4 : 2.8);
+    ctx.globalCompositeOperation = "lighter";
+    ctx.globalAlpha = glow;
+    ctx.drawImage(halo(base), X - R, Y - R, R * 2, R * 2);
+    ctx.globalCompositeOperation = "source-over";
+    ctx.globalAlpha = 1;
+  }
   ctx.save();
   ctx.translate(X, Y);
   ctx.globalAlpha = pending ? 0.4 : 1;
