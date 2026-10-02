@@ -1,0 +1,10 @@
+---
+# Tailscale on the Pi, only for Funnel: the public https://cam.<tailnet>.ts.net
+# address for the webcam viewer (docs/cam.md, "Sharing by link").
+#
+# Userspace networking: tailscaled runs as an ordinary process - no tun
+# interface, no routes, no iptables rules, no resolv.conf changes. The Pi
+# is the LAN's only resolver and the K3s control plane; Funnel needs none
+# of that, so it touches none of it.
+tailscale_flags: "--tun=userspace-networking"
+tailscale_apt_suite: trixie

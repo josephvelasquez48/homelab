@@ -53,6 +53,19 @@ webrtcLocalUDPAddress: :8189
 # en0 is the LAN. Without this MediaMTX also offers bridge100, the Multipass
 # network m1-node's VM sits on, which no phone can reach.
 webrtcIPsFromInterfacesList: [en0]
+# Viewers on the internet (the public link, docs/cam.md) can't reach en0's
+# address, so MediaMTX offers the home connection's public one too, two ways:
+#
+# - Stated, at port 8189: what the router's UDP 8189 forward to this Mac
+#   serves. The dependable one - but a fixed address, so if Spectrum
+#   changes it, update it here and rerun install.py.
+# - From STUN, asked fresh for every viewer: follows a changed address by
+#   itself. But this router maps the Mac's outgoing 8189 to a random public
+#   port (57925, 57435 when tested), which the forward doesn't cover; it
+#   works only when hole punching does. The fallback.
+webrtcAdditionalHosts: [66.215.85.224]
+webrtcICEServers2:
+  - url: stun:stun.cloudflare.com:3478
 
 paths:
   cam:

@@ -79,6 +79,34 @@
     proto: "{{ item.1.proto }}"
   loop: "{{ retired_ipv6_prefixes | product(retired_ipv6_ports) | list }}"
   when: retired_ipv6_prefixes | length > 0
+# The home VPN's rules, retired with it on 2026-10-02: WireGuard on the Pi
+# lasted a day before the public link (Tailscale Funnel, docs/cam.md) made
+# it unnecessary. ufw doesn't drop a rule because Ansible stopped asking
+# for it, so these delete them - the same reason as the retired IPv6
+# prefixes above. Nothing listens on 51821 or uses 10.8.0.0/24 any more.
+- name: Remove the retired VPN rules
+  community.general.ufw:
+    rule: allow
+    delete: true
+    port: "{{ item.port }}"
+    proto: "{{ item.proto }}"
+    from_ip: "{{ item.from_ip | default('any') }}"
+  loop:
+    - { port: "51821", proto: udp }
+    - { port: "53", proto: any, from_ip: 10.8.0.0/24 }
+
+- name: Remove the retired VPN forwarding rule
+  community.general.ufw:
+    rule: allow
+    delete: true
+    route: true
+    interface_in: wg0
+    interface_out: eth0
+    from_ip: 10.8.0.0/24
+    to_ip: 192.168.1.180
+    to_port: "8189"
+    proto: udp
+
 - name: Enable ufw
   community.general.ufw:
     state: enabled

@@ -9,7 +9,7 @@ Built in three phases, each working on its own before the next:
 |---|---|---|
 | 1 | The camera as a WebRTC stream on the Mac | **Done** 2026-10-02 |
 | 2 | `cam.home`: a web app in the cluster with per-person accounts and the viewer page | **Done** 2026-10-02 |
-| 3 | WireGuard on the Pi, for watching away from home | Next |
+| 3 | Away from home: a public link (Tailscale Funnel) - see "Sharing by link" | **Done** 2026-10-02 |
 
 ## The web app (phase 2)
 
@@ -158,15 +158,71 @@ A healthy start logs
 | Thousands of "Non-monotonic DTS" warnings; 14 s of video labelled as 0.01 s | The encoder's timestamps came out in the wrong units | ffmpeg stamps frames on arrival and evens them to `-fps_mode cfr -r 30` before encoding |
 | A config edit to the login list didn't take effect | MediaMTX's live reload doesn't apply auth changes | Restart (`launchctl kickstart -k`); the installer always does a full restart |
 
+## Sharing by link (Tailscale Funnel)
+
+Phase 3 was first a WireGuard VPN on the Pi. It worked - a phone on
+cellular watched through it - but every viewer then needed the WireGuard
+app, a device config made over SSH, and the homelab CA installed, which is
+too much to ask of someone you just want to show the camera. It was
+replaced the same day and removed (the firewall role deletes its old
+rules). Now an invite link is all
+anyone needs: **People → Invite someone → Copy → send it.** It opens on any
+phone, anywhere, and they choose a password and watch.
+
+```
+anyone's browser ──HTTPS──► Tailscale's Funnel servers ──► Pi: tailscaled (userspace) ──► cam Service 10.43.187.92:8000
+anyone's browser ◄──── video, UDP ──── router (forward UDP 8189) ◄──── Mac
+```
+
+- **The page**: `https://cam.taile847cc.ts.net`, published by Tailscale
+  Funnel from the Pi, with a Let's Encrypt certificate Tailscale renews.
+  Nothing new is open on the router for it. `PUBLIC_URL` points there, so
+  invite links do too; `cam.home` keeps working at home.
+- **The video** still flows straight from the Mac. MediaMTX asks a STUN
+  server (Cloudflare's) for the home connection's public address and offers
+  it to viewers; the router forwards UDP 8189 to the Mac.
+- **tailscaled runs in userspace networking mode** (`ansible/roles/tailscale`):
+  no tun interface, routes, iptables rules or DNS changes on the Pi, which
+  is the LAN's only resolver and the cluster's control plane. Funnel needs
+  none of that - it proxies from inside tailscaled.
+- **The cam Service's ClusterIP is pinned** (10.43.187.92) because Funnel on
+  the host proxies to it directly; the host can't resolve cluster DNS.
+- **Real visitor addresses reach the app** (Funnel sets X-Forwarded-For,
+  which uvicorn trusts), so login throttling is per visitor.
+- **It is on the internet.** A scanner requested the page within minutes of
+  the certificate being issued - new certificates are public, and bots watch
+  for them. What stands in the way: invite-only accounts, argon2 passwords,
+  login throttling, no user enumeration, a strict CSP. The stream itself
+  still needs the cam app's server-side login, accepted only from the nodes.
+
+### One-time setup (done 2026-10-02)
+
+1. `ansible-playbook playbooks/site.yml --tags tailscale --limit pi -c local`
+   (check mode first) - installs tailscaled in userspace mode.
+2. `sudo tailscale up --hostname=cam --accept-dns=false` on the Pi, approved
+   in the browser on the Tailscale account.
+3. The tailnet policy file got a `nodeAttrs` entry allowing `funnel` for
+   `autogroup:member`, and HTTPS certificates were enabled (admin console).
+4. `sudo tailscale funnel --bg http://10.43.187.92:8000` - tailscaled keeps
+   it across restarts.
+5. Router: forward UDP 8189 → 192.168.1.180 (the Mac), and reserve that
+   address for the Mac.
+
+```sh
+tailscale funnel status                 # on the Pi: is it published?
+sudo tailscale funnel --https=443 off   # take the public page down at once
+```
+
 ## Limits
 
 - **Only while the Mac is on and logged in**, like the backups and m1-node.
 - **The MacBook's address isn't reserved on the router** (only its VM's
   is). If its lease changes, the app shows "camera offline" until
-  `MEDIAMTX_URL` in `kubernetes/cam/cam.yaml` is updated. Add a DHCP
-  reservation for it.
-- **Phones must trust the homelab CA** to open `https://cam.home` without a
-  warning ([https.md](https.md)) - not done on any phone yet.
+  `MEDIAMTX_URL` in `kubernetes/cam/cam.yaml` is updated - and the
+  router's UDP 8189 forward points at nothing. Add a DHCP reservation.
+- **`cam.home` needs the homelab CA trusted** on a phone to open without a
+  warning ([https.md](https.md)). The public link doesn't - its certificate
+  is Let's Encrypt's.
 - **Video only.** The C922's own microphone doesn't show up as an audio
   device on this Mac; audio would need looking into first.
 - **Not yet tried in the dark.** If the camera slows down in low light,

@@ -1,0 +1,6 @@
+---
+- name: Restart tailscaled
+  ansible.builtin.systemd:
+    name: tailscaled
+    state: restarted
+  ignore_errors: "{{ ansible_check_mode }}"  # not installed yet on a first --check
