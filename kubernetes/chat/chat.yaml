@@ -33,7 +33,7 @@ spec:
     spec:
       containers:
         - name: chat
-          image: ghcr.io/josephvelasquez48/homelab-chat:7bd672626aaa
+          image: ghcr.io/josephvelasquez48/homelab-chat:788867e533b3
           envFrom:
             - configMapRef: { name: chat-config }
             # Holds API_KEY, which must match the api service's own.
