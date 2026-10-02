@@ -90,6 +90,7 @@ a missing weak-linked symbol until proven otherwise.
 | `m1-node` (VM) | `52:54:00:D1:C5:8E` | 192.168.1.63 |
 | Windows desktop | `CC:28:AA:53:AA:A4` | 192.168.1.131 |
 | `joe` (Pi) | `2C:CF:67:59:A4:C6` | 192.168.1.253 (also static on the Pi) |
+| MacBook (m1-node's host; the webcam, [cam.md](cam.md)) | `42:03:36:38:18:63` (a macOS private Wi-Fi address - keep it Fixed) | 192.168.1.180 |
 
 `kubernetes/ai/inference.yaml` holds the desktop's address. Argo CD
 ignores Endpoints, so a change there needs `kubectl apply` by hand.
