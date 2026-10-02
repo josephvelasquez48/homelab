@@ -200,7 +200,9 @@ function drawSky(sc, t, k) {
 }
 
 function drawRays(sc, t, nClouds) {
-  const rays = sc.k.rays * (sc.phase === "night" ? 0.35 : sc.phase === "day" ? 1 : 0.7);
+  // None at night: they were faint anyway (35%), and six translucent
+  // polygons down most of the screen are real work for the Pi every frame.
+  const rays = sc.k.rays * (sc.phase === "night" ? 0 : sc.phase === "day" ? 1 : 0.7);
   if (rays <= 0.02) return;
   const surf = SURF * H;
   ctx.fillStyle = sc.pal.ray;
@@ -938,6 +940,8 @@ window.Tank = {
   // A new /api/display: fish join, leave, grow and change speed.
   sync(next) { state = next; syncFish(); },
   draw(t, dt) { if (state) drawTank(t, dt); },
+  // Night in the tank: display.js draws it at a lower frame rate then.
+  night() { return scene().phase === "night"; },
   resize: sizeCanvas,
   // The details of the fish under a tap (page coordinates), or null.
   detailAt(x, y) {
