@@ -75,6 +75,46 @@
   ansible.builtin.command: k3s kubectl -n kube-system rollout restart deployment/coredns
   when: k3s_role == "server" and (k3s_resolv.changed or k3s_config.changed)
 
+# One CoreDNS per node, each node's pods asking their own (2026-10-02).
+# With K3s's single replica, CoreDNS sat on m1-node - a VM behind the Mac's
+# Wi-Fi - and every Mac network change took cluster DNS away from the Pi:
+# Argo CD went Unknown on every app, and lookups from Pi pods took up to
+# 10 s, enough to starve the dashboard. docs/kubernetes.md.
+#
+# K3s re-applies its packaged CoreDNS on every start, which would undo the
+# patches below. A .skip file beside the manifest is K3s's documented way to
+# stop that - and the cost: K3s upgrades no longer update CoreDNS either.
+- name: Stop K3s re-applying its packaged CoreDNS
+  ansible.builtin.copy:
+    dest: /var/lib/rancher/k3s/server/manifests/coredns.yaml.skip
+    content: "# CoreDNS is patched by Ansible (roles/k3s) - docs/kubernetes.md\n"
+    force: false
+    mode: "0600"
+  when: k3s_role == "server"
+
+# The deployment's topologySpreadConstraints (hostname, maxSkew 1,
+# DoNotSchedule) put the two replicas on different nodes. maxSurge 0: a
+# third pod could never schedule, so a rollout replaces one at a time and
+# the other keeps answering.
+- name: Run two CoreDNS pods, one per node
+  ansible.builtin.command: >-
+    k3s kubectl -n kube-system patch deployment coredns --type merge
+    -p '{"spec":{"replicas":2,"strategy":{"rollingUpdate":{"maxSurge":0,"maxUnavailable":1}}}}'
+  register: coredns_scale
+  changed_when: "'(no change)' not in coredns_scale.stdout"
+  when: k3s_role == "server"
+
+# PreferSameNode: kube-proxy sends a pod's lookups to the CoreDNS on its own
+# node, and only to the other node's if there isn't one. Without it, half
+# the Pi's lookups would still cross to m1-node.
+- name: Send each node's DNS lookups to its own CoreDNS
+  ansible.builtin.command: >-
+    k3s kubectl -n kube-system patch service kube-dns --type merge
+    -p '{"spec":{"trafficDistribution":"PreferSameNode"}}'
+  register: coredns_local
+  changed_when: "'(no change)' not in coredns_local.stdout"
+  when: k3s_role == "server"
+
 - name: Ensure joe's .kube directory exists
   ansible.builtin.file:
     path: /home/joe/.kube
