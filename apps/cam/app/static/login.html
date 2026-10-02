@@ -3,17 +3,21 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#0d0f12">
-  <title>Sign in · Camera</title>
+  <meta name="theme-color" content="#0f1410" media="(prefers-color-scheme: dark)">
+  <meta name="theme-color" content="#f6efdc" media="(prefers-color-scheme: light)">
+  <meta name="apple-mobile-web-app-title" content="Mustard Cam">
+  <title>Sign in · Mustard Cam</title>
   <link rel="icon" href="/static/icon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/static/app.css">
   <script type="module" src="/static/login.js"></script>
 </head>
 <body>
   <main class="narrow">
-    <div class="brand">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg>
-      Camera
+    <div class="brand"><span class="brand-name"><b>Mustard</b> Cam</span></div>
+    <p class="tagline">A live look at Mustard the tortoise.</p>
+    <div class="hero" aria-hidden="true">
+      <div class="mustard" data-pose="hello"></div>
+      <div class="dandelion"></div>
     </div>
     <div class="card">
       <h1>Sign in</h1>
@@ -23,7 +27,7 @@
         Sign in with passkey
       </button>
       <p id="msg" class="msg" hidden></p>
-      <p class="hint">No account, or a new phone without your passkey? Ask whoever runs the camera for a link.</p>
+      <p class="hint">No account, or a new phone without your passkey? Ask Mustard's keeper for a link.</p>
     </div>
   </main>
 </body>

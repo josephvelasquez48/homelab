@@ -3,8 +3,10 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#0d0f12">
-  <title>Camera</title>
+  <meta name="theme-color" content="#0f1410" media="(prefers-color-scheme: dark)">
+  <meta name="theme-color" content="#f6efdc" media="(prefers-color-scheme: light)">
+  <meta name="apple-mobile-web-app-title" content="Mustard Cam">
+  <title>Mustard Cam</title>
   <link rel="icon" href="/static/icon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/static/app.css">
   <script type="module" src="/static/viewer.js"></script>
@@ -12,8 +14,8 @@
 <body>
   <header class="topbar">
     <a class="brand" href="/">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg>
-      <span class="brand-name">Camera</span>
+      <img src="/static/mustard-mark.svg" alt="">
+      <span class="brand-name"><b>Mustard</b> Cam</span>
     </a>
     <span id="status" class="pill connecting">Connecting</span>
     <nav></nav>
@@ -25,8 +27,8 @@
       <div id="flash" class="flash"></div>
 
       <div id="overlay" class="overlay">
-        <div id="spinner" class="spinner"></div>
-        <p id="overlay-title">Connecting to the camera…</p>
+        <div id="mascot" class="mustard" data-pose="walk" aria-hidden="true"></div>
+        <p id="overlay-title">Finding Mustard…</p>
         <p id="overlay-sub" class="sub" hidden></p>
         <button id="retry" class="btn" type="button" hidden>Try again now</button>
       </div>
@@ -43,8 +45,8 @@
     </div>
 
     <div class="below">
-      <span>Logitech C922 · MacBook</span>
-      <span id="note">The camera turns off when nobody is watching.</span>
+      <span>Mustard's enclosure</span>
+      <span id="note">The camera only turns on while someone is watching.</span>
     </div>
   </main>
 </body>

@@ -85,7 +85,7 @@ async function load() {
         h("td", {}, v.username),
         h("td", { class: "muted", title: new Date(v.started_at).toLocaleString() }, timeAgo(v.started_at)),
         h("td", { class: "muted" }, v.ip || "")))
-    : [h("tr", {}, h("td", { class: "empty", colspan: "3" }, "Nobody has watched yet."))]));
+    : [h("tr", {}, h("td", { class: "empty", colspan: "3" }, "Nobody has visited Mustard yet."))]));
 }
 
 $("invite-form").addEventListener("submit", async (event) => {

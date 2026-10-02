@@ -1,4 +1,4 @@
-import { api, createPasskey, passkeysSupported, showMessage } from "/static/common.js";
+import { api, drawMustard, createPasskey, passkeysSupported, showMessage } from "/static/common.js";
 
 const $ = (id) => document.getElementById(id);
 const token = location.pathname.split("/").pop();
@@ -6,10 +6,10 @@ const token = location.pathname.split("/").pop();
 async function load() {
   try {
     const info = await api(`/api/invite/${encodeURIComponent(token)}`);
-    $("title").textContent = info.reset ? `New passkey for ${info.username}` : `Welcome, ${info.username}`;
+    $("title").textContent = info.reset ? `New passkey for ${info.username}` : `Meet Mustard, ${info.username}!`;
     $("lede").textContent = info.reset
       ? "Make a passkey on this device. Your old passkeys stop working, and you're signed out everywhere else."
-      : "Make a passkey on this device and you're in. You'll use it to sign in from now on.";
+      : "You've been invited to watch Mustard the tortoise. Make a passkey on this device and you're in - you'll use it to sign in from now on.";
     $("form").hidden = false;
     if (!passkeysSupported()) {
       $("create").disabled = true;
@@ -39,3 +39,5 @@ $("create").addEventListener("click", async () => {
 });
 
 load();
+
+drawMustard();
