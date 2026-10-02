@@ -131,6 +131,26 @@ AdGuard's log shows as `127.0.0.1`, because that is genuinely who sent it -
 which undercuts the per-client stats this layer was added for once the
 whole LAN is behind CoreDNS. See the doc above for the trade-off.
 
+## Upstreams are queried in parallel
+
+`upstream_mode` is `parallel`: every lookup goes to both `1.1.1.1` and
+`8.8.8.8`, and the first answer wins. It used to be `load_balance`, which
+sends each lookup to one of them and waits for that one alone, up to the
+10s `upstream_timeout`.
+
+That wait was real. Over the 27 days before the change (to 2026-10-02),
+about 7,800 lookups took over 2s or failed while the *other* upstream was
+answering normally in the same minute - roughly 290 stalls a day of 2-10s,
+landing on whichever device asked. The trigger that got it noticed was
+two 4-second lookups at 23:00 on 2026-10-01, all on `8.8.8.8`, with pings
+to both resolvers normal throughout.
+
+The cost is double the outbound queries, which is nothing at this volume,
+and no privacy change - `load_balance` already spread every client's
+lookups across both providers. It does nothing for the other ~10,300 slow
+lookups in that window, where both upstreams stalled together: that is the
+WAN, not resolver choice.
+
 ## Startup order after a reboot
 
 For about a minute after the Pi boots, `*.home` resolves while external

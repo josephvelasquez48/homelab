@@ -37,7 +37,7 @@ dns:
     - 1.1.1.1
     - 8.8.8.8
   fallback_dns: []
-  upstream_mode: load_balance
+  upstream_mode: parallel
   fastest_timeout: 1s
   allowed_clients: []
   disallowed_clients: []
