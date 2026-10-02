@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0d0f12">
+  <title>Set your password · Camera</title>
+  <link rel="icon" href="/static/icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/static/app.css">
+  <script type="module" src="/static/invite.js"></script>
+</head>
+<body>
+  <main class="narrow">
+    <div class="brand">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg>
+      Camera
+    </div>
+
+    <div id="loading" class="card"><p class="muted">Checking your link…</p></div>
+
+    <div id="invalid" class="card" hidden>
+      <h1>This link doesn't work</h1>
+      <p class="lede" id="invalid-why"></p>
+      <a class="btn" href="/login">Go to sign in</a>
+    </div>
+
+    <form id="form" class="card" novalidate hidden>
+      <h1 id="title">Welcome</h1>
+      <p class="lede" id="lede"></p>
+      <input type="text" id="username" autocomplete="username" hidden readonly>
+      <label for="password">Password</label>
+      <input id="password" type="password" autocomplete="new-password" required minlength="10">
+      <label for="confirm">Type it again</label>
+      <input id="confirm" type="password" autocomplete="new-password" required>
+      <button id="submit" class="btn primary block" type="submit">Set password and sign in</button>
+      <p id="msg" class="msg" hidden></p>
+    </form>
+  </main>
+</body>
+</html>

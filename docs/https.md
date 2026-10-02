@@ -9,6 +9,7 @@ keeps `--insecure` internally).
 | Hostnames | HTTPS |
 |---|---|
 | `api.home`, `ai.home`, `dashboard.home`, `grafana.home`, `argocd.home`, `chat.home`, `wikipedia.home`, `alerts.home`, `prometheus.home` | **Valid** - all nine verified with certificate checking on, from the Pi and from Windows |
+| `cam.home` | Added 2026-10-02 with the webcam viewer ([cam.md](cam.md)); the certificate was reissued for it |
 | `phone.home:8443` | Valid - its own certificate ([phone.md](phone.md)) |
 | AdGuard's UI (`:3000`), Ollama on the desktop | Plain HTTP - outside Traefik |
 
@@ -40,7 +41,7 @@ Import-Certificate -FilePath D:\homelab\certificates\homelab-ca.crt -CertStoreLo
 certificate as a list of namespace-local Secrets, applied with the normal
 SOPS process ([secrets.md](secrets.md)).
 
-## Renewing (manual - expires 2027-09-28)
+## Renewing (manual - expires 2027-10-02)
 
 There's no cert-manager and no expiry alert yet. Renew with the *same* CA,
 so clients don't need a new root:

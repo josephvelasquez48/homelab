@@ -8,8 +8,74 @@ Built in three phases, each working on its own before the next:
 | Phase | What | Status |
 |---|---|---|
 | 1 | The camera as a WebRTC stream on the Mac | **Done** 2026-10-02 |
-| 2 | `cam.home`: a web app in the cluster with per-person accounts and the viewer page | Next |
-| 3 | WireGuard on the Pi, for watching away from home | Planned |
+| 2 | `cam.home`: a web app in the cluster with per-person accounts and the viewer page | **Done** 2026-10-02 |
+| 3 | WireGuard on the Pi, for watching away from home | Next |
+
+## The web app (phase 2)
+
+`https://cam.home` - FastAPI in the `cam` namespace, pinned to the Pi.
+Pages: the live view, sign-in, invite, account (change password), and
+People for admins.
+
+```
+browser ──HTTPS──► Traefik ──► cam (Pi): session check, then relays the WebRTC
+   │                              offer to MediaMTX with the cam-app login
+   │                                         │
+   └────────── video, UDP 8189 ◄─────────────┘  Mac (direct, not via the cluster)
+```
+
+- **The app is the gate, not the pipe.** It handles accounts and the WebRTC
+  handshake (WHEP); the picture goes straight from the Mac to the browser.
+  So it costs nothing while people watch, and the stream login never
+  reaches a browser.
+- **Accounts by invite.** An admin names someone on the People page and
+  gets a one-time link (7 days) to send them; they choose their own
+  password. Reset password makes the same kind of link for an existing
+  account and signs them out everywhere. Turn off and Delete sign them out
+  at once.
+- **Sessions** are 30-day cookies (HttpOnly, Secure, SameSite=Strict),
+  extended while in use; tokens are stored hashed. Passwords are argon2.
+  Five failed sign-ins in 15 minutes locks that name or address out.
+- **Viewing log:** every stream start is recorded (who, when, from where)
+  and shown on the People page.
+- **The live view** shows resolution, frame rate and buffer delay, saves
+  snapshots, goes full screen, retries on its own if the Mac drops, and
+  stops after 30 s in a background tab so the camera can turn off.
+- **Locked down:** a strict Content-Security-Policy (no inline script),
+  every state change needs a same-origin header, no-referrer so invite
+  tokens never leak.
+
+| What | Where |
+|---|---|
+| App | `apps/cam/app/` (`main.py` routes, `store.py` Postgres, `static/` pages) |
+| Manifests | `kubernetes/cam/cam.yaml`, Argo CD app `kubernetes/argocd/apps/cam.yaml` |
+| Database | `cam` database, owned by the `cam` role, in the shared Postgres |
+| Secrets | `kubernetes/secrets/cam-secrets.enc.yaml`: `DATABASE_URL`, `MEDIAMTX_PASSWORD` |
+| CI | `.github/workflows/ci-cam.yml` (not triggered by `apps/cam/mac/`) |
+| Name | `cam.home` in `docker/dns/coredns/home.hosts` and the certificate |
+
+### Running it
+
+```sh
+# The first admin - every other invite is made on the People page:
+kubectl -n cam exec deploy/cam -- python -m app.cli invite <name> --admin
+
+# Look at the pages locally, no database or camera (test logins in the file):
+cd apps/cam && uv run python -m tests.devserver
+```
+
+### How it was set up
+
+The `cam` role and database were created by hand in the running Postgres
+(`CREATE ROLE cam LOGIN PASSWORD ...; CREATE DATABASE cam OWNER cam;
+REVOKE ALL ON DATABASE cam FROM PUBLIC;`), the password going straight into
+`cam-secrets.enc.yaml` without being printed. The app creates its tables
+on start. Postgres's NetworkPolicy admits `app=cam` pods from the `cam`
+namespace.
+
+`MEDIAMTX_PASSWORD` is the Mac's `viewer-password`. If that file is ever
+recreated, update the Secret to match, apply it, and restart the
+Deployment.
 
 ## How it works (phase 1)
 
@@ -34,9 +100,9 @@ session.
   otherwise.
 - **Only the cam app can watch.** Reading the stream needs the `cam-app`
   login, accepted only from the two cluster nodes' addresses (pod traffic
-  leaves from them) and from the Mac itself. Browsers will reach it through
-  the app in phase 2, which does the WebRTC signaling for them; only the
-  video then flows directly between browser and Mac.
+  leaves from them) and from the Mac itself. Browsers reach it through the
+  web app, which does the WebRTC signaling for them; only the video then
+  flows directly between browser and Mac.
 - **Publishing is localhost only**, and RTSP listens only on 127.0.0.1.
 
 | Where | What | Code |
@@ -95,6 +161,12 @@ A healthy start logs
 ## Limits
 
 - **Only while the Mac is on and logged in**, like the backups and m1-node.
+- **The MacBook's address isn't reserved on the router** (only its VM's
+  is). If its lease changes, the app shows "camera offline" until
+  `MEDIAMTX_URL` in `kubernetes/cam/cam.yaml` is updated. Add a DHCP
+  reservation for it.
+- **Phones must trust the homelab CA** to open `https://cam.home` without a
+  warning ([https.md](https.md)) - not done on any phone yet.
 - **Video only.** The C922's own microphone doesn't show up as an audio
   device on this Mac; audio would need looking into first.
 - **Not yet tried in the dark.** If the camera slows down in low light,

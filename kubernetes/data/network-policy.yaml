@@ -25,6 +25,14 @@ spec:
           podSelector:
             matchLabels:
               batch.kubernetes.io/job-name: api-migrate
+        # The webcam viewer's accounts (kubernetes/cam). Its own database
+        # and role, so it can't read the api's tables or they its.
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: cam
+          podSelector:
+            matchLabels:
+              app: cam
       ports:
         - protocol: TCP
           port: 5432

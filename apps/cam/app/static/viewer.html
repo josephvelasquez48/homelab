@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0d0f12">
+  <title>Camera</title>
+  <link rel="icon" href="/static/icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/static/app.css">
+  <script type="module" src="/static/viewer.js"></script>
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="/">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg>
+      <span class="brand-name">Camera</span>
+    </a>
+    <span id="status" class="pill connecting">Connecting</span>
+    <nav></nav>
+  </header>
+
+  <main class="viewer">
+    <div id="stage" class="stage">
+      <video id="video" autoplay muted playsinline></video>
+      <div id="flash" class="flash"></div>
+
+      <div id="overlay" class="overlay">
+        <div id="spinner" class="spinner"></div>
+        <p id="overlay-title">Connecting to the camera…</p>
+        <p id="overlay-sub" class="sub" hidden></p>
+        <button id="retry" class="btn" type="button" hidden>Try again now</button>
+      </div>
+
+      <div class="controls">
+        <span id="stats" class="stats"></span>
+        <button id="snapshot" class="icon-btn" type="button" title="Save a snapshot" aria-label="Save a snapshot">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+        </button>
+        <button id="fullscreen" class="icon-btn" type="button" title="Full screen" aria-label="Full screen">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/></svg>
+        </button>
+      </div>
+    </div>
+
+    <div class="below">
+      <span>Logitech C922 · MacBook</span>
+      <span id="note">The camera turns off when nobody is watching.</span>
+    </div>
+  </main>
+</body>
+</html>

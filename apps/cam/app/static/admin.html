@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0d0f12">
+  <title>People · Camera</title>
+  <link rel="icon" href="/static/icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/static/app.css">
+  <script type="module" src="/static/admin.js"></script>
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="/">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg>
+      <span class="brand-name">Camera</span>
+    </a>
+    <nav></nav>
+  </header>
+
+  <main class="page">
+    <form id="invite-form" class="card" novalidate>
+      <h2>Invite someone</h2>
+      <p class="lede">You'll get a link to send them. They open it and choose their own password. It works once and expires in 7 days.</p>
+      <div class="row">
+        <div class="grow">
+          <label for="invite-name">Their name (what they'll sign in with)</label>
+          <input id="invite-name" type="text" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="e.g. maria">
+        </div>
+        <button class="btn primary" type="submit">Create link</button>
+      </div>
+      <label class="check"><input id="invite-admin" type="checkbox"> Can manage people too (admin)</label>
+      <p id="invite-msg" class="msg" hidden></p>
+      <div id="invite-result" hidden>
+        <div class="linkbox">
+          <code id="invite-url"></code>
+          <button id="invite-copy" class="btn small" type="button">Copy</button>
+        </div>
+      </div>
+    </form>
+
+    <section class="card">
+      <h2>People</h2>
+      <table>
+        <thead><tr><th>Name</th><th>Last signed in</th><th></th></tr></thead>
+        <tbody id="users"></tbody>
+      </table>
+      <p id="users-msg" class="msg" hidden></p>
+    </section>
+
+    <section class="card" id="invites-card" hidden>
+      <h2>Unused invite links</h2>
+      <table>
+        <thead><tr><th>For</th><th>Expires</th><th></th></tr></thead>
+        <tbody id="invites"></tbody>
+      </table>
+    </section>
+
+    <section class="card">
+      <h2>Recent viewing</h2>
+      <table>
+        <thead><tr><th>Who</th><th>When</th><th>From</th></tr></thead>
+        <tbody id="views"></tbody>
+      </table>
+    </section>
+  </main>
+</body>
+</html>

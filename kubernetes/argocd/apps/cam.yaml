@@ -1,0 +1,18 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: cam
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: git@github.com:josephvelasquez48/homelab.git
+    targetRevision: main
+    path: kubernetes/cam
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: cam
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true

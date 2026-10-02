@@ -19,7 +19,7 @@ manifests in a public repo. They're now encrypted with SOPS + age in
 
 Encrypted secrets: `postgres-credentials`, `api-secrets`, `grafana-admin`,
 `chat-secrets`, `homelab-tls`, `alertmanager-config`,
-`adguard-exporter`.
+`adguard-exporter`, `cam-secrets`.
 
 ## The ordering rule
 
