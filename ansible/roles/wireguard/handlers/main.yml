@@ -1,0 +1,7 @@
+---
+# A restart drops every connected phone for a second; they reconnect by
+# themselves on their next packet.
+- name: Restart wireguard
+  ansible.builtin.systemd:
+    name: "wg-quick@{{ wireguard_interface }}"
+    state: restarted

@@ -5,7 +5,12 @@
   roles:
     - common # cgroup fix + reboot - must run before docker/k3s
     - docker
-    - firewall
+    - role: firewall
+      tags: [firewall, vpn]
+    # The home VPN, for the camera away from home (docs/vpn.md). Run with
+    # its ufw rules: ansible-playbook playbooks/site.yml --tags vpn
+    - role: wireguard
+      tags: [wireguard, vpn]
     - role: k3s
       tags: k3s # run alone: ansible-playbook playbooks/site.yml --tags k3s
     - dns_monitoring

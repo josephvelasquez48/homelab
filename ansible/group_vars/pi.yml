@@ -1,0 +1,13 @@
+---
+# Shared by roles/wireguard (the interface) and roles/firewall (its ufw
+# rules), so the two can't drift apart. docs/vpn.md.
+
+# Not 51820: that's flannel's. K3s's wireguard-native backend already
+# listens there for node-to-node pod traffic (flannel-wg).
+wireguard_interface: wg0
+wireguard_port: 51821
+wireguard_network: 10.8.0.0/24
+
+# The MacBook, where the webcam's MediaMTX sends video from (docs/cam.md).
+# No DHCP reservation yet - if its address changes, so must this.
+cam_mac_ip: 192.168.1.180

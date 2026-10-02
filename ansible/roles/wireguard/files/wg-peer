@@ -1,0 +1,114 @@
+#!/bin/bash
+# wg-peer: the phones and laptops that can use the home VPN - docs/vpn.md.
+#
+#   wg-peer add <name> [--text]   new device: shows a QR code for the
+#                                 WireGuard app (--text: the config as
+#                                 text instead, for a laptop)
+#   wg-peer list                  devices, addresses, last seen
+#   wg-peer remove <name>         revoke a device, at once
+#
+# A new device's private key goes into the QR code and nowhere else - it
+# isn't stored on the Pi. To set a device up again, remove it and add it.
+set -euo pipefail
+
+[ "$(id -u)" -eq 0 ] || exec sudo "$0" "$@"
+
+# shellcheck source=/dev/null
+source /etc/wireguard/client.env
+PEERS=/etc/wireguard/peers.conf
+base=${WG_NETWORK%/*}          # 10.8.0.0
+prefix=${base%.*}              # 10.8.0
+
+die() { echo "wg-peer: $*" >&2; exit 1; }
+
+usage() {
+    sed -n '2,11s/^# \{0,1\}//p' "$0"
+    exit 2
+}
+
+# Whether a line is the "# name: <name> (added ...)" header for exactly
+# <name> - not for a longer name that starts with it.
+IS_HEADER='index($0, n) == 1 && (length($0) == length(n) || substr($0, length(n) + 1, 1) == " ")'
+
+peer_key() {  # the public key under <name>'s header
+    awk -v n="# name: $1" "$IS_HEADER"' {found=1} found && /^PublicKey = / {print $3; exit}' "$PEERS"
+}
+
+cmd_add() {
+    local name=${1:-} mode=${2:-qr}
+    [[ $name =~ ^[a-z0-9][a-z0-9-]{0,30}$ ]] || die "name: lowercase letters, numbers and dashes, e.g. joseph-iphone"
+    [ -z "$(peer_key "$name")" ] || die "$name already exists - 'wg-peer remove $name' first to set it up again"
+
+    local used n=""
+    used=$(grep -oE "^AllowedIPs = ${prefix//./\\.}\.[0-9]+" "$PEERS" | grep -oE '[0-9]+$' || true)
+    for i in $(seq 2 254); do
+        grep -qx "$i" <<<"$used" || { n=$i; break; }
+    done
+    [ -n "$n" ] || die "no free addresses left in $WG_NETWORK"
+
+    local priv pub psk server_pub
+    priv=$(wg genkey)
+    pub=$(wg pubkey <<<"$priv")
+    psk=$(wg genpsk)
+    server_pub=$(wg pubkey </etc/wireguard/server.key)
+
+    printf '\n# name: %s (added %s)\n[Peer]\nPublicKey = %s\nPresharedKey = %s\nAllowedIPs = %s.%s/32\n' \
+        "$name" "$(date +%F)" "$pub" "$psk" "$prefix" "$n" >>"$PEERS"
+    # Live as well as on file, so it works now without a restart that
+    # would drop everyone else.
+    wg set "$WG_INTERFACE" peer "$pub" preshared-key <(echo "$psk") allowed-ips "$prefix.$n/32"
+
+    local conf
+    conf=$(printf '[Interface]\nPrivateKey = %s\nAddress = %s.%s/32\nDNS = %s\n\n[Peer]\nPublicKey = %s\nPresharedKey = %s\nEndpoint = %s\nAllowedIPs = %s\nPersistentKeepalive = 25\n' \
+        "$priv" "$prefix" "$n" "$WG_CLIENT_DNS" "$server_pub" "$psk" "$WG_ENDPOINT" "$WG_CLIENT_ALLOWED_IPS")
+    unset priv
+
+    echo "Added $name as $prefix.$n."
+    if [ "$mode" = "--text" ]; then
+        echo "Save this as $name.conf and import it into WireGuard. It isn't kept anywhere:"
+        echo
+        echo "$conf"
+    else
+        echo "In the WireGuard app: + > Create from QR code. This QR code isn't kept anywhere:"
+        echo
+        qrencode -t ansiutf8 <<<"$conf"
+    fi
+}
+
+cmd_list() {
+    local now
+    now=$(date +%s)
+    printf '%-24s %-12s %s\n' NAME ADDRESS "LAST SEEN"
+    awk '/^# name: / {name=$3} /^PublicKey = / {key=$3} /^AllowedIPs = / {print name, key, $3}' "$PEERS" |
+        while read -r name key addr; do
+            local hs seen
+            hs=$(wg show "$WG_INTERFACE" latest-handshakes | awk -v k="$key" '$1 == k {print $2}')
+            if [ -z "$hs" ] || [ "$hs" = 0 ]; then seen="never"
+            else seen="$(( (now - hs) / 60 )) min ago"; fi
+            printf '%-24s %-12s %s\n' "$name" "${addr%/32}" "$seen"
+        done
+}
+
+cmd_remove() {
+    local name=${1:-} key
+    [ -n "$name" ] || usage
+    key=$(peer_key "$name")
+    [ -n "$key" ] || die "no device named $name"
+    wg set "$WG_INTERFACE" peer "$key" remove
+    # Drop its block: from its "# name:" line up to the next one.
+    local tmp
+    tmp=$(mktemp /etc/wireguard/.peers.XXXXXX)
+    awk -v n="# name: $name" "$IS_HEADER"' {skip=1; next}
+        /^# name: / {skip=0}
+        !skip' "$PEERS" >"$tmp"
+    chmod 600 "$tmp"
+    mv "$tmp" "$PEERS"
+    echo "Removed $name - it can't connect any more."
+}
+
+case "${1:-}" in
+    add) shift; cmd_add "$@" ;;
+    list) cmd_list ;;
+    remove) shift; cmd_remove "$@" ;;
+    *) usage ;;
+esac

@@ -1,0 +1,54 @@
+---
+# WireGuard on the Pi, for watching the camera away from home - docs/vpn.md.
+# The firewall role holds the matching ufw rules.
+
+- name: Install WireGuard and qrencode
+  ansible.builtin.apt:
+    name: [wireguard-tools, qrencode]
+    state: present
+
+- name: Ensure /etc/wireguard is private
+  ansible.builtin.file:
+    path: /etc/wireguard
+    state: directory
+    mode: "0700"
+
+# Generated here once and never copied anywhere: losing it only means
+# re-adding the phones, and that beats a key in git or in a backup.
+- name: Generate the server key
+  ansible.builtin.shell: umask 077 && wg genkey > /etc/wireguard/server.key
+  args:
+    creates: /etc/wireguard/server.key
+
+# Created empty once; after that only wg-peer writes it (force: false).
+- name: Ensure the peers file exists
+  ansible.builtin.copy:
+    dest: /etc/wireguard/peers.conf
+    content: "# Phones - managed by wg-peer (docs/vpn.md). One [Peer] per phone.\n"
+    force: false
+    mode: "0600"
+
+- name: Write the interface config
+  ansible.builtin.template:
+    src: wg0.conf.j2
+    dest: "/etc/wireguard/{{ wireguard_interface }}.conf"
+    mode: "0600"
+  notify: Restart wireguard
+
+- name: Write the settings wg-peer puts in phone configs
+  ansible.builtin.template:
+    src: client.env.j2
+    dest: /etc/wireguard/client.env
+    mode: "0600"
+
+- name: Install wg-peer
+  ansible.builtin.copy:
+    src: wg-peer
+    dest: /usr/local/bin/wg-peer
+    mode: "0755"
+
+- name: Start WireGuard, and at boot
+  ansible.builtin.systemd:
+    name: "wg-quick@{{ wireguard_interface }}"
+    enabled: true
+    state: started
