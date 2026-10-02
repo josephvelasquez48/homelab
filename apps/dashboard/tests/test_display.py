@@ -256,3 +256,36 @@ def test_backup_and_mac_status():
     stale = display.services([], values(backup_age_h=40, backup_exit=0, backup_readable=1), "up", "up")
     assert stale["backup"] == "down"
     assert display.services([], values(), "up", "up")["backup"] == "unknown"
+
+
+def test_dns_probe_times_out_instead_of_hanging():
+    """The probe must give up on its own timeout - under uvloop the old
+    create_datagram_endpoint version never returned, freezing /api/display."""
+    import asyncio, time
+    start = time.monotonic()
+    # 192.0.2.1 (TEST-NET-1) never answers.
+    assert asyncio.run(display.probe_dns("192.0.2.1", timeout=0.3)) == "down"
+    assert time.monotonic() - start < 2
+
+
+def test_one_stuck_source_does_not_freeze_the_display(monkeypatch):
+    """Any source that hangs anyway costs only its own reading."""
+    import asyncio
+    monkeypatch.setattr(display, "SOURCE_DEADLINE_S", 0.2)
+
+    async def forever(*a, **k):
+        await asyncio.sleep(3600)
+
+    monkeypatch.setattr(display, "probe_dns", forever)
+    monkeypatch.setattr(display, "_queries", forever)
+    monkeypatch.setattr(display, "list_pods", AsyncMock(return_value=[]))
+    monkeypatch.setattr(display, "pod_usage", AsyncMock(return_value={}))
+    monkeypatch.setattr(display, "_top_blocked", AsyncMock(return_value=None))
+    monkeypatch.setattr(display, "probe_tcp", AsyncMock(return_value="up"))
+    monkeypatch.setattr(display, "weather", AsyncMock(return_value=None))
+
+    async def none():
+        return []
+
+    state = asyncio.run(display.gather(None, None, none(), none(), none()))
+    assert state["stats"]["pi_cpu"] is None and state["stats"]["pods_total"] == 0

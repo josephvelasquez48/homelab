@@ -19,6 +19,7 @@ works because this pod is pinned to the Pi: same-node pod traffic to the
 node's IP isn't filtered by ufw (see kubernetes/monitoring/adguard-exporter.yaml).
 """
 import asyncio
+import socket
 import struct
 import time
 
@@ -229,28 +230,33 @@ def dns_answered(response: bytes, qid: int = 0x5A5A) -> bool:
     return rid == qid and flags & 0x8000 and flags & 0x000F == 0 and answers > 0
 
 
-class _DnsProbe(asyncio.DatagramProtocol):
-    def __init__(self, done: asyncio.Future):
-        self.done = done
-
-    def datagram_received(self, data, addr):
-        if not self.done.done():
-            self.done.set_result(data)
+def _dns_probe_blocking(host: str, name: str, timeout: float) -> str:
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        sock.settimeout(timeout)
+        sock.sendto(dns_query(name), (host, 53))
+        return "up" if dns_answered(sock.recv(512)) else "down"
+    except OSError:
+        return "down"
+    finally:
+        sock.close()
 
 
 async def probe_dns(host: str, name: str = "dashboard.home", timeout: float = 2.0) -> str:
-    loop = asyncio.get_running_loop()
-    done = loop.create_future()
-    transport = None
+    """Does the Pi's resolver answer? A plain socket with its own timeout, in a thread.
+
+    This used to be loop.create_datagram_endpoint() with the reply awaited
+    under wait_for. Under uvicorn's uvloop that endpoint stopped coming
+    back after the first poll (2026-10-02, after a network blip on the Pi):
+    the await sat outside the timeout, gather() waited on it forever, and
+    every /api/display after the first hung - the display froze with its
+    last state, dead fish and blank stats. A blocking socket's timeout
+    can't be skipped like that.
+    """
     try:
-        transport, _ = await loop.create_datagram_endpoint(lambda: _DnsProbe(done), remote_addr=(host, 53))
-        transport.sendto(dns_query(name))
-        return "up" if dns_answered(await asyncio.wait_for(done, timeout)) else "down"
+        return await asyncio.wait_for(asyncio.to_thread(_dns_probe_blocking, host, name, timeout), timeout + 1)
     except Exception:
         return "down"
-    finally:
-        if transport:
-            transport.close()
 
 
 async def probe_tcp(host: str, port: int, timeout: float = 2.0) -> str:
@@ -444,23 +450,38 @@ def events(v: dict, argo: list[dict], alerts: list[dict] | None, nodes: list[dic
     return out
 
 
+# Longest any one source may take. Each already has its own timeout; this is
+# the backstop, so a source that hangs anyway costs the display that one
+# reading instead of freezing it (see probe_dns).
+SOURCE_DEADLINE_S = 8.0
+
+
+async def _bounded(aw):
+    return await asyncio.wait_for(aw, SOURCE_DEADLINE_S)
+
+
 async def gather(k8s_client: httpx.AsyncClient, http: httpx.AsyncClient, argo_task, alerts_task, nodes_task) -> dict:
     (pods, usage, rates, values, top_blocked, dns, rustdesk, wx, argo, alerts, nodes) = await asyncio.gather(
-        list_pods(k8s_client),
-        pod_usage(k8s_client),
-        _queries(http, RATE_QUERIES),
-        _queries(http, VALUE_QUERIES),
-        _top_blocked(http),
-        probe_dns(HOST_IP),
-        probe_tcp(HOST_IP, 21116),
-        weather(http),
-        argo_task,
-        alerts_task,
-        nodes_task,
+        *(_bounded(aw) for aw in (
+            list_pods(k8s_client),
+            pod_usage(k8s_client),
+            _queries(http, RATE_QUERIES),
+            _queries(http, VALUE_QUERIES),
+            _top_blocked(http),
+            probe_dns(HOST_IP),
+            probe_tcp(HOST_IP, 21116),
+            weather(http),
+            argo_task,
+            alerts_task,
+            nodes_task,
+        )),
         return_exceptions=True,
     )
     pods = [] if isinstance(pods, BaseException) else pods
     usage = {} if isinstance(usage, BaseException) else usage
+    # Unknown, not zero, if Prometheus didn't answer in time.
+    rates = {k: None for k in RATE_QUERIES} if isinstance(rates, BaseException) else rates
+    values = {k: None for k in VALUE_QUERIES} if isinstance(values, BaseException) else values
     for p in pods:  # no metrics yet (just started, or metrics-server down): None
         u = usage.get((p["namespace"], p["name"]), {})
         p["cpu_m"], p["mem_bytes"] = u.get("cpu_m"), u.get("mem_bytes")
