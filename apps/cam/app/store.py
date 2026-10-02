@@ -1,11 +1,14 @@
-"""Accounts, sessions, invites and the viewing log, in Postgres.
+"""Accounts, passkeys, sessions, invites and the viewing log, in Postgres.
 
 The schema is created at startup with IF NOT EXISTS rather than migrated:
-four small tables in their own database, owned by their own role. If it
-ever needs an ALTER, that's the point to bring in Alembic like the api.
+a few small tables in their own database, owned by their own role. Small
+additive changes stay idempotent statements here (the passkey switch added
+a column and dropped one); anything more involved is the point to bring in
+Alembic like the api.
 
 Tokens (sessions and invites) are stored as SHA-256 hashes, so a read of
-the database - or of a backup of it - can't be replayed as a login.
+the database - or of a backup of it - can't be replayed as a login. Passkeys
+store only public keys: nothing here can sign in as anyone.
 """
 from dataclasses import dataclass
 import datetime
@@ -18,11 +21,24 @@ SCHEMA = """
 CREATE TABLE IF NOT EXISTS users (
     id            bigserial PRIMARY KEY,
     username      text NOT NULL UNIQUE,
-    password_hash text,
     is_admin      boolean NOT NULL DEFAULT false,
     disabled      boolean NOT NULL DEFAULT false,
     created_at    timestamptz NOT NULL DEFAULT now(),
     last_seen     timestamptz
+);
+-- Passkeys replaced passwords on 2026-10-02.
+ALTER TABLE users DROP COLUMN IF EXISTS password_hash;
+-- The WebAuthn user handle: random, so it says nothing about the person.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS webauthn_id bytea UNIQUE;
+CREATE TABLE IF NOT EXISTS passkeys (
+    id          bytea PRIMARY KEY,
+    user_id     bigint NOT NULL REFERENCES users ON DELETE CASCADE,
+    public_key  bytea NOT NULL,
+    sign_count  bigint NOT NULL DEFAULT 0,
+    name        text NOT NULL,
+    backed_up   boolean NOT NULL DEFAULT false,
+    created_at  timestamptz NOT NULL DEFAULT now(),
+    last_used   timestamptz
 );
 CREATE TABLE IF NOT EXISTS sessions (
     token_hash bytea PRIMARY KEY,
@@ -69,7 +85,8 @@ class User:
     disabled: bool
     created_at: datetime.datetime
     last_seen: datetime.datetime | None
-    password_hash: str | None = None
+    webauthn_id: bytes | None = None
+    passkey_count: int = 0
 
     def public(self) -> dict:
         return {
@@ -79,6 +96,29 @@ class User:
             "disabled": self.disabled,
             "created_at": self.created_at.isoformat(),
             "last_seen": self.last_seen.isoformat() if self.last_seen else None,
+            "passkeys": self.passkey_count,
+        }
+
+
+@dataclass
+class Passkey:
+    id: bytes
+    user_id: int
+    public_key: bytes
+    sign_count: int
+    name: str
+    backed_up: bool
+    created_at: datetime.datetime
+    last_used: datetime.datetime | None
+
+    def public(self) -> dict:
+        from webauthn.helpers import bytes_to_base64url
+        return {
+            "id": bytes_to_base64url(self.id),
+            "name": self.name,
+            "synced": self.backed_up,
+            "created_at": self.created_at.isoformat(),
+            "last_used": self.last_used.isoformat() if self.last_used else None,
         }
 
 
@@ -100,7 +140,8 @@ class Invite:
         }
 
 
-_USER_COLS = "id, username, is_admin, disabled, created_at, last_seen, password_hash"
+_USER_COLS = "u.id, u.username, u.is_admin, u.disabled, u.created_at, u.last_seen, u.webauthn_id"
+_PASSKEY_COLS = "id, user_id, public_key, sign_count, name, backed_up, created_at, last_used"
 
 
 class Store:
@@ -125,23 +166,18 @@ class Store:
 
     async def user_by_name(self, username: str) -> User | None:
         row = await self.pool.fetchrow(
-            f"SELECT {_USER_COLS} FROM users WHERE lower(username) = lower($1)", username)
+            f"SELECT {_USER_COLS} FROM users u WHERE lower(u.username) = lower($1)", username)
         return User(**row) if row else None
 
     async def user_by_id(self, user_id: int) -> User | None:
-        row = await self.pool.fetchrow(f"SELECT {_USER_COLS} FROM users WHERE id = $1", user_id)
+        row = await self.pool.fetchrow(f"SELECT {_USER_COLS} FROM users u WHERE u.id = $1", user_id)
         return User(**row) if row else None
 
     async def list_users(self) -> list[User]:
-        rows = await self.pool.fetch(f"SELECT {_USER_COLS} FROM users ORDER BY lower(username)")
+        rows = await self.pool.fetch(
+            f"SELECT {_USER_COLS}, count(p.id) AS passkey_count FROM users u "
+            "LEFT JOIN passkeys p ON p.user_id = u.id GROUP BY u.id ORDER BY lower(u.username)")
         return [User(**r) for r in rows]
-
-    async def count_active_admins(self) -> int:
-        return await self.pool.fetchval(
-            "SELECT count(*) FROM users WHERE is_admin AND NOT disabled AND password_hash IS NOT NULL")
-
-    async def set_password(self, user_id: int, password_hash: str) -> None:
-        await self.pool.execute("UPDATE users SET password_hash = $2 WHERE id = $1", user_id, password_hash)
 
     async def set_disabled(self, user_id: int, disabled: bool) -> None:
         async with self.pool.acquire() as conn, conn.transaction():
@@ -149,8 +185,55 @@ class Store:
             if disabled:
                 await conn.execute("DELETE FROM sessions WHERE user_id = $1", user_id)
 
+    async def set_webauthn_id(self, user_id: int, webauthn_id: bytes) -> bytes:
+        """Give an account its WebAuthn user handle, unless it already has one."""
+        return await self.pool.fetchval(
+            "UPDATE users SET webauthn_id = COALESCE(webauthn_id, $2) WHERE id = $1 RETURNING webauthn_id",
+            user_id, webauthn_id)
+
     async def delete_user(self, user_id: int) -> None:
         await self.pool.execute("DELETE FROM users WHERE id = $1", user_id)
+
+    # Passkeys
+
+    async def passkeys_for(self, user_id: int) -> list[Passkey]:
+        rows = await self.pool.fetch(
+            f"SELECT {_PASSKEY_COLS} FROM passkeys WHERE user_id = $1 ORDER BY created_at", user_id)
+        return [Passkey(**r) for r in rows]
+
+    async def passkey_with_user(self, credential_id: bytes) -> tuple[Passkey, User] | None:
+        """The passkey and its owner - unless the owner is turned off."""
+        row = await self.pool.fetchrow(f"SELECT {_PASSKEY_COLS} FROM passkeys WHERE id = $1", credential_id)
+        if not row:
+            return None
+        user = await self.user_by_id(row["user_id"])
+        if not user or user.disabled:
+            return None
+        return Passkey(**row), user
+
+    async def add_passkey(self, user_id: int, credential_id: bytes, public_key: bytes,
+                          sign_count: int, name: str, backed_up: bool) -> None:
+        await self.pool.execute(
+            "INSERT INTO passkeys (id, user_id, public_key, sign_count, name, backed_up) "
+            "VALUES ($1, $2, $3, $4, $5, $6)",
+            credential_id, user_id, public_key, sign_count, name, backed_up)
+
+    async def passkey_used(self, credential_id: bytes, sign_count: int) -> None:
+        await self.pool.execute(
+            "UPDATE passkeys SET sign_count = $2, last_used = now() WHERE id = $1", credential_id, sign_count)
+
+    async def delete_passkey(self, user_id: int, credential_id: bytes) -> bool:
+        """Remove one of a user's passkeys - never the last, which would lock them out."""
+        async with self.pool.acquire() as conn, conn.transaction():
+            # Lock the user, so two removals at once can't both see "2 left".
+            # (Postgres won't take FOR UPDATE on a count(*) itself.)
+            await conn.execute("SELECT 1 FROM users WHERE id = $1 FOR UPDATE", user_id)
+            count = await conn.fetchval("SELECT count(*) FROM passkeys WHERE user_id = $1", user_id)
+            if count <= 1:
+                return False
+            result = await conn.execute(
+                "DELETE FROM passkeys WHERE user_id = $1 AND id = $2", user_id, credential_id)
+            return result.endswith(" 1")
 
     # Sessions
 
@@ -168,9 +251,8 @@ class Store:
         Sliding: each use pushes expiry back out to `days`, but only once the
         session is past its first day, so a page load isn't a write.
         """
-        cols = ", ".join("u." + c for c in _USER_COLS.split(", "))
         row = await self.pool.fetchrow(
-            f"SELECT {cols}, s.expires_at AS session_expires FROM sessions s "
+            f"SELECT {_USER_COLS}, s.expires_at AS session_expires FROM sessions s "
             "JOIN users u ON u.id = s.user_id "
             "WHERE s.token_hash = $1 AND s.expires_at > now() AND NOT u.disabled",
             hash_token(token))
@@ -193,16 +275,16 @@ class Store:
             "DELETE FROM sessions WHERE user_id = $1 AND token_hash IS DISTINCT FROM $2",
             user_id, hash_token(keep_token) if keep_token else None)
 
-    # Invites - also how a password is reset: an invite for an existing name
+    # Invites - also how access is reset: an invite for an existing name
 
     async def create_invite(self, username: str, is_admin: bool, created_by: int | None,
-                            days: int) -> tuple[Invite, str]:
+                            hours: int) -> tuple[Invite, str]:
         token = new_token()
         row = await self.pool.fetchrow(
             "INSERT INTO invites (token_hash, username, is_admin, created_by, expires_at) "
             "VALUES ($1, $2, $3, $4, $5) "
             "RETURNING id, username, is_admin, created_at, expires_at",
-            hash_token(token), username, is_admin, created_by, now() + datetime.timedelta(days=days))
+            hash_token(token), username, is_admin, created_by, now() + datetime.timedelta(hours=hours))
         return Invite(**row), token
 
     async def invite_by_token(self, token: str) -> Invite | None:
@@ -220,11 +302,14 @@ class Store:
     async def delete_invite(self, invite_id: int) -> None:
         await self.pool.execute("DELETE FROM invites WHERE id = $1", invite_id)
 
-    async def accept_invite(self, token: str, password_hash: str) -> User | None:
-        """Create the account, or set a new password on an existing one.
+    async def accept_invite(self, token: str, webauthn_id: bytes, credential_id: bytes,
+                            public_key: bytes, sign_count: int, name: str, backed_up: bool) -> User | None:
+        """Create the account with its first passkey - or, for an existing name,
+        replace all its passkeys with this one.
 
-        One transaction, and the invite row is locked and deleted in it, so
-        a link opened twice at once still makes one account.
+        One transaction, with the invite deleted inside it, so a link opened
+        twice at once still makes one account. A reset revokes every old
+        passkey and session: whatever was lost or stolen stops working.
         """
         async with self.pool.acquire() as conn, conn.transaction():
             invite = await conn.fetchrow(
@@ -232,13 +317,18 @@ class Store:
                 "RETURNING username, is_admin", hash_token(token))
             if not invite:
                 return None
-            row = await conn.fetchrow(
-                "INSERT INTO users (username, password_hash, is_admin) VALUES ($1, $2, $3) "
-                "ON CONFLICT (username) DO UPDATE SET password_hash = EXCLUDED.password_hash "
-                f"RETURNING {_USER_COLS}",
-                invite["username"], password_hash, invite["is_admin"])
-            # A reset signs the old password out everywhere.
-            await conn.execute("DELETE FROM sessions WHERE user_id = $1", row["id"])
+            user_id = await conn.fetchval(
+                "INSERT INTO users (username, is_admin, webauthn_id) VALUES ($1, $2, $3) "
+                "ON CONFLICT (username) DO UPDATE SET webauthn_id = EXCLUDED.webauthn_id "
+                "RETURNING id",
+                invite["username"], invite["is_admin"], webauthn_id)
+            await conn.execute("DELETE FROM passkeys WHERE user_id = $1", user_id)
+            await conn.execute("DELETE FROM sessions WHERE user_id = $1", user_id)
+            await conn.execute(
+                "INSERT INTO passkeys (id, user_id, public_key, sign_count, name, backed_up) "
+                "VALUES ($1, $2, $3, $4, $5, $6)",
+                credential_id, user_id, public_key, sign_count, name, backed_up)
+            row = await conn.fetchrow(f"SELECT {_USER_COLS} FROM users u WHERE u.id = $1", user_id)
             return User(**row)
 
     # Viewing log

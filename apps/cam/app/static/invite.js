@@ -1,4 +1,4 @@
-import { api, showMessage } from "/static/common.js";
+import { api, createPasskey, passkeysSupported, showMessage } from "/static/common.js";
 
 const $ = (id) => document.getElementById(id);
 const token = location.pathname.split("/").pop();
@@ -6,13 +6,15 @@ const token = location.pathname.split("/").pop();
 async function load() {
   try {
     const info = await api(`/api/invite/${encodeURIComponent(token)}`);
-    $("title").textContent = info.reset ? "Choose a new password" : `Welcome, ${info.username}`;
+    $("title").textContent = info.reset ? `New passkey for ${info.username}` : `Welcome, ${info.username}`;
     $("lede").textContent = info.reset
-      ? `For ${info.username}. Signing in with the new password signs you out everywhere else.`
-      : `Choose a password for ${info.username}. You'll sign in with this name and password from now on.`;
-    $("username").value = info.username;  // so password managers save the right name
+      ? "Make a passkey on this device. Your old passkeys stop working, and you're signed out everywhere else."
+      : "Make a passkey on this device and you're in. You'll use it to sign in from now on.";
     $("form").hidden = false;
-    $("password").focus();
+    if (!passkeysSupported()) {
+      $("create").disabled = true;
+      showMessage($("msg"), "This browser can't make passkeys. Open the link in Safari, Chrome or Edge, up to date.");
+    }
   } catch (err) {
     $("invalid-why").textContent = err.message;
     $("invalid").hidden = false;
@@ -21,18 +23,18 @@ async function load() {
   }
 }
 
-$("form").addEventListener("submit", async (event) => {
-  event.preventDefault();
-  const password = $("password").value;
-  if (password.length < 10) return showMessage($("msg"), "Use at least 10 characters");
-  if (password !== $("confirm").value) return showMessage($("msg"), "The two passwords don't match");
-  $("submit").disabled = true;
+$("create").addEventListener("click", async () => {
+  showMessage($("msg"), "");
+  $("create").disabled = true;
   try {
-    await api(`/api/invite/${encodeURIComponent(token)}`, { method: "POST", body: { password } });
+    const path = `/api/invite/${encodeURIComponent(token)}`;
+    const options = await api(`${path}/options`, { method: "POST" });
+    const credential = await createPasskey(options);
+    await api(path, { method: "POST", body: credential });
     location.replace("/");
   } catch (err) {
     showMessage($("msg"), err.message);
-    $("submit").disabled = false;
+    $("create").disabled = false;
   }
 });
 

@@ -1,4 +1,4 @@
-import asyncio
+from tests.conftest import accept, new_authenticator, sign_in
 
 
 def test_only_admins_reach_admin(client, make_user):
@@ -12,9 +12,10 @@ def test_invite_makes_a_working_link(client, make_user):
     r = client.post("/api/admin/invites", json={"username": "Maria", "is_admin": False})
     assert r.status_code == 200
     url = r.json()["url"]
-    assert url.startswith("https://cam.home/invite/")
+    assert url.startswith("https://cam.example.test/invite/")
     token = url.rsplit("/", 1)[1]
     assert client.get(f"/api/invite/{token}").json()["username"] == "maria"
+    assert client.get("/api/admin/users").json()["invite_hours"] == 24
 
 
 def test_invite_refuses_bad_and_taken_names(client, make_user):
@@ -24,32 +25,32 @@ def test_invite_refuses_bad_and_taken_names(client, make_user):
     assert client.post("/api/admin/invites", json={"username": "admin"}).status_code == 409
 
 
-def test_reset_link_replaces_the_password_and_signs_out(app, client, make_user):
+def test_reset_revokes_old_passkeys_and_sessions(client, make_user):
     make_user("admin", is_admin=True)
     admin_cookie = client.cookies.get("cam_session")
     client.cookies.clear()
-    bob = make_user("bob", password="bobs old password")
+    bob, bobs_phone = make_user("bob")
     bob_cookie = client.cookies.get("cam_session")
 
     client.cookies.set("cam_session", admin_cookie)
-    r = client.post(f"/api/admin/users/{bob['id']}/reset")
-    token = r.json()["url"].rsplit("/", 1)[1]
+    token = client.post(f"/api/admin/users/{bob['id']}/reset").json()["url"].rsplit("/", 1)[1]
     assert client.get(f"/api/invite/{token}").json() == {"username": "bob", "reset": True}
 
     client.cookies.clear()
-    client.post(f"/api/invite/{token}", json={"password": "bobs new password"})
+    bobs_new_phone = new_authenticator()
+    assert accept(client, token, bobs_new_phone).status_code == 200
     client.cookies.set("cam_session", bob_cookie)
-    assert client.get("/api/me").status_code == 401          # old session gone
+    assert client.get("/api/me").status_code == 401           # old session gone
     client.cookies.clear()
-    assert client.post("/api/login", json={"username": "bob", "password": "bobs old password"}).status_code == 401
-    assert client.post("/api/login", json={"username": "bob", "password": "bobs new password"}).status_code == 200
+    assert sign_in(client, bobs_phone).status_code == 401      # lost phone's passkey dead
+    assert sign_in(client, bobs_new_phone).status_code == 200
 
 
-def test_turning_off_signs_out_and_blocks_login(client, make_user):
+def test_turning_off_signs_out_and_blocks_sign_in(client, make_user):
     make_user("admin", is_admin=True)
     admin_cookie = client.cookies.get("cam_session")
     client.cookies.clear()
-    bob = make_user("bob", password="bobs password!")
+    bob, bobs_phone = make_user("bob")
     bob_cookie = client.cookies.get("cam_session")
 
     client.cookies.set("cam_session", admin_cookie)
@@ -58,26 +59,30 @@ def test_turning_off_signs_out_and_blocks_login(client, make_user):
     client.cookies.set("cam_session", bob_cookie)
     assert client.get("/api/me").status_code == 401
     client.cookies.clear()
-    assert client.post("/api/login", json={"username": "bob", "password": "bobs password!"}).status_code == 401
+    assert sign_in(client, bobs_phone).status_code == 401
 
 
 def test_admins_cant_lock_themselves_out(client, make_user):
-    admin = make_user("admin", is_admin=True)
+    admin, _ = make_user("admin", is_admin=True)
     assert client.post(f"/api/admin/users/{admin['id']}/disable").status_code == 400
     assert client.delete(f"/api/admin/users/{admin['id']}").status_code == 400
 
 
-def test_delete_and_revoke(app, client, make_user):
+def test_delete_and_revoke(client, make_user):
     make_user("admin", is_admin=True)
     admin_cookie = client.cookies.get("cam_session")
     client.cookies.clear()
-    bob = make_user("bob")
+    bob, bobs_phone = make_user("bob")
     client.cookies.set("cam_session", admin_cookie)
 
     assert client.delete(f"/api/admin/users/{bob['id']}").status_code == 200
-    names = [u["username"] for u in client.get("/api/admin/users").json()["users"]]
-    assert names == ["admin"]
+    users = client.get("/api/admin/users").json()["users"]
+    assert [u["username"] for u in users] == ["admin"]
+    assert users[0]["passkeys"] == 1
+    client.cookies.clear()
+    assert sign_in(client, bobs_phone).status_code == 401      # deleting removed the passkey too
 
+    client.cookies.set("cam_session", admin_cookie)
     invite = client.post("/api/admin/invites", json={"username": "carol"}).json()
     assert client.delete(f"/api/admin/invites/{invite['invite']['id']}").status_code == 200
     token = invite["url"].rsplit("/", 1)[1]

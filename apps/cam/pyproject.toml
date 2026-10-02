@@ -8,7 +8,7 @@ dependencies = [
     "uvicorn[standard]>=0.32",
     "httpx>=0.28",
     "asyncpg>=0.30",
-    "argon2-cffi>=23.1",
+    "webauthn>=3.0",
 ]
 
 [dependency-groups]

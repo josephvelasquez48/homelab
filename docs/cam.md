@@ -14,7 +14,7 @@ Built in three phases, each working on its own before the next:
 ## The web app (phase 2)
 
 `https://cam.home` - FastAPI in the `cam` namespace, pinned to the Pi.
-Pages: the live view, sign-in, invite, account (change password), and
+Pages: the live view, sign-in, invite, account (your passkeys), and
 People for admins.
 
 ```
@@ -28,14 +28,25 @@ browser ──HTTPS──► Traefik ──► cam (Pi): session check, then rel
   handshake (WHEP); the picture goes straight from the Mac to the browser.
   So it costs nothing while people watch, and the stream login never
   reaches a browser.
-- **Accounts by invite.** An admin names someone on the People page and
-  gets a one-time link (7 days) to send them; they choose their own
-  password. Reset password makes the same kind of link for an existing
-  account and signs them out everywhere. Turn off and Delete sign them out
-  at once.
+- **Accounts by invite, signed in with passkeys** (since 2026-10-02; there
+  are no passwords). An admin names someone on the People page and gets a
+  one-time link (24 hours) to send them; they open it and make a passkey -
+  Face ID, fingerprint or device PIN, user verification required. Reset
+  access makes the same kind of link for an existing account: using it
+  replaces all their passkeys and signs them out everywhere, so a lost
+  phone stops working. Turn off and Delete sign them out at once.
+- **Passkeys belong to one address**, the public one (`RP_ID` from
+  `PUBLIC_URL`), so `cam.home` redirects there (308). A passkey made on
+  another site - a phishing copy - is refused by the browser and by the
+  server's origin check. The database stores only public keys.
 - **Sessions** are 30-day cookies (HttpOnly, Secure, SameSite=Strict),
-  extended while in use; tokens are stored hashed. Passwords are argon2.
-  Five failed sign-ins in 15 minutes locks that name or address out.
+  extended while in use; tokens are stored hashed. Sign-in failures are
+  throttled per address (20 in 15 minutes). There is deliberately no
+  per-name limit: the password version had one, which let anyone lock an
+  account out by failing in its name.
+- **Your passkeys** (Account page): see them, add one on a device that
+  doesn't sync with the first (an Android phone alongside an iPhone), or
+  remove one - never the last.
 - **Viewing log:** every stream start is recorded (who, when, from where)
   and shown on the People page.
 - **The live view** shows resolution, frame rate and buffer delay, saves
@@ -60,7 +71,8 @@ browser ──HTTPS──► Traefik ──► cam (Pi): session check, then rel
 # The first admin - every other invite is made on the People page:
 kubectl -n cam exec deploy/cam -- python -m app.cli invite <name> --admin
 
-# Look at the pages locally, no database or camera (test logins in the file):
+# Look at the pages locally, no database or camera; /dev/signin/demo signs
+# in without a passkey (that route exists only in the dev server):
 cd apps/cam && uv run python -m tests.devserver
 ```
 
@@ -167,7 +179,7 @@ too much to ask of someone you just want to show the camera. It was
 replaced the same day and removed (the firewall role deletes its old
 rules). Now an invite link is all
 anyone needs: **People → Invite someone → Copy → send it.** It opens on any
-phone, anywhere, and they choose a password and watch.
+phone, anywhere: they make a passkey and watch.
 
 ```
 anyone's browser ──HTTPS──► Tailscale's Funnel servers ──► Pi: tailscaled (userspace) ──► cam Service 10.43.187.92:8000
@@ -191,8 +203,9 @@ anyone's browser ◄──── video, UDP ──── router (forward UDP 818
   which uvicorn trusts), so login throttling is per visitor.
 - **It is on the internet.** A scanner requested the page within minutes of
   the certificate being issued - new certificates are public, and bots watch
-  for them. What stands in the way: invite-only accounts, argon2 passwords,
-  login throttling, no user enumeration, a strict CSP. The stream itself
+  for them. What stands in the way: invite-only accounts, passkeys (nothing
+  to guess or phish), 24-hour invite links, per-address throttling, a strict
+  CSP. The stream itself
   still needs the cam app's server-side login, accepted only from the nodes.
 
 ### One-time setup (done 2026-10-02)
@@ -212,6 +225,36 @@ anyone's browser ◄──── video, UDP ──── router (forward UDP 818
 tailscale funnel status                 # on the Pi: is it published?
 sudo tailscale funnel --https=443 off   # take the public page down at once
 ```
+
+## Hardening (2026-10-02)
+
+After the public link, from a review of what an attacker on the internet
+could reach:
+
+| Change | Why |
+|---|---|
+| Passkeys replaced passwords | Viewers' weak or reused passwords were the easiest way in; a passkey can't be guessed, reused or phished |
+| Invite links last 24 hours, not 7 days | An unused link is an account for whoever opens it first |
+| Throttling per address only | The per-name lockout let anyone lock an account out |
+| Tailscale policy: no grants | The tailnet holds only the Pi, which needs no tailnet access - Funnel isn't governed by grants. Edited by the account owner (below) |
+| UPnP off on the router | Nothing was using it (its table was empty); left on, any device could open ports to the internet |
+
+The tailnet policy (login.tailscale.com/admin/acls/file) keeps the Funnel
+permission and grants nothing else:
+
+```json
+{
+	"grants": [],
+	"nodeAttrs": [
+		{"target": ["autogroup:member"], "attr": ["funnel"]},
+	],
+	"ssh": [],
+}
+```
+
+Still worth doing: two-factor sign-in on the identity provider behind the
+Tailscale account (it controls the public page), and keeping MediaMTX - pinned
+in Homebrew - upgraded on purpose now and then (see Installing).
 
 ## Limits
 

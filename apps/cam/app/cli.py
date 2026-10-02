@@ -5,8 +5,9 @@ first. Run inside the pod, so it uses the pod's database login:
 
     kubectl -n cam exec deploy/cam -- python -m app.cli invite <name> --admin
 
-It prints a link; open it and choose your own password. The link works
-once, for INVITE_DAYS days.
+It prints a link; open it on your phone and make a passkey (Face ID,
+fingerprint or the device PIN). The link works once, for INVITE_HOURS hours.
+For an existing name it resets that person's access instead.
 """
 import argparse
 import asyncio
@@ -19,11 +20,11 @@ from app.store import Store
 async def invite(username: str, is_admin: bool) -> None:
     store = await Store.connect(config.DATABASE_URL)
     try:
-        _, token = await store.create_invite(username, is_admin, None, config.INVITE_DAYS)
+        _, token = await store.create_invite(username, is_admin, None, config.INVITE_HOURS)
     finally:
         await store.close()
     kind = "Admin invite" if is_admin else "Invite"
-    print(f"{kind} for {username}, valid {config.INVITE_DAYS} days:")
+    print(f"{kind} for {username}, valid {config.INVITE_HOURS} hours:")
     print(f"{config.PUBLIC_URL}/invite/{token}")
 
 
