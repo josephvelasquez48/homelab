@@ -59,9 +59,8 @@ the phone bridge (it needs the Bluetooth radio - [phone.md](phone.md)).
   `config.yaml` (`resolv-conf:` that file). **It has to be on every node**:
   CoreDNS isn't pinned, and it reads the upstream of whichever node it
   lands on - setting only the Pi looked done until CoreDNS restarted onto
-  m1-node. The Pi's half is in Ansible (`roles/k3s`, `--tags k3s`); m1-node
-  isn't in the inventory, so its half was written by hand, through a
-  `kubectl debug node` pod, followed by `systemctl restart k3s-agent`. Check:
+  m1-node. Both halves are Ansible's: `roles/k3s` (`--tags k3s`), with
+  `k3s_role: agent` for m1-node ([ansible.md](ansible.md)). Check:
   `dig @10.43.0.10 phone.home` answers `192.168.1.253`, and
   `dig @10.43.0.10 doubleclick.net` comes back blocked.
 - **ufw doesn't filter pod traffic.** K3s's iptables chains run before

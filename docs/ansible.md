@@ -21,6 +21,22 @@ cd ~/apps/homelab/ansible
 ansible-playbook playbooks/site.yml --check --diff -c local
 ```
 
+**Two hosts** in `inventory.ini`, both by IP: `pi5` (the Pi, as `joe`) and
+`m1-node` (the K3s worker, the Ubuntu VM on the Mac, as `ubuntu`). m1-node
+only gets the `k3s` role with `k3s_role: agent` - its pod DNS upstream; the
+VM and its join are by hand ([node-migration.md](node-migration.md)). Its
+`ubuntu` user accepts the Mac's keys, the Pi's `pi5-ansible` key (the Pi's
+`~/.ssh/config` uses it for `192.168.1.63` only - not the GitHub deploy
+key) and the desktop's.
+
+From the Pi, `-c local` is for the Pi alone; m1-node goes over SSH, so run
+them separately:
+
+```bash
+ansible-playbook playbooks/site.yml --tags k3s --limit pi --check --diff -c local
+ansible-playbook playbooks/site.yml --tags k3s --limit m1 --check --diff
+```
+
 Always `--check --diff` first. The two nodes run different Ansible
 versions (ansible-core 2.19 on the Pi from apt, 2.21 on the Mac from
 Homebrew), so check from the node you'll apply from. macOS has no
@@ -34,7 +50,7 @@ the Pi.
 | `common` | Memory cgroup kernel flag (plus reboot), the Pi's own DNS resolver, avahi's `enable-wide-area=no`; turns off what the desktop image ships but nothing uses - printing (CUPS, `cups-browsed`), the Bluetooth MPRIS proxy - and removes the retired blocklist timer |
 | `docker` | Docker Engine |
 | `firewall` | ufw: LAN-only rules for SSH, DNS, K3s; removes rules for retired IPv6 prefixes |
-| `k3s` | K3s server |
+| `k3s` | K3s server, and both nodes' pod DNS upstream (`k3s_role: agent` for m1-node) |
 | `dns_monitoring` | The repo checkout and the CoreDNS + AdGuard Compose stack |
 
 Each depends on the one before it: Docker needs the cgroup fix, K3s needs
