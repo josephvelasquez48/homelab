@@ -747,6 +747,10 @@ function stepFish(t, k) {
 // One halo image per colour, drawn once and then only stamped - a
 // shadowBlur on every fish every frame would cost the Pi far more.
 const GLOW = { day: 0, dawn: 0.35, dusk: 0.45, night: 1 };
+// Real bioluminescence is a cold blue-green (luciferin, ~480 nm): the glow
+// leans that way, keeping a tint of the namespace colour to tell fish
+// apart. Warnings (a puffed fish) keep their orange or red.
+const BIOLUME = "#3CF2D2";
 const halos = new Map();
 function halo(hex) {
   let img = halos.get(hex);
@@ -766,39 +770,104 @@ function halo(hex) {
   return img;
 }
 
-function drawFish(f, t, sc, off) {
+// Glowing plankton at night: specks that twinkle on their own and flash
+// when a fish swims through them, like a wake in dinoflagellates.
+const plankton = Array.from({ length: 40 }, () => ({ x: Math.random(), y: rand(SURF + 0.05, FLOOR - 0.04), z: Math.random(), ph: rand(0, 6), flash: 0 }));
+function drawPlankton(sc, t, dt, off) {
+  const night = (GLOW[sc.phase] || 0) * (1 - sc.k.grey * 0.4);
+  if (night <= 0.02) return;
+  ctx.globalCompositeOperation = "lighter";
+  ctx.fillStyle = "#8FFFE6";
+  for (const p of plankton) {
+    p.y -= 0.000015 * dt * 60; // drifting up, very slowly
+    if (p.y < SURF + 0.03) { p.y = FLOOR - 0.04; p.x = Math.random(); }
+    for (const f of fish.values()) {
+      if (Math.abs(f.x - p.x) < 0.025 && Math.abs(f.y - p.y) < 0.035) { p.flash = 1; break; }
+    }
+    p.flash = Math.max(0, p.flash - dt * 1.4);
+    const twinkle = 0.12 + 0.38 * Math.max(0, Math.sin(t / 900 + p.ph)) ** 4;
+    ctx.globalAlpha = Math.min(1, (twinkle + p.flash * 0.85) * night);
+    ctx.beginPath();
+    ctx.arc(p.x * W + off * (0.4 + 0.5 * p.z), p.y * H, 1 + p.z * 0.8 + p.flash * 1.6, 0, 7);
+    ctx.fill();
+  }
+  ctx.globalCompositeOperation = "source-over";
+  ctx.globalAlpha = 1;
+}
+
+// Where a fish is this frame and how it glows - worked out once, then used
+// by three passes in drawTank: every halo, then every body, then every
+// light organ. Drawn per fish instead, the canvas switched between normal
+// and additive ("lighter") blending ~140 times a frame, and each switch can
+// make the Pi's GPU flush its work; in passes it's 4.
+function placeFish(f, t, sc, off) {
   const p = f.pod, sick = isSick(p), pending = p.phase === "Pending";
   const share = memShare(p), puffed = !sick && !pending && share !== null && share >= PUFF_AT;
   // Farther fish are a little smaller and fade into the water.
-  const depth = 0.8 + 0.2 * f.z, fade = (1 - f.z) * 0.5 + sc.pal.dim * 0.25;
+  const depth = 0.8 + 0.2 * f.z;
   const s = f.s * W * 0.021 * depth;
-  S = s;
   const X = f.x * W + off * (0.45 + 0.5 * f.z), Y = f.y * H + (sick ? 0 : Math.sin(t / 900 + f.ph) * H * 0.006);
   f.sx = X; f.sy = Y; f.sr = s; // for taps and tags
   const base = sick || pending ? "#B4B2A9" : puffed ? (share >= 0.95 ? "#E24B4A" : "#EF9F27") : NS_COLOR[p.namespace] || "#D3D1C7";
-  const c = {
-    body: mix(base, sc.haze, fade),
-    back: mix(mixHex(base, "#0B1A30", 0.35), sc.haze, fade),
-    belly: mix(mixHex(base, "#FFFFFF", 0.4), sc.haze, fade),
-    fin: mix(mixHex(base, "#FFFFFF", 0.2), sc.haze, fade + 0.1),
-    band: mix("#F4F3EE", sc.haze, fade),
-  };
   // A sick or pending fish doesn't glow: the healthy ones stand out.
   // Nearer fish (higher z) glow more; far ones fade into the water anyway.
   const glow = (GLOW[sc.phase] || 0) * (1 - sc.k.grey * 0.4) * (0.65 + 0.35 * f.z);
-  if (glow > 0.02 && !sick && !pending) {
-    const R = s * (puffed ? 2.2 : 1.8);
-    ctx.globalCompositeOperation = "lighter";
-    ctx.globalAlpha = glow;
-    ctx.drawImage(halo(base), X - R, Y - R, R * 2, R * 2);
-    ctx.globalCompositeOperation = "source-over";
-    ctx.globalAlpha = 1;
+  const face = Math.abs(f.face) < 0.12 ? 0.12 * Math.sign(f.face || 1) : f.face;
+  f.look = { sick, pending, puffed, s, X, Y, base, glow, face, lit: glow > 0.02 && !sick && !pending,
+    light: puffed ? base : mixHex(base, BIOLUME, 0.55),
+    // The halo breathes - slowly, each fish on its own beat.
+    pulse: 0.72 + 0.28 * Math.sin(t / 1400 + f.ph * 3) };
+}
+
+function drawHalos(list) {
+  ctx.globalCompositeOperation = "lighter";
+  for (const f of list) {
+    const g = f.look;
+    if (!g.lit) continue;
+    const R = g.s * (g.puffed ? 2.2 : 1.8);
+    ctx.globalAlpha = g.glow * g.pulse;
+    ctx.drawImage(halo(g.light), g.X - R, g.Y - R, R * 2, R * 2);
   }
+  ctx.globalCompositeOperation = "source-over";
+  ctx.globalAlpha = 1;
+}
+
+// Photophores: a row of small light organs along the flank, each pulsing
+// a little after the one before, like a lanternfish's. Over the bodies.
+function drawLightOrgans(list, t) {
+  ctx.globalCompositeOperation = "lighter";
+  for (const f of list) {
+    const g = f.look;
+    if (!g.lit || g.puffed) continue;
+    ctx.fillStyle = mixHex(g.light, "#FFFFFF", 0.45);
+    const r = Math.max(1, g.s * 0.055);
+    for (let i = 0; i < 5; i++) {
+      ctx.globalAlpha = g.glow * (0.35 + 0.65 * Math.max(0, Math.sin(t / 650 + f.ph * 5 - i * 0.8)));
+      ctx.beginPath(); ctx.arc(g.X + g.face * (-0.5 + i * 0.22) * g.s, g.Y + 0.12 * g.s, r, 0, 7); ctx.fill();
+    }
+  }
+  ctx.globalCompositeOperation = "source-over";
+  ctx.globalAlpha = 1;
+}
+
+function drawFish(f, t, sc) {
+  const p = f.pod, { sick, pending, puffed, s, X, Y, base, face } = f.look;
+  const fade = (1 - f.z) * 0.5 + sc.pal.dim * 0.25;
+  S = s;
+  const night = GLOW[sc.phase] || 0;
+  // At night the bodies darken toward the deep, so their own light stands out.
+  const own = mixHex(base, "#06121F", 0.4 * night);
+  const c = {
+    body: mix(own, sc.haze, fade),
+    back: mix(mixHex(own, "#0B1A30", 0.35), sc.haze, fade),
+    belly: mix(mixHex(own, "#FFFFFF", 0.4 - 0.25 * night), sc.haze, fade),
+    fin: mix(mixHex(own, "#FFFFFF", 0.2), sc.haze, fade + 0.1),
+    band: mix(mixHex("#F4F3EE", "#06121F", 0.4 * night), sc.haze, fade),
+  };
   ctx.save();
   ctx.translate(X, Y);
   ctx.globalAlpha = pending ? 0.4 : 1;
   if (sick) ctx.rotate(Math.PI);
-  const face = Math.abs(f.face) < 0.12 ? 0.12 * Math.sign(f.face || 1) : f.face;
   ctx.scale(sick ? 1 : face, 1);
   const wag = sick ? 0 : Math.sin(t / (110 + 400 * (0.0045 - f.sp) / 0.0045) + f.ph) * 0.12;
   let eye;
@@ -905,7 +974,11 @@ function drawTank(t, dt) {
   drawHouses(sc, cam * PAR.floor, t);
   stepFish(t, k);
   const list = [...fish.values()].sort((a, b) => a.z - b.z);
-  for (const f of list) drawFish(f, t, sc, cam);
+  drawPlankton(sc, t, dt, cam);
+  for (const f of list) placeFish(f, t, sc, cam);
+  drawHalos(list);
+  for (const f of list) drawFish(f, t, sc);
+  drawLightOrgans(list, t);
   drawWeed(frontWeed, cam * PAR.front, H * 1.02, [mix("#12301A", sc.pal.deep, dim * 0.6), mix("#2E2A10", sc.pal.deep, dim * 0.6)], t);
   if (sc.kind === "fog") { ctx.fillStyle = "rgba(200,206,212,0.22)"; ctx.fillRect(0, 0, W, H); }
   drawLightning(dt);
