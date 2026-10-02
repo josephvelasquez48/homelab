@@ -6,6 +6,7 @@
     - common # cgroup fix + reboot - must run before docker/k3s
     - docker
     - firewall
-    - k3s
+    - role: k3s
+      tags: k3s # run alone: ansible-playbook playbooks/site.yml --tags k3s
     - dns_monitoring
     # github_runner is not here on purpose: see playbooks/github-runner.yml.

@@ -15,6 +15,50 @@
     path: /etc/rancher/k3s/k3s.yaml
     timeout: 60
 
+# Pods' DNS goes through the Pi's own resolver (CoreDNS + AdGuard on
+# 192.168.1.253), like every other device - see docs/kubernetes.md. Without
+# this, k3s sees the Pi's resolv.conf list only 127.0.0.1 and quietly gives
+# pods 8.8.8.8: cluster lookups skipped AdGuard, never showed in its log,
+# and couldn't resolve *.home.
+- name: Pod DNS upstream - the Pi's resolver, by LAN address
+  ansible.builtin.copy:
+    dest: /etc/rancher/k3s/resolv.conf
+    content: |
+      # Written by ansible (roles/k3s). Upstream for the cluster's CoreDNS.
+      nameserver 192.168.1.253
+    mode: "0644"
+  register: k3s_resolv
+
+- name: Point K3s at that resolv.conf
+  ansible.builtin.copy:
+    dest: /etc/rancher/k3s/config.yaml
+    content: |
+      # Written by ansible (roles/k3s).
+      resolv-conf: /etc/rancher/k3s/resolv.conf
+    mode: "0644"
+  register: k3s_config
+
+# A k3s restart leaves running pods alone; CoreDNS then needs its own
+# restart to read the new upstream. Only when something changed.
+- name: Restart K3s for the new DNS upstream
+  ansible.builtin.systemd:
+    name: k3s
+    state: restarted
+  when: k3s_resolv.changed or k3s_config.changed
+
+- name: Wait for the API after the restart
+  ansible.builtin.command: k3s kubectl get --raw /readyz
+  register: k3s_ready
+  until: k3s_ready.rc == 0
+  retries: 30
+  delay: 2
+  changed_when: false
+  when: k3s_resolv.changed or k3s_config.changed
+
+- name: Restart the cluster's CoreDNS so it reads the new upstream
+  ansible.builtin.command: k3s kubectl -n kube-system rollout restart deployment/coredns
+  when: k3s_resolv.changed or k3s_config.changed
+
 - name: Ensure joe's .kube directory exists
   ansible.builtin.file:
     path: /home/joe/.kube
