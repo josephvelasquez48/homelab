@@ -109,9 +109,15 @@ function buildMap() {
       d = Math.abs(x1 - x2) < 1 ? `M${x1} ${y1} L${x2} ${y2}` : `M${x1} ${y1} C${(x1 + x2) / 2} ${y1} ${(x1 + x2) / 2} ${y2} ${x2} ${y2}`;
     }
     const path = el("path", { d }, lines);
-    edges.push({ id: `${from}-${to}`, path, len: path.getTotalLength(), color: BOXES[to][4], carry: 0 });
+    // Sampled once, every ~3 px: dots look their position up here rather
+    // than asking the browser to measure the curve for each dot each frame.
+    const len = path.getTotalLength(), n = Math.max(2, Math.ceil(len / 3) + 1), pts = new Float32Array(n * 2);
+    for (let k = 0; k < n; k++) {
+      const p = path.getPointAtLength((len * k) / (n - 1));
+      pts[k * 2] = p.x; pts[k * 2 + 1] = p.y;
+    }
+    edges.push({ id: `${from}-${to}`, len, pts, n, color: BOXES[to][4], carry: 0 });
   }
-  dotLayer = el("g", {});
   for (const [id, [x, y, title, sub, color]] of Object.entries(BOXES)) {
     const g = el("g", { "data-id": id });
     const rect = el("rect", { x: x - BOX_W / 2, y: y - BOX_H / 2, width: BOX_W, height: BOX_H, rx: 10,
@@ -126,7 +132,6 @@ function buildMap() {
   buildStats();
 }
 
-let dotLayer;
 const statEls = {};
 function buildStats() {
   const items = [["dns", "DNS", "#5DCAA5"], ["blocked", "Blocked today", "#F0997B"], ["pods", "Pods", "#AFA9EC"],
@@ -180,8 +185,24 @@ function dotRate(rps) {
   return Math.min(7, 0.5 + 2.2 * Math.log10(1 + rps * 10));
 }
 
+// The dots are drawn on a canvas over the map, not as SVG circles: moving
+// SVG elements every frame made Chromium repaint the whole map - boxes,
+// lines and text - 16 times a second. Now the SVG only changes when a
+// status does (every few seconds), and a frame is one small canvas redraw.
 const dots = [];
 const SPEED = 230; // px per second
+const dotCanvas = $("arch-dots"), dctx = dotCanvas.getContext("2d");
+let dScale = 1, dOx = 0, dOy = 0, dotsDrawn = false;
+function sizeDots() {
+  // The SVG's viewBox is 1280 x 720, scaled to fit (xMidYMid meet).
+  const r = dotCanvas.getBoundingClientRect(), dpr = devicePixelRatio || 1;
+  dotCanvas.width = Math.round(r.width * dpr);
+  dotCanvas.height = Math.round(r.height * dpr);
+  const s = Math.min(r.width / 1280, r.height / 720);
+  dScale = s * dpr;
+  dOx = ((r.width - 1280 * s) / 2) * dpr;
+  dOy = ((r.height - 720 * s) / 2) * dpr;
+}
 function stepDots(dt) {
   if (!state) return;
   for (const e of edges) {
@@ -190,19 +211,24 @@ function stepDots(dt) {
       e.carry -= 1;
       // Blocked DNS: red, and turned back before it reaches the internet.
       const blocked = e.id === "adguard-internet" && Math.random() < state.blocked_share;
-      const c = el("circle", { r: blocked ? 5 : 4, fill: blocked ? COLOR.bad : e.color }, dotLayer);
-      dots.push({ c, e, t: 0, stop: blocked ? 0.35 : 1 });
+      dots.push({ e, t: 0, stop: blocked ? 0.35 : 1, r: blocked ? 5 : 4, color: blocked ? COLOR.bad : e.color });
     }
   }
+  if (!dots.length && !dotsDrawn) return; // nothing moving, nothing to clear
+  dctx.clearRect(0, 0, dotCanvas.width, dotCanvas.height);
   for (let i = dots.length - 1; i >= 0; i--) {
-    const d = dots[i];
-    d.t += (SPEED * dt) / d.e.len;
-    if (d.t >= d.stop) { d.c.remove(); dots.splice(i, 1); continue; }
-    const p = d.e.path.getPointAtLength(d.t * d.e.len);
-    d.c.setAttribute("cx", p.x);
-    d.c.setAttribute("cy", p.y);
-    if (d.stop < 1) d.c.setAttribute("opacity", Math.min(1, (d.stop - d.t) / 0.12));
+    const d = dots[i], e = d.e;
+    d.t += (SPEED * dt) / e.len;
+    if (d.t >= d.stop) { dots.splice(i, 1); continue; }
+    const f = d.t * (e.n - 1), k = Math.min(Math.floor(f), e.n - 2), w = f - k;
+    const x = e.pts[k * 2] + (e.pts[k * 2 + 2] - e.pts[k * 2]) * w;
+    const y = e.pts[k * 2 + 1] + (e.pts[k * 2 + 3] - e.pts[k * 2 + 1]) * w + MAP_TOP;
+    dctx.globalAlpha = d.stop < 1 ? Math.min(1, (d.stop - d.t) / 0.12) : 1;
+    dctx.fillStyle = d.color;
+    dctx.beginPath(); dctx.arc(dOx + x * dScale, dOy + y * dScale, d.r * dScale, 0, 7); dctx.fill();
   }
+  dctx.globalAlpha = 1;
+  dotsDrawn = dots.length > 0;
 }
 
 // ---- Top and bottom bars ----
@@ -377,7 +403,8 @@ function frame(t) {
 
 buildMap();
 Tank.resize();
-addEventListener("resize", Tank.resize);
+sizeDots();
+addEventListener("resize", () => { Tank.resize(); sizeDots(); });
 renderClock();
 setInterval(renderClock, 1000);
 poll();
