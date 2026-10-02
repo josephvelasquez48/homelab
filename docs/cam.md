@@ -216,10 +216,12 @@ sudo tailscale funnel --https=443 off   # take the public page down at once
 ## Limits
 
 - **Only while the Mac is on and logged in**, like the backups and m1-node.
-- **The MacBook's address isn't reserved on the router** (only its VM's
-  is). If its lease changes, the app shows "camera offline" until
-  `MEDIAMTX_URL` in `kubernetes/cam/cam.yaml` is updated - and the
-  router's UDP 8189 forward points at nothing. Add a DHCP reservation.
+- **The MacBook's address is reserved** (192.168.1.180, since 2026-10-02)
+  against its Wi-Fi address `42:03:36:38:18:63` - a macOS *private* address
+  (the leading 42). It must stay **Fixed** (or private addresses Off) in
+  the Mac's Wi-Fi settings for this network: if macOS rotates it, the
+  router stops recognising the Mac, the reservation stops applying, and
+  `MEDIAMTX_URL` and the UDP 8189 forward both point at nothing.
 - **`cam.home` needs the homelab CA trusted** on a phone to open without a
   warning ([https.md](https.md)). The public link doesn't - its certificate
   is Let's Encrypt's.
