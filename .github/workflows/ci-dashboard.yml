@@ -80,7 +80,12 @@ jobs:
     concurrency:
       group: git-deploy-main
     steps:
+      # The deploy key, not GITHUB_TOKEN: it's the bypass on main's
+      # ruleset (terraform/github/ruleset.tf), which a personal repo
+      # can't grant to GitHub Actions itself. See docs/cicd.md.
       - uses: actions/checkout@v6
+        with:
+          ssh-key: ${{ secrets.DEPLOY_KEY }}
       - run: |
           sed -i "s#image: ${{ env.IMAGE }}:.*#image: ${{ env.IMAGE }}:${{ needs.build-and-push.outputs.tag }}#" \
             kubernetes/dashboard/dashboard.yaml
