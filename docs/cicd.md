@@ -17,6 +17,7 @@ push -> test -> build arm64 image -> push to ghcr.io (:<12-char SHA> and :latest
 | `ci-dashboard.yml` | `homelab-dashboard` | `kubernetes/dashboard/dashboard.yaml` |
 | `ci-chat.yml` | `homelab-chat` | `kubernetes/chat/` |
 | `ci-zimsearch.yml` | `homelab-zimsearch` | `kubernetes/kiwix/` |
+| `ci-cam.yml` | `homelab-cam` (the webcam viewer, [cam.md](cam.md)) | `kubernetes/cam/cam.yaml` |
 | `ci-adguard-exporter.yml` | `homelab-adguard-exporter` | `kubernetes/monitoring/` |
 | `ci-phone.yml` | tests only - the phone bridge is a host service ([phone.md](phone.md)) | - |
 | `ci-backup.yml` | tests only - the backup scripts run on the Mac and Pi | - |

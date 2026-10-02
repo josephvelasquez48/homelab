@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0d0f12">
+  <title>Sign in · Camera</title>
+  <link rel="icon" href="/static/icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/static/app.css">
+  <script type="module" src="/static/login.js"></script>
+</head>
+<body>
+  <main class="narrow">
+    <div class="brand">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg>
+      Camera
+    </div>
+    <form id="form" class="card" novalidate>
+      <h1>Sign in</h1>
+      <p class="lede">No account? Ask whoever runs the camera for an invite link.</p>
+      <label for="username">Name</label>
+      <input id="username" type="text" autocomplete="username" autocapitalize="none" spellcheck="false" required>
+      <label for="password">Password</label>
+      <input id="password" type="password" autocomplete="current-password" required>
+      <button id="submit" class="btn primary block" type="submit">Sign in</button>
+      <p id="msg" class="msg" hidden></p>
+    </form>
+  </main>
+</body>
+</html>

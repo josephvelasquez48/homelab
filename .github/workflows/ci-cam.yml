@@ -1,0 +1,100 @@
+name: Cam CI/CD
+
+# The cam.home web app. apps/cam/mac/ is the Mac's side (MediaMTX and the
+# capture helper), installed by hand on the Mac - not part of the image, so
+# changes there don't rebuild it. See docs/cam.md.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "apps/cam/**"
+      - "!apps/cam/mac/**"
+      - "kubernetes/cam/**"
+      - ".github/workflows/ci-cam.yml"
+  pull_request:
+    paths:
+      - "apps/cam/**"
+      - "!apps/cam/mac/**"
+
+permissions:
+  contents: write
+  packages: write
+
+env:
+  IMAGE: ghcr.io/${{ github.repository_owner }}/homelab-cam
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/cam
+    steps:
+      - uses: actions/checkout@v6
+      - uses: astral-sh/setup-uv@v9.0.0
+      - run: uv sync
+      - run: uv run pytest -v
+      - name: Check page JavaScript syntax
+        run: for f in app/static/*.js; do node --check "$f"; done
+      - name: Reject inline scripts and handlers
+        shell: bash
+        # The Content-Security-Policy (app/main.py) allows only our own
+        # script files, so an inline <script> or onclick="" would be
+        # silently blocked in the browser - a button that does nothing,
+        # with nothing in the server logs. Catch it here instead.
+        run: |
+          if grep -nE '<script>|<script [^>]*>[^<]|\son[a-z]+="' app/static/*.html; then
+            echo "Inline script or event handler found - use a .js file and addEventListener." >&2
+            exit 1
+          fi
+
+  build-and-push:
+    needs: test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v6
+      - id: tag
+        run: echo "tag=${GITHUB_SHA::12}" >> "$GITHUB_OUTPUT"
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: apps/cam
+          # arm64 only, like every image here: both nodes are arm64.
+          platforms: linux/arm64
+          push: true
+          tags: |
+            ${{ env.IMAGE }}:latest
+            ${{ env.IMAGE }}:${{ steps.tag.outputs.tag }}
+
+  # Same GitOps close-the-loop pattern as ci.yml - docs/argocd.md.
+  deploy:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    # Shared with every other deploy job, which all push to main.
+    concurrency:
+      group: git-deploy-main
+    steps:
+      # The deploy key, not GITHUB_TOKEN: it's the bypass on main's
+      # ruleset (terraform/github/ruleset.tf), which a personal repo
+      # can't grant to GitHub Actions itself. See docs/cicd.md.
+      - uses: actions/checkout@v6
+        with:
+          ssh-key: ${{ secrets.DEPLOY_KEY }}
+      - run: |
+          sed -i "s#image: ${{ env.IMAGE }}:.*#image: ${{ env.IMAGE }}:${{ needs.build-and-push.outputs.tag }}#" \
+            kubernetes/cam/cam.yaml
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add kubernetes/cam/cam.yaml
+          git diff --staged --quiet && echo "no image change" || git commit -m "Deploy cam ${{ needs.build-and-push.outputs.tag }} [skip ci]"
+          git pull --rebase origin main
+          git push

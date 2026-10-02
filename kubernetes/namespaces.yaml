@@ -31,4 +31,9 @@ metadata:
 apiVersion: v1
 kind: Namespace
 metadata:
+  name: cam
+---
+apiVersion: v1
+kind: Namespace
+metadata:
   name: kiwix

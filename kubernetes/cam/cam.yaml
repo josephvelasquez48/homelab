@@ -1,0 +1,105 @@
+---
+# The webcam viewer, cam.home: accounts, sessions, and WebRTC signaling
+# relayed to MediaMTX on the Mac. The video itself goes straight from the
+# Mac to each browser - see apps/cam/app/main.py and docs/cam.md.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cam-config
+  namespace: cam
+data:
+  # MediaMTX on the MacBook itself (not m1-node, its VM): the camera is a
+  # USB device on macOS. Its stream login only works from the nodes'
+  # addresses, which is where pod traffic leaves from.
+  MEDIAMTX_URL: "http://192.168.1.180:8889"
+  MEDIAMTX_PATH: "cam"
+  MEDIAMTX_USER: "cam-app"
+  PUBLIC_URL: "https://cam.home"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cam
+  namespace: cam
+spec:
+  # One replica: login throttling and stream ownership are kept in memory.
+  replicas: 1
+  strategy:
+    type: RollingUpdate
+  selector:
+    matchLabels: { app: cam }
+  template:
+    metadata:
+      labels: { app: cam }
+    spec:
+      # The Pi, like almost everything else here - and not m1-node: a VM
+      # bridged on a Mac often can't reach its own host's LAN address, and
+      # this has to reach the Mac.
+      nodeSelector:
+        kubernetes.io/hostname: joe
+      containers:
+        - name: cam
+          image: ghcr.io/josephvelasquez48/homelab-cam:latest
+          envFrom:
+            - configMapRef: { name: cam-config }
+            # DATABASE_URL (the cam role in Postgres) and MEDIAMTX_PASSWORD
+            # (the Mac's viewer-password). SOPS-encrypted, applied by hand:
+            # kubernetes/secrets/cam-secrets.enc.yaml.
+            - secretRef: { name: cam-secrets }
+          ports:
+            - containerPort: 8000
+          resources:
+            requests: { cpu: 20m, memory: 64Mi }
+            limits: { cpu: 500m, memory: 256Mi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 65534
+            capabilities:
+              drop: ["ALL"]
+          # /health checks Postgres, which accounts can't work without. The
+          # Mac is deliberately not in it: a sleeping Mac should read as
+          # "camera offline" on the page, not take the app out of service
+          # (the api's /ready learned that one about the desktop).
+          readinessProbe:
+            httpGet: { path: /health, port: 8000 }
+            initialDelaySeconds: 5
+            timeoutSeconds: 3
+          livenessProbe:
+            httpGet: { path: /health, port: 8000 }
+            initialDelaySeconds: 15
+            timeoutSeconds: 3
+            failureThreshold: 6
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: cam
+  namespace: cam
+spec:
+  selector: { app: cam }
+  ports:
+    - port: 8000
+      targetPort: 8000
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: cam
+  namespace: cam
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: websecure
+spec:
+  tls:
+    - secretName: homelab-tls
+      hosts:
+        - cam.home
+  rules:
+    - host: cam.home
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service: { name: cam, port: { number: 8000 } }

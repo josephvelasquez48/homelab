@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0d0f12">
+  <title>Account · Camera</title>
+  <link rel="icon" href="/static/icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/static/app.css">
+  <script type="module" src="/static/account.js"></script>
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="/">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg>
+      <span class="brand-name">Camera</span>
+    </a>
+    <nav></nav>
+  </header>
+
+  <main class="page">
+    <form id="form" class="card" novalidate>
+      <h2>Change your password</h2>
+      <p class="lede">You'll stay signed in here; everywhere else is signed out.</p>
+      <input type="text" id="username" autocomplete="username" hidden readonly>
+      <label for="current">Current password</label>
+      <input id="current" type="password" autocomplete="current-password" required>
+      <label for="new">New password</label>
+      <input id="new" type="password" autocomplete="new-password" required minlength="10">
+      <label for="confirm">Type it again</label>
+      <input id="confirm" type="password" autocomplete="new-password" required>
+      <button id="submit" class="btn primary block" type="submit">Change password</button>
+      <p id="msg" class="msg" hidden></p>
+    </form>
+  </main>
+</body>
+</html>

@@ -39,7 +39,7 @@ else:
 # Every Ingress hostname. A name missing here gets Traefik's self-signed
 # default instead - chat, wikipedia, alerts and prometheus did, unnoticed.
 hosts=['api.home','ai.home','dashboard.home','grafana.home','argocd.home',
-       'chat.home','wikipedia.home','alerts.home','prometheus.home']
+       'chat.home','wikipedia.home','alerts.home','prometheus.home','cam.home']
 key=rsa.generate_private_key(public_exponent=65537,key_size=2048)
 cert=(x509.CertificateBuilder().subject_name(x509.Name([x509.NameAttribute(NameOID.COMMON_NAME,'Homelab services')]))
       .issuer_name(ca_cert.subject).public_key(key.public_key()).serial_number(x509.random_serial_number())
@@ -53,7 +53,7 @@ cert=(x509.CertificateBuilder().subject_name(x509.Name([x509.NameAttribute(NameO
 items=[]
 # One Secret per namespace with an Ingress: an Ingress can only use a TLS
 # Secret from its own namespace.
-for ns in ['backend','dashboard','monitoring','argocd','chat','kiwix']:
+for ns in ['backend','dashboard','monitoring','argocd','chat','kiwix','cam']:
     items.append({'apiVersion':'v1','kind':'Secret','metadata':{'name':'homelab-tls','namespace':ns},'type':'kubernetes.io/tls','data':{'tls.crt':base64.b64encode(cert.public_bytes(pem)).decode(),'tls.key':base64.b64encode(key.private_bytes(pem,serialization.PrivateFormat.PKCS8,serialization.NoEncryption())).decode()}})
 def encrypt(data,path,regex):
     with tempfile.NamedTemporaryFile(dir=private,suffix='.json',delete=False) as source:
