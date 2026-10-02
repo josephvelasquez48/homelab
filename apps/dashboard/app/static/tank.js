@@ -755,8 +755,10 @@ function halo(hex) {
     img.width = img.height = 64;
     const g = img.getContext("2d"), [r, gr, b] = hexRgb(hex);
     const grad = g.createRadialGradient(32, 32, 0, 32, 32, 32);
-    grad.addColorStop(0, `rgba(${r},${gr},${b},0.4)`);
-    grad.addColorStop(0.45, `rgba(${r},${gr},${b},0.13)`);
+    // Bright close to the fish, gone quickly: a tight glow, not a haze.
+    grad.addColorStop(0, `rgba(${r},${gr},${b},0.75)`);
+    grad.addColorStop(0.35, `rgba(${r},${gr},${b},0.4)`);
+    grad.addColorStop(0.7, `rgba(${r},${gr},${b},0.08)`);
     grad.addColorStop(1, `rgba(${r},${gr},${b},0)`);
     g.fillStyle = grad; g.fillRect(0, 0, 64, 64);
     halos.set(hex, img);
@@ -785,7 +787,7 @@ function drawFish(f, t, sc, off) {
   // Nearer fish (higher z) glow more; far ones fade into the water anyway.
   const glow = (GLOW[sc.phase] || 0) * (1 - sc.k.grey * 0.4) * (0.65 + 0.35 * f.z);
   if (glow > 0.02 && !sick && !pending) {
-    const R = s * (puffed ? 3.4 : 2.8);
+    const R = s * (puffed ? 2.2 : 1.8);
     ctx.globalCompositeOperation = "lighter";
     ctx.globalAlpha = glow;
     ctx.drawImage(halo(base), X - R, Y - R, R * 2, R * 2);
