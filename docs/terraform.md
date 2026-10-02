@@ -38,4 +38,9 @@ again. Fixed on 2026-09-27: now `"public"`, and `terraform plan` reports
 **no changes**. Being public also makes branch protection available now
 (it must still let CI's deploy jobs commit to `main` - [cicd.md](cicd.md)).
 
+Added 2026-10-02: `ruleset.tf`, a ruleset on `main` requiring the PR gate
+with a GitHub Actions bypass for the deploy jobs, and `allow_auto_merge`.
+A ruleset rather than classic branch protection because of that bypass -
+see [cicd.md](cicd.md#merging-the-pr-gate).
+
 Run `terraform plan` before any apply; it's the check for drift like this.

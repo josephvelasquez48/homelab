@@ -16,6 +16,10 @@ resource "github_repository" "homelab" {
   allow_squash_merge = true
   allow_rebase_merge = true
 
+  # Waits on main's required `gate` check (ruleset.tf); without a required
+  # check there's nothing to wait for and auto-merge can't be enabled.
+  allow_auto_merge = true
+
   # Actual, new changes this pass makes - not just re-declaring existing
   # state:
   delete_branch_on_merge = true # was false; stale branches were piling up manually

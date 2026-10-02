@@ -20,12 +20,30 @@ push -> test -> build arm64 image -> push to ghcr.io (:<12-char SHA> and :latest
 | `ci-adguard-exporter.yml` | `homelab-adguard-exporter` | `kubernetes/monitoring/` |
 | `ci-phone.yml` | tests only - the phone bridge is a host service ([phone.md](phone.md)) | - |
 | `ci-backup.yml` | tests only - the backup scripts run on the Mac and Pi | - |
+| `pr-gate.yml` | nothing - the one check `main` requires (below) | - |
 
 All run on GitHub-hosted runners. Images are `linux/arm64` only, since
 both cluster nodes are arm64 ([node-migration.md](node-migration.md)).
 
 **Database migrations** run as an Argo CD `PreSync` hook (`api-migrate`)
 on every sync, before the new pods start.
+
+## Merging: the PR gate
+
+`main` has a ruleset (`terraform/github/ruleset.tf`) requiring one check,
+`gate`, so PR auto-merge waits for CI. It can't require the apps' `test`
+jobs: every workflow above is path-filtered, so a docs, Ansible or
+Terraform PR runs none of them and would wait forever. `pr-gate.yml` runs
+on every PR instead, waits for whichever workflows that commit triggered,
+and fails if any failed - seconds for a docs PR, the full test run for an
+app PR.
+
+- **The deploy jobs bypass it.** Their `[skip ci]` tag bumps push straight
+  to `main` as `github-actions[bot]`; the ruleset's bypass list has the
+  GitHub Actions app for exactly that. Nothing else does, so direct pushes
+  to `main` from your own account are rejected - go through a PR.
+- **Re-running a failed workflow doesn't re-run the gate.** Re-run the gate
+  too once it's green, or push a commit.
 
 ## Problems found and fixed
 
