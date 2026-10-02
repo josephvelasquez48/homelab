@@ -29,6 +29,7 @@ function userRow(user) {
       isSelf ? h("span", { class: "tag" }, "you") : null,
       user.is_admin ? h("span", { class: "tag admin" }, "admin") : null,
       user.disabled ? h("span", { class: "tag off" }, "turned off") : null,
+      user.passkeys === 0 ? h("span", { class: "tag off" }, "no passkey yet") : null,
     ),
     h("td", { class: "muted" }, timeAgo(user.last_seen)),
     h("td", { class: "actions" },
@@ -39,10 +40,10 @@ function userRow(user) {
           if (result) {
             showLink(result.url);
             $("invite-form").scrollIntoView({ behavior: "smooth" });
-            showMessage($("invite-msg"), `Password reset link for ${user.username}:`, "ok");
+            showMessage($("invite-msg"), `New-passkey link for ${user.username} - their old passkeys stop working once they use it:`, "ok");
           }
         },
-      }, "Reset password"),
+      }, "Reset access"),
       isSelf ? null : h("button", {
         class: "btn small", type: "button",
         onclick: () => act(api(`/api/admin/users/${user.id}/${user.disabled ? "enable" : "disable"}`, { method: "POST" }),
@@ -74,7 +75,8 @@ function inviteRow(invite) {
 }
 
 async function load() {
-  const [{ users, invites }, { views }] = await Promise.all([api("/api/admin/users"), api("/api/admin/views")]);
+  const [{ users, invites, invite_hours: hours }, { views }] = await Promise.all([api("/api/admin/users"), api("/api/admin/views")]);
+  $("invite-hours").textContent = hours % 24 === 0 && hours > 24 ? `${hours / 24} days` : `${hours} hours`;
   $("users").replaceChildren(...users.map(userRow));
   $("invites").replaceChildren(...invites.map(inviteRow));
   $("invites-card").hidden = invites.length === 0;

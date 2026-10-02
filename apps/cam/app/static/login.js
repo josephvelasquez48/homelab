@@ -1,28 +1,24 @@
-import { api, showMessage } from "/static/common.js";
+import { api, passkeysSupported, showMessage, usePasskey } from "/static/common.js";
 
-const form = document.getElementById("form");
 const msg = document.getElementById("msg");
-const submit = document.getElementById("submit");
+const button = document.getElementById("signin");
 
-document.getElementById("username").focus();
+if (!passkeysSupported()) {
+  button.disabled = true;
+  showMessage(msg, "This browser can't use passkeys. Try Safari, Chrome or Edge, up to date.");
+}
 
-form.addEventListener("submit", async (event) => {
-  event.preventDefault();
+button.addEventListener("click", async () => {
   showMessage(msg, "");
-  submit.disabled = true;
+  button.disabled = true;
   try {
-    await api("/api/login", {
-      method: "POST",
-      body: {
-        username: document.getElementById("username").value,
-        password: document.getElementById("password").value,
-      },
-    });
+    const options = await api("/api/login/options", { method: "POST" });
+    const credential = await usePasskey(options);
+    await api("/api/login", { method: "POST", body: credential });
     location.replace("/");
   } catch (err) {
     showMessage(msg, err.message);
-    document.getElementById("password").select();
   } finally {
-    submit.disabled = false;
+    button.disabled = !passkeysSupported();
   }
 });

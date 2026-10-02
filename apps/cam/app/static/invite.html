@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#0d0f12">
-  <title>Set your password · Camera</title>
+  <title>Your passkey · Camera</title>
   <link rel="icon" href="/static/icon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/static/app.css">
   <script type="module" src="/static/invite.js"></script>
@@ -24,17 +24,16 @@
       <a class="btn" href="/login">Go to sign in</a>
     </div>
 
-    <form id="form" class="card" novalidate hidden>
+    <div id="form" class="card" hidden>
       <h1 id="title">Welcome</h1>
       <p class="lede" id="lede"></p>
-      <input type="text" id="username" autocomplete="username" hidden readonly>
-      <label for="password">Password</label>
-      <input id="password" type="password" autocomplete="new-password" required minlength="10">
-      <label for="confirm">Type it again</label>
-      <input id="confirm" type="password" autocomplete="new-password" required>
-      <button id="submit" class="btn primary block" type="submit">Set password and sign in</button>
+      <button id="create" class="btn primary block" type="button">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="15" r="4"/><path d="M10.85 12.15 19 4M18 5l2 2M15 8l2 2"/></svg>
+        Create your passkey
+      </button>
       <p id="msg" class="msg" hidden></p>
-    </form>
+      <p class="hint">A passkey is a key your phone keeps in its secure chip and unlocks with Face ID, your fingerprint or your PIN. Nothing to type or remember, and it can't be phished. It syncs to your other devices through iCloud Keychain or Google Password Manager.</p>
+    </div>
   </main>
 </body>
 </html>

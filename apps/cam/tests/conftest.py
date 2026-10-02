@@ -2,12 +2,16 @@ import os
 
 # Plain HTTP in tests, so the session cookie has to be allowed without TLS.
 os.environ.setdefault("COOKIE_SECURE", "false")
+# Passkeys are bound to this; set before app.config is imported.
+os.environ.setdefault("PUBLIC_URL", "https://cam.example.test")
+
+import asyncio
 
 import pytest
 from fastapi.testclient import TestClient
 
-from app import main
-from tests.fakes import FakeMediaMTX, FakeStore
+from app import config, main
+from tests.fakes import FakeMediaMTX, FakeStore, SoftAuthenticator
 
 HEADERS = {"X-Requested-With": "cam"}
 
@@ -38,20 +42,34 @@ def client(app):
         yield c
 
 
+def new_authenticator() -> SoftAuthenticator:
+    return SoftAuthenticator(config.PUBLIC_URL, config.RP_ID)
+
+
+def accept(client, token, authenticator):
+    """Open an invite link and make a passkey with `authenticator`."""
+    options = client.post(f"/api/invite/{token}/options").json()
+    return client.post(f"/api/invite/{token}", json=authenticator.create(options))
+
+
+def sign_in(client, authenticator):
+    options = client.post("/api/login/options").json()
+    return client.post("/api/login", json=authenticator.get(options))
+
+
 @pytest.fixture
 def make_user(app, client):
-    """Create an account through a real invite, signed in on `client` unless told otherwise."""
-    async def _create(username, is_admin):
-        invite, token = await app.state.store.create_invite(username, is_admin, None, 7)
-        return token
+    """Create an account through a real invite and passkey; returns (user, authenticator).
 
-    def make(username="alice", password="correct horse battery", is_admin=False, sign_in=True):
-        import asyncio
-        token = asyncio.run(_create(username, is_admin))
-        r = client.post(f"/api/invite/{token}", json={"password": password})
+    Signed in on `client` afterwards unless sign_in=False.
+    """
+    def make(username="alice", is_admin=False, sign_in=True):
+        _, token = asyncio.run(app.state.store.create_invite(username, is_admin, None, 24))
+        authenticator = new_authenticator()
+        r = accept(client, token, authenticator)
         assert r.status_code == 200, r.text
         if not sign_in:
             client.cookies.clear()
-        return r.json()["user"]
+        return r.json()["user"], authenticator
 
     return make

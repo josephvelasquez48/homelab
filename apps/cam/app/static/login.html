@@ -15,16 +15,16 @@
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg>
       Camera
     </div>
-    <form id="form" class="card" novalidate>
+    <div class="card">
       <h1>Sign in</h1>
-      <p class="lede">No account? Ask whoever runs the camera for an invite link.</p>
-      <label for="username">Name</label>
-      <input id="username" type="text" autocomplete="username" autocapitalize="none" spellcheck="false" required>
-      <label for="password">Password</label>
-      <input id="password" type="password" autocomplete="current-password" required>
-      <button id="submit" class="btn primary block" type="submit">Sign in</button>
+      <p class="lede">With the passkey you made from your invite - Face ID, your fingerprint, or your device PIN.</p>
+      <button id="signin" class="btn primary block" type="button">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="15" r="4"/><path d="M10.85 12.15 19 4M18 5l2 2M15 8l2 2"/></svg>
+        Sign in with passkey
+      </button>
       <p id="msg" class="msg" hidden></p>
-    </form>
+      <p class="hint">No account, or a new phone without your passkey? Ask whoever runs the camera for a link.</p>
+    </div>
   </main>
 </body>
 </html>

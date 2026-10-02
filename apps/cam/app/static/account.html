@@ -19,19 +19,16 @@
   </header>
 
   <main class="page">
-    <form id="form" class="card" novalidate>
-      <h2>Change your password</h2>
-      <p class="lede">You'll stay signed in here; everywhere else is signed out.</p>
-      <input type="text" id="username" autocomplete="username" hidden readonly>
-      <label for="current">Current password</label>
-      <input id="current" type="password" autocomplete="current-password" required>
-      <label for="new">New password</label>
-      <input id="new" type="password" autocomplete="new-password" required minlength="10">
-      <label for="confirm">Type it again</label>
-      <input id="confirm" type="password" autocomplete="new-password" required>
-      <button id="submit" class="btn primary block" type="submit">Change password</button>
+    <section class="card">
+      <h2>Your passkeys</h2>
+      <p class="lede">How you sign in. A passkey that says <em>synced</em> follows you to your other devices through iCloud Keychain or Google Password Manager. For a device that doesn't share them - an Android phone alongside an iPhone, say - add one from that device.</p>
+      <table>
+        <thead><tr><th>Device</th><th>Added</th><th>Last used</th><th></th></tr></thead>
+        <tbody id="passkeys"></tbody>
+      </table>
+      <button id="add" class="btn block" type="button">Add a passkey on this device</button>
       <p id="msg" class="msg" hidden></p>
-    </form>
+    </section>
   </main>
 </body>
 </html>

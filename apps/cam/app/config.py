@@ -18,7 +18,18 @@ MEDIAMTX_PASSWORD = os.environ.get("MEDIAMTX_PASSWORD", "")
 PUBLIC_URL = os.environ.get("PUBLIC_URL", "https://cam.home").rstrip("/")
 
 SESSION_DAYS = int(os.environ.get("SESSION_DAYS", "30"))
-INVITE_DAYS = int(os.environ.get("INVITE_DAYS", "7"))
+# An unused invite is a key to an account for whoever opens it first, so it
+# doesn't live long. Was 7 days.
+INVITE_HOURS = int(os.environ.get("INVITE_HOURS", "24"))
+
+# Passkeys belong to one site: the public address. cam.home redirects there
+# (main.py), so every passkey is made and used on the same origin.
+RP_ID = PUBLIC_URL.split("://", 1)[1].split("/", 1)[0].split(":", 1)[0]
+RP_NAME = "Camera"
+
+# Addresses that redirect to PUBLIC_URL instead of serving the app, so there
+# is only ever one origin (see RP_ID). Comma-separated.
+REDIRECT_HOSTS = {h.strip().lower() for h in os.environ.get("REDIRECT_HOSTS", "cam.home").split(",") if h.strip()}
 
 # Off only for tests over plain HTTP. In the cluster TLS ends at Traefik,
 # and a session cookie must never travel without it.

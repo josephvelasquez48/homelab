@@ -81,3 +81,82 @@ export function timeAgo(iso) {
   }
   return seconds > 2592000 ? new Date(iso).toLocaleDateString() : label;
 }
+
+// Passkeys. The server sends WebAuthn options as JSON with binary fields in
+// base64url; the browser API wants ArrayBuffers, and its answer has to go
+// back as JSON. Converted by hand rather than with the newer
+// PublicKeyCredential.parse*/toJSON helpers, which older iPhones lack.
+
+const toBuffer = (s) => {
+  const b64 = s.replace(/-/g, "+").replace(/_/g, "/") + "=".repeat((4 - (s.length % 4)) % 4);
+  return Uint8Array.from(atob(b64), (c) => c.charCodeAt(0)).buffer;
+};
+const toBase64url = (buf) =>
+  btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+
+export const passkeysSupported = () => typeof window.PublicKeyCredential === "function";
+
+function friendlyError(err) {
+  if (err && err.name === "NotAllowedError") return new Error("Cancelled, or it timed out - try again.");
+  if (err && err.name === "InvalidStateError") return new Error("This device already has a passkey for this account.");
+  if (err && err.name === "SecurityError") return new Error("Passkeys only work on the camera's own address.");
+  return err;
+}
+
+// Make a passkey from the server's creation options; returns what to POST back.
+export async function createPasskey(options) {
+  let cred;
+  try {
+    cred = await navigator.credentials.create({
+      publicKey: {
+        ...options,
+        challenge: toBuffer(options.challenge),
+        user: { ...options.user, id: toBuffer(options.user.id) },
+        excludeCredentials: (options.excludeCredentials || []).map((c) => ({ ...c, id: toBuffer(c.id) })),
+      },
+    });
+  } catch (err) {
+    throw friendlyError(err);
+  }
+  return {
+    id: cred.id,
+    rawId: toBase64url(cred.rawId),
+    type: cred.type,
+    authenticatorAttachment: cred.authenticatorAttachment || undefined,
+    clientExtensionResults: cred.getClientExtensionResults(),
+    response: {
+      clientDataJSON: toBase64url(cred.response.clientDataJSON),
+      attestationObject: toBase64url(cred.response.attestationObject),
+      transports: cred.response.getTransports ? cred.response.getTransports() : [],
+    },
+  };
+}
+
+// Sign in with a passkey from the server's request options.
+export async function usePasskey(options) {
+  let cred;
+  try {
+    cred = await navigator.credentials.get({
+      publicKey: {
+        ...options,
+        challenge: toBuffer(options.challenge),
+        allowCredentials: (options.allowCredentials || []).map((c) => ({ ...c, id: toBuffer(c.id) })),
+      },
+    });
+  } catch (err) {
+    throw friendlyError(err);
+  }
+  return {
+    id: cred.id,
+    rawId: toBase64url(cred.rawId),
+    type: cred.type,
+    authenticatorAttachment: cred.authenticatorAttachment || undefined,
+    clientExtensionResults: cred.getClientExtensionResults(),
+    response: {
+      clientDataJSON: toBase64url(cred.response.clientDataJSON),
+      authenticatorData: toBase64url(cred.response.authenticatorData),
+      signature: toBase64url(cred.response.signature),
+      userHandle: cred.response.userHandle ? toBase64url(cred.response.userHandle) : null,
+    },
+  };
+}
