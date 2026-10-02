@@ -52,6 +52,16 @@ On each device, **Settings > Network > ID/Relay server**:
 The main window should then say **Ready**. In **Settings > Security**: a
 strong permanent password, and **Enable direct IP access** off.
 
+## The Mac
+
+The MacBook (`192.168.1.180`, also the host of m1-node) runs the client too,
+ID `359301729`. Set up over SSH on 2026-10-01: `brew install --cask
+rustdesk`, and the three server options above written into
+`~/Library/Preferences/com.carriez.RustDesk/RustDesk2.toml` before its first
+launch. What SSH can't do, because macOS only allows it at the Mac: Screen &
+System Audio Recording and Accessibility permissions (System Settings >
+Privacy & Security), the permanent password, and starting at login.
+
 ## The Pi's desktop
 
 The Pi's client has a permanent password (`~/.config/rustdesk-password` on
