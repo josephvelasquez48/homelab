@@ -54,6 +54,12 @@ cluster until the new one had proven itself.
 6. **Moved Ollama back to native Windows**, disabled the two WSL2
    Scheduled Tasks, and removed their scripts.
 
+**Added later (2026-10-01):** m1-node's agent reads its pod DNS upstream
+from `/etc/rancher/k3s/resolv.conf` (`nameserver 192.168.1.253`, set in
+`/etc/rancher/k3s/config.yaml`), so the cluster's DNS goes through the Pi
+wherever CoreDNS runs - see [kubernetes.md](kubernetes.md). A rebuilt VM
+needs those two files again.
+
 **Not done:** switching flannel back to `vxlan`. It still runs
 `wireguard-native`, which works fine between the two nodes. If it's ever
 switched, the old backend's routes have to be deleted by hand on every

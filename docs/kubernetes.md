@@ -48,6 +48,22 @@ the phone bridge (it needs the Bluetooth radio - [phone.md](phone.md)).
   plus Prometheus for its metrics); Postgres and Redis reachable from
   `backend` only; adguard-exporter reachable from Prometheus only; Argo
   CD's own policies.
+- **Pod DNS goes through the Pi's resolver** (CoreDNS + AdGuard,
+  `192.168.1.253`), like every other device on the LAN. Until 2026-10-01 it
+  didn't: K3s builds the upstream for the cluster's CoreDNS from the node's
+  `/etc/resolv.conf`, and when that lists only loopback - the Pi's is
+  `127.0.0.1`, m1-node's systemd-resolved stub too - it quietly substitutes
+  `8.8.8.8`. Cluster lookups skipped AdGuard's filtering and log, and pods
+  couldn't resolve `*.home`. Now both nodes have
+  `/etc/rancher/k3s/resolv.conf` (`nameserver 192.168.1.253`) and
+  `config.yaml` (`resolv-conf:` that file). **It has to be on every node**:
+  CoreDNS isn't pinned, and it reads the upstream of whichever node it
+  lands on - setting only the Pi looked done until CoreDNS restarted onto
+  m1-node. The Pi's half is in Ansible (`roles/k3s`, `--tags k3s`); m1-node
+  isn't in the inventory, so its half was written by hand, through a
+  `kubectl debug node` pod, followed by `systemctl restart k3s-agent`. Check:
+  `dig @10.43.0.10 phone.home` answers `192.168.1.253`, and
+  `dig @10.43.0.10 doubleclick.net` comes back blocked.
 - **ufw doesn't filter pod traffic.** K3s's iptables chains run before
   ufw's, so ufw rules don't apply to anything reaching a pod. The real
   boundaries are the NetworkPolicies above - found by testing from outside
