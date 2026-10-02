@@ -1,0 +1,72 @@
+# MediaMTX on the Mac: the C922 webcam as a WebRTC stream.
+#
+# A template - install.py fills in the viewer password and writes the result
+# to ~/.config/homelab-cam/mediamtx.yml. Anything not set here is MediaMTX's
+# default; see the commented default config in
+# /opt/homebrew/etc/mediamtx/mediamtx.yml for what each key does.
+#
+# Browsers never talk to this directly. The cam app in the cluster does the
+# WebRTC signaling (WHEP) on their behalf with the viewer login below, and
+# only the media then flows straight between browser and Mac, over UDP 8189.
+
+logLevel: info
+
+authMethod: internal
+authInternalUsers:
+  # ffmpeg on this Mac publishes the camera. Nothing else can publish.
+  - user: any
+    pass:
+    ips: ["127.0.0.1", "::1"]
+    permissions:
+      - action: publish
+        path: cam
+      - action: api
+      - action: metrics
+  # The cam app. Pod traffic leaves the cluster from a node's address, so the
+  # login only works from the two nodes (and from this Mac, for testing over
+  # an SSH tunnel).
+  - user: cam-app
+    pass: "{{VIEWER_PASSWORD}}"
+    ips: ["192.168.1.253", "192.168.1.63", "127.0.0.1", "::1"]
+    permissions:
+      - action: read
+        path: cam
+
+# Localhost only: the installer's health check, and later Prometheus via
+# whatever scrapes it.
+api: true
+apiAddress: 127.0.0.1:9997
+
+# ffmpeg's way in. TCP only, so no RTP/RTCP UDP ports are opened.
+rtsp: true
+rtspAddress: 127.0.0.1:8554
+rtspTransports: [tcp]
+
+rtmp: false
+hls: false
+srt: false
+moq: false
+
+webrtc: true
+webrtcAddress: :8889
+webrtcLocalUDPAddress: :8189
+# en0 is the LAN. Without this MediaMTX also offers bridge100, the Multipass
+# network m1-node's VM sits on, which no phone can reach.
+webrtcIPsFromInterfacesList: [en0]
+
+paths:
+  cam:
+    # On demand: the camera (and its light) is on only while someone is
+    # watching, and goes off 15 s after the last viewer leaves. h264_videotoolbox
+    # is the Mac's hardware encoder; baseline profile with no B-frames is what
+    # every browser's WebRTC stack decodes, and a 1 s keyframe interval keeps
+    # joining quick.
+    runOnDemand: >-
+      /opt/homebrew/bin/ffmpeg -hide_banner -loglevel warning
+      -f avfoundation -framerate 30 -video_size 1920x1080 -i "C922 Pro Stream Webcam"
+      -c:v h264_videotoolbox -realtime 1 -profile:v baseline -bf 0 -g 30
+      -b:v 4M -maxrate 5M -bufsize 4M
+      -f rtsp -rtsp_transport tcp rtsp://127.0.0.1:$RTSP_PORT/$MTX_PATH
+    runOnDemandRestart: yes
+    runOnDemandStartTimeout: 15s
+    runOnDemandCloseAfter: 15s
