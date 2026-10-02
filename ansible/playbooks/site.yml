@@ -10,3 +10,14 @@
       tags: k3s # run alone: ansible-playbook playbooks/site.yml --tags k3s
     - dns_monitoring
     # github_runner is not here on purpose: see playbooks/github-runner.yml.
+
+# The K3s worker: only its pod DNS upstream (roles/k3s with k3s_role: agent).
+# The VM itself and its join were done by hand - docs/node-migration.md.
+- name: The K3s worker (m1-node)
+  hosts: m1
+  become: true
+  roles:
+    - role: k3s
+      tags: k3s
+      vars:
+        k3s_role: agent

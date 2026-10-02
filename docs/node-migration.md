@@ -57,8 +57,11 @@ cluster until the new one had proven itself.
 **Added later (2026-10-01):** m1-node's agent reads its pod DNS upstream
 from `/etc/rancher/k3s/resolv.conf` (`nameserver 192.168.1.253`, set in
 `/etc/rancher/k3s/config.yaml`), so the cluster's DNS goes through the Pi
-wherever CoreDNS runs - see [kubernetes.md](kubernetes.md). A rebuilt VM
-needs those two files again.
+wherever CoreDNS runs - see [kubernetes.md](kubernetes.md). m1-node is in
+the Ansible inventory for that (`roles/k3s`, `k3s_role: agent`); a rebuilt
+VM needs the control nodes' keys in `ubuntu`'s `authorized_keys`, then
+`ansible-playbook playbooks/site.yml --tags k3s --limit m1`
+([ansible.md](ansible.md)).
 
 **Not done:** switching flannel back to `vxlan`. It still runs
 `wireguard-native`, which works fine between the two nodes. If it's ever

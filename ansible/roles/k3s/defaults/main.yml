@@ -1,0 +1,4 @@
+---
+# server: the Pi (K3s server). agent: a worker node - only its pod DNS
+# upstream is managed here. See tasks/main.yml.
+k3s_role: server

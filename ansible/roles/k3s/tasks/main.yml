@@ -1,12 +1,17 @@
 ---
+# k3s_role: server (the Pi - install, kubeconfig, the cluster's CoreDNS) or
+# agent (m1-node - only the pod DNS upstream below; the agent was joined by
+# hand, see docs/node-migration.md).
+
 - name: Check if K3s is already installed
   ansible.builtin.stat:
     path: /usr/local/bin/k3s
   register: k3s_binary
+  when: k3s_role == "server"
 
 - name: Install K3s server
   ansible.builtin.shell: curl -sfL https://get.k3s.io | sh -
-  when: not k3s_binary.stat.exists
+  when: k3s_role == "server" and not k3s_binary.stat.exists
   # common role must run first (cgroup fix + reboot) or this fails the
   # same way the original manual install did.
 
@@ -14,12 +19,21 @@
   ansible.builtin.wait_for:
     path: /etc/rancher/k3s/k3s.yaml
     timeout: 60
+  when: k3s_role == "server"
 
 # Pods' DNS goes through the Pi's own resolver (CoreDNS + AdGuard on
 # 192.168.1.253), like every other device - see docs/kubernetes.md. Without
-# this, k3s sees the Pi's resolv.conf list only 127.0.0.1 and quietly gives
-# pods 8.8.8.8: cluster lookups skipped AdGuard, never showed in its log,
-# and couldn't resolve *.home.
+# this, k3s sees a resolv.conf with only loopback (the Pi's 127.0.0.1,
+# m1-node's systemd-resolved stub) and quietly gives pods 8.8.8.8: cluster
+# lookups skipped AdGuard, never showed in its log, and couldn't resolve
+# *.home. On every node: CoreDNS isn't pinned, and uses the upstream of
+# whichever node it lands on.
+- name: Directory for the K3s config
+  ansible.builtin.file:
+    path: /etc/rancher/k3s
+    state: directory
+    mode: "0755"
+
 - name: Pod DNS upstream - the Pi's resolver, by LAN address
   ansible.builtin.copy:
     dest: /etc/rancher/k3s/resolv.conf
@@ -42,7 +56,7 @@
 # restart to read the new upstream. Only when something changed.
 - name: Restart K3s for the new DNS upstream
   ansible.builtin.systemd:
-    name: k3s
+    name: "{{ 'k3s' if k3s_role == 'server' else 'k3s-agent' }}"
     state: restarted
   when: k3s_resolv.changed or k3s_config.changed
 
@@ -53,11 +67,13 @@
   retries: 30
   delay: 2
   changed_when: false
-  when: k3s_resolv.changed or k3s_config.changed
+  when: k3s_role == "server" and (k3s_resolv.changed or k3s_config.changed)
 
+# The server only: the agent has no kubectl access. After changing an agent,
+# restart CoreDNS from the Pi if it runs there (docs/kubernetes.md).
 - name: Restart the cluster's CoreDNS so it reads the new upstream
   ansible.builtin.command: k3s kubectl -n kube-system rollout restart deployment/coredns
-  when: k3s_resolv.changed or k3s_config.changed
+  when: k3s_role == "server" and (k3s_resolv.changed or k3s_config.changed)
 
 - name: Ensure joe's .kube directory exists
   ansible.builtin.file:
@@ -66,6 +82,7 @@
     owner: joe
     group: joe
     mode: "0700"
+  when: k3s_role == "server"
 
 - name: Copy kubeconfig for joe (root-owned original is unreadable otherwise)
   ansible.builtin.copy:
@@ -75,6 +92,7 @@
     owner: joe
     group: joe
     mode: "0600"
+  when: k3s_role == "server"
 
 # .zshrc only loads for interactive shells - non-interactive `ssh host
 # "kubectl ..."` calls (exactly how this whole project's automation runs)
@@ -86,3 +104,4 @@
     create: true
     owner: joe
     group: joe
+  when: k3s_role == "server"
