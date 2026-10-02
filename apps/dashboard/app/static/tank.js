@@ -479,7 +479,9 @@ function drawHouses(sc, off, t) {
   const dim = sc.pal.dim + sc.k.grey * 0.2;
   const glow = { day: 0.3, dawn: 0.65, dusk: 0.7, night: 1 }[sc.phase] * (1 - sc.k.grey * 0.3) + sc.k.grey * 0.3;
   nodes.forEach((n, i) => {
-    const cx = nodeX(i, nodes.length) * W + off, base = H * (FLOOR + 0.04), hw = W * 0.055, lit = n.ready;
+    // FLOOR + 0.015: high enough that the name in the sand clears the 56 px
+    // bottom bar (it used to sit under it at FLOOR + 0.04).
+    const cx = nodeX(i, nodes.length) * W + off, base = H * (FLOOR + 0.015), hw = W * 0.055, lit = n.ready;
     const sand = mix(lit ? "#E2C98F" : "#A8966E", sc.pal.deep, dim);
     const shade = mix(lit ? "#C4A66A" : "#857554", sc.pal.deep, dim);
     const light = (a) => (lit ? mix("#FFD98A", "#FFB54A", a) : "#1E2228");

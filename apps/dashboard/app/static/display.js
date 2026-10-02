@@ -63,10 +63,17 @@ const $ = (id) => document.getElementById(id);
 // ---- Map ----
 
 const svg = $("arch");
+// The stats row sits under the top bar; the map (zones, boxes, lines and
+// dots, all in this group) is drawn below it. Its coordinates are the
+// map's own - the group moves it down MAP_TOP px.
+const MAP_TOP = 26;
+const mapLayer = document.createElementNS(SVG_NS, "g");
+mapLayer.setAttribute("transform", `translate(0 ${MAP_TOP})`);
+svg.appendChild(mapLayer);
 function el(tag, attrs, parent) {
   const e = document.createElementNS(SVG_NS, tag);
   for (const k in attrs) e.setAttribute(k, attrs[k]);
-  (parent || svg).appendChild(e);
+  (parent || mapLayer).appendChild(e);
   return e;
 }
 
@@ -126,8 +133,9 @@ function buildStats() {
     ["api", "API", "#AFA9EC"], ["temp", "Pi temp", "#EF9F27"], ["cpu", "Pi CPU", "#EF9F27"], ["mem", "Pi memory", "#EF9F27"]];
   items.forEach(([id, label, color], i) => {
     const x = 30 + i * 175;
-    el("text", { x, y: 655, fill: "#888780", "font-size": 13 }).textContent = label;
-    statEls[id] = el("text", { x, y: 678, fill: color, "font-size": 21, "font-weight": 600 });
+    // Right under the top bar, outside the map's group.
+    el("text", { x, y: 78, fill: "#888780", "font-size": 13 }, svg).textContent = label;
+    statEls[id] = el("text", { x, y: 101, fill: color, "font-size": 21, "font-weight": 600 }, svg);
     statEls[id].textContent = "-";
   });
 }

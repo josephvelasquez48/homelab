@@ -19,7 +19,7 @@
   .bar { position: absolute; left: 0; right: 0; display: flex; align-items: center; gap: 22px;
     padding: 0 22px; background: rgba(11, 11, 11, .72); z-index: 3; pointer-events: none; font-size: 17px; color: #B4B2A9; }
   #top { top: 0; height: 56px; }
-  #bottom { bottom: 0; height: 40px; font-size: 16px; }
+  #bottom { bottom: 0; height: 56px; font-size: 16px; }
   #clock { font-size: 28px; font-weight: 600; color: var(--text); font-variant-numeric: tabular-nums; }
   #title { color: var(--text); font-weight: 600; position: absolute; left: 50%; transform: translateX(-50%); }
   .pill { padding: 3px 12px; border-radius: 999px; font-size: 15px; }
@@ -31,14 +31,13 @@
   #pager { display: flex; gap: 7px; }
   #pager span { width: 8px; height: 8px; border-radius: 50%; background: var(--faint); }
   #pager span.on { background: var(--text); }
-  #offline { position: absolute; top: 66px; right: 22px; z-index: 4; display: none; }
+  #offline { position: absolute; top: 116px; right: 22px; z-index: 4; display: none; } /* under the stats row */
   #detail { position: absolute; z-index: 5; display: none; background: #F1EFE8; color: #2C2C2A;
     font-size: 15px; line-height: 1.5; padding: 8px 12px; border-radius: 6px; pointer-events: none; max-width: 320px; }
   html.mouse, html.mouse body { cursor: auto; } /* a real mouse is moving: see the script below */
-  /* Big enough for a finger, and no taller than the bar: the map's stats
-     row (Pi memory sits right above Desktop) ends where the bar begins. */
+  /* Big enough for a finger: ~44 px tall in the 56 px bar. */
   #to-desktop, #to-call { pointer-events: auto; background: #2C2C2A; color: #D3D1C7; border: 0; border-radius: 999px;
-    font: inherit; font-size: 17px; font-weight: 600; padding: 7px 28px; }
+    font: inherit; font-size: 18px; font-weight: 600; padding: 11px 30px; }
   #to-call { background: #D4537E; color: #fff; margin-right: 4px; }
   #to-call[hidden] { display: none; }
   #desk-confirm { position: absolute; inset: 0; z-index: 6; display: flex; align-items: center; justify-content: center;
