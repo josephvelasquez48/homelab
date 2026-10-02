@@ -244,6 +244,10 @@ def test_line_states_are_patterns_not_counts():
     assert states["adguard-prometheus"] == "down"  # its scrape is failing
     assert states["phone-prometheus"] == "unknown"  # no data: no dots
     assert states["backup-mac"] == "down"  # the Mac's repository isn't readable
+    # The Apps box is four apps: up when all are, down when any is.
+    apps_up = {**svc, "grafana": "up", "kiwix": "up"}
+    assert display.edge_states({"traefik-apps": 0.0}, apps_up, v)["traefik-apps"] == "idle"
+    assert display.edge_states({"traefik-apps": 0.0}, {**apps_up, "kiwix": "down"}, v)["traefik-apps"] == "down"
 
 
 def test_backup_and_mac_status():
