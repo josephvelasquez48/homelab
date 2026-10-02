@@ -11,6 +11,14 @@ INFERENCE_REACHABLE = Gauge(
     "1 if Ollama answered /api/tags on the last readiness check, else 0",
 )
 
+# How long /ready waits on Ollama. It has to sit well inside the probe's
+# timeoutSeconds (kubernetes/backend/api.yaml), or a slow Ollama fails
+# readiness anyway - by timing out the whole endpoint rather than through
+# `failed`. A sleeping desktop drops packets instead of refusing them, so
+# the connect hangs for the full timeout: at 5s against a 1s probe, every
+# replica flapped in and out of the Service all night while the PC slept.
+READY_OLLAMA_TIMEOUT = 0.5
+
 
 @router.get("/health")
 async def health(request: Request) -> dict[str, str]:
@@ -69,7 +77,7 @@ async def ready(request: Request) -> dict[str, str]:
         # /api/tags is the cheapest endpoint that proves a usable Ollama:
         # it neither loads a model nor runs inference, so this stays a
         # reachability check rather than a periodic GPU wake-up.
-        resp = await request.app.state.ollama.get("/api/tags", timeout=5.0)
+        resp = await request.app.state.ollama.get("/api/tags", timeout=READY_OLLAMA_TIMEOUT)
         resp.raise_for_status()
         checks["ollama"] = "ok"
         INFERENCE_REACHABLE.set(1)

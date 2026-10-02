@@ -127,17 +127,17 @@ spec:
           resources:
             requests: { cpu: 100m, memory: 128Mi }
             limits: { cpu: 500m, memory: 256Mi }
-          # /ready, not /health: readiness additionally checks Ollama, so
-          # a replica that cannot reach it steps out of the Service
-          # instead of failing every /v1/chat and RAG request routed to
-          # it. This caught a real case - Ollama as a Windows-side
-          # process was unreachable from pods on the desktop node itself
-          # - which is fixed now that it runs inside WSL, but "Ollama is
-          # down" is still a reason for a replica to stop serving.
+          # /ready, not /health: readiness checks Postgres and Redis, and
+          # reports Ollama without failing on it (see the docstring in
+          # app/routers/health.py). timeoutSeconds must stay well above
+          # READY_OLLAMA_TIMEOUT there: at the default 1s against a 5s
+          # Ollama wait, a sleeping desktop timed out the whole endpoint
+          # and flapped every replica in and out of the Service.
           readinessProbe:
             httpGet: { path: /ready, port: 8000 }
             initialDelaySeconds: 5
             periodSeconds: 5
+            timeoutSeconds: 3
           # Liveness stays on /health, which deliberately does NOT check
           # Ollama. Restarting a pod cannot make an unreachable Ollama
           # reachable, so pointing liveness at /ready would crash-loop

@@ -1,3 +1,6 @@
+import time
+
+
 def test_health_ok(client):
     r = client.get("/health")
     assert r.status_code == 200
@@ -43,6 +46,26 @@ def test_ready_stays_ready_when_ollama_unreachable(client):
     assert "Connection refused" in body["ollama"]
     assert body["postgres"] == "ok"
     assert body["redis"] == "ok"
+
+
+def test_ready_answers_inside_probe_timeout_when_ollama_hangs(client):
+    """A sleeping desktop hangs the connect rather than refusing it.
+
+    The refused case above returns instantly, so it never caught this:
+    /ready waited 5s on Ollama against a 1s probe timeout, and the probe
+    failing on time took the replica out of the Service exactly as if
+    Ollama were still enforced.
+    """
+    client.fake_ollama.hang = True
+
+    start = time.monotonic()
+    r = client.get("/ready")
+    elapsed = time.monotonic() - start
+
+    assert r.status_code == 200
+    assert "ConnectTimeout" in r.json()["ollama"]
+    # Well inside the readinessProbe's timeoutSeconds in api.yaml.
+    assert elapsed < 1.5
 
 
 def test_inference_gauge_tracks_ollama(client):
