@@ -4,8 +4,10 @@
 # check that never reports.
 #
 # A ruleset rather than classic branch protection for the bypass: CI's
-# deploy jobs push "[skip ci]" tag bumps straight to main as
-# github-actions[bot], which a required check would otherwise reject.
+# deploy jobs push "[skip ci]" tag bumps straight to main, which a
+# required check would otherwise reject. They push with the DEPLOY_KEY
+# deploy key, because on a personal repo a ruleset can only exempt roles
+# and deploy keys - not the GitHub Actions app (that 422s on apply).
 resource "github_repository_ruleset" "main" {
   name        = "main"
   repository  = github_repository.homelab.name
@@ -19,10 +21,11 @@ resource "github_repository_ruleset" "main" {
     }
   }
 
-  # The GitHub Actions app, i.e. the deploy jobs' GITHUB_TOKEN pushes.
+  # Applies to every deploy key, but only one can push: ci-deploy, the
+  # DEPLOY_KEY secret used by the deploy jobs' checkout. The Pi's
+  # pi5-homelab-deploy is read-only, so exempting it changes nothing.
   bypass_actors {
-    actor_id    = 15368
-    actor_type  = "Integration"
+    actor_type  = "DeployKey"
     bypass_mode = "always"
   }
 

@@ -38,10 +38,17 @@ on every PR instead, waits for whichever workflows that commit triggered,
 and fails if any failed - seconds for a docs PR, the full test run for an
 app PR.
 
-- **The deploy jobs bypass it.** Their `[skip ci]` tag bumps push straight
-  to `main` as `github-actions[bot]`; the ruleset's bypass list has the
-  GitHub Actions app for exactly that. Nothing else does, so direct pushes
-  to `main` from your own account are rejected - go through a PR.
+- **The deploy jobs bypass it with a deploy key.** Their `[skip ci]` tag
+  bumps push straight to `main`, so their checkout uses the `ci-deploy`
+  deploy key (write access, private half in the `DEPLOY_KEY` secret)
+  instead of `GITHUB_TOKEN`, and the ruleset exempts deploy keys. Not the
+  GitHub Actions app: on a personal repo a ruleset can only exempt roles
+  and deploy keys, and the apply 422s. Nothing else is exempt, so direct
+  pushes to `main` from your own account are rejected - go through a PR.
+- **Don't put `[skip ci]` in a PR's commit message** - not even quoted, as
+  in "the deploy jobs' [skip ci] commits". GitHub reads it anywhere in the
+  head commit's message and runs no workflows, the gate included, so the
+  PR can never merge.
 - **Re-running a failed workflow doesn't re-run the gate.** Re-run the gate
   too once it's green, or push a commit.
 

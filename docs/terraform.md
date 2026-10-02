@@ -39,8 +39,10 @@ again. Fixed on 2026-09-27: now `"public"`, and `terraform plan` reports
 (it must still let CI's deploy jobs commit to `main` - [cicd.md](cicd.md)).
 
 Added 2026-10-02: `ruleset.tf`, a ruleset on `main` requiring the PR gate
-with a GitHub Actions bypass for the deploy jobs, and `allow_auto_merge`.
-A ruleset rather than classic branch protection because of that bypass -
-see [cicd.md](cicd.md#merging-the-pr-gate).
+with a deploy-key bypass for CI's deploy jobs, and `allow_auto_merge`.
+The first version exempted the GitHub Actions app instead, and the apply
+failed (422: the actor "must be part of the ruleset source or owner
+organization") - on a personal repo only roles and deploy keys can be
+exempted. See [cicd.md](cicd.md#merging-the-pr-gate).
 
 Run `terraform plan` before any apply; it's the check for drift like this.
