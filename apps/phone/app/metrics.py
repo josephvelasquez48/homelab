@@ -50,6 +50,7 @@ HELP = {
     "phone_call_tx_bytes_total": "Bytes of PC mic audio sent to the iPhone",
     "phone_media_sent_bytes_total": "Bytes of audible music and video audio sent to the PC's listeners",
     "phone_pc_checkins_total": "Times the PC's agent checked in (about once a second while it runs)",
+    "phone_screen_shown": "1 while the Pi's call screen is up (a call that wasn't sent home)",
 }
 
 

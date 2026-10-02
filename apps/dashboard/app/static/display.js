@@ -21,10 +21,12 @@ const ZONES = [
 const BOXES = {
   lan: [120, 350, "Home network", "PCs, phones, TVs", "#888780"],
   iphone: [120, 530, "iPhone", "Bluetooth", "#888780"],
+  mac: [120, 600, "Mac", "backups, m1-node", "#888780"],
   coredns: [370, 170, "CoreDNS", "*.home", "#1D9E75"],
   adguard: [370, 290, "AdGuard", "filtering", "#1D9E75"],
   rustdesk: [370, 410, "RustDesk", "ID + relay", "#1D9E75"],
   phone: [370, 530, "Phone bridge", "calls + music", "#1D9E75"],
+  backup: [370, 600, "Backup", "nightly, encrypted", "#1D9E75"],
   internet: [650, 150, "Internet", "upstream DNS", "#444441"],
   traefik: [650, 350, "Traefik", "HTTPS ingress", "#534AB7"],
   apps: [650, 450, "Apps", "Grafana, Argo CD, chat", "#534AB7"],
@@ -47,6 +49,17 @@ const EDGES = [
   // The way back along the same lines: the PC's mic and its agent's
   // check-ins (to the bridge), and the mic on to the iPhone.
   ["phone_pc", "phone"], ["phone", "iphone"],
+  // Chat (in Apps) to the api, and Argo CD (in Apps) checking GitHub.
+  ["apps", "api"], ["apps", "internet", "M738 438 C786 438 786 150 738 150"],
+  // Prometheus scraping, the data flowing into it. The Pi's node_exporter
+  // (with the phone bridge's, RustDesk's and backups' numbers) is drawn
+  // from the phone bridge; two routes run down the gap beside the Pi.
+  ["traefik", "prometheus"],
+  ["api", "prometheus", "M968 316 C1026 316 1026 590 968 590"],
+  ["adguard", "prometheus", "M458 302 C530 302 530 302 530 340 L530 600 Q530 612 545 612 L792 612"],
+  ["phone", "prometheus", "M458 544 C520 544 520 544 520 560 L520 588 Q520 600 535 600 L792 600"],
+  // The nightly backup from the Pi to the Mac.
+  ["backup", "mac"],
 ];
 
 const APPS = ["grafana", "argocd", "chat", "kiwix"];
@@ -179,11 +192,11 @@ function renderMap() {
   nodeLabel.setAttribute("fill", state.nodes.every((n) => n.ready) ? "#888780" : COLOR.warn);
 }
 
-// Dots per second for a request rate: visible at a trickle, capped when busy.
-function dotRate(rps) {
-  if (!rps || rps <= 0) return 0;
-  return Math.min(7, 0.5 + 2.2 * Math.log10(1 + rps * 10));
-}
+// A fixed pattern per line state (app/display.py, edge_states), not a dot
+// per request: a steady stream while traffic flows, a slow trickle while
+// both ends are up and quiet, a few red dots that stop short when one is
+// down, nothing without data. Dots per second.
+const PATTERN = { active: 2, idle: 0.33, down: 0.6, unknown: 0 };
 
 // The dots are drawn on a canvas over the map, not as SVG circles: moving
 // SVG elements every frame made Chromium repaint the whole map - boxes,
@@ -206,12 +219,14 @@ function sizeDots() {
 function stepDots(dt) {
   if (!state) return;
   for (const e of edges) {
-    e.carry += dotRate(state.rates[e.id]) * dt;
+    const how = (state.links && state.links[e.id]) || "unknown";
+    e.carry += PATTERN[how] * dt;
     while (e.carry >= 1) {
       e.carry -= 1;
-      // Blocked DNS: red, and turned back before it reaches the internet.
-      const blocked = e.id === "adguard-internet" && Math.random() < state.blocked_share;
-      dots.push({ e, t: 0, stop: blocked ? 0.35 : 1, r: blocked ? 5 : 4, color: blocked ? COLOR.bad : e.color });
+      // Down: red, and stopping short. Blocked DNS too: the blocked share
+      // of the stream to the internet, turned back before it gets there.
+      const red = how === "down" || (e.id === "adguard-internet" && Math.random() < state.blocked_share);
+      dots.push({ e, t: 0, stop: red ? 0.35 : 1, r: red ? 5 : 4, color: red ? COLOR.bad : e.color });
     }
   }
   if (!dots.length && !dotsDrawn) return; // nothing moving, nothing to clear
@@ -393,6 +408,10 @@ let prev = performance.now(), next = prev;
 function frame(t) {
   requestAnimationFrame(frame);
   if (t < next - 1) return;
+  // The Pi's call screen covers this page during a call (unless it was sent
+  // home): draw nothing until it's gone. Chromium on the Pi's X11 can't tell
+  // it's covered, so it would otherwise keep animating behind it.
+  if (state && state.phone && state.phone.screen_shown) { next = t + FRAME_MS; prev = t; return; }
   const step = view === 1 && Tank.night() ? NIGHT_FRAME_MS : FRAME_MS;
   next = t - next > step ? t + step : next + step; // fell behind: don't try to catch up
   const dt = Math.min((t - prev) / 1000, 0.1);

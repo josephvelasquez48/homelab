@@ -134,7 +134,11 @@ def test_display_endpoint(client, monkeypatch):
         ("lan", "coredns"), ("coredns", "adguard"), ("adguard", "internet"), ("lan", "traefik"),
         ("traefik", "api"), ("traefik", "apps"), ("api", "postgres"), ("api", "redis"), ("api", "ollama"),
         ("iphone", "phone"), ("phone", "phone_pc"), ("phone_pc", "phone"), ("phone", "iphone"),
-        ("lan", "rustdesk"), ("rustdesk", "lan")]}
+        ("lan", "rustdesk"), ("rustdesk", "lan"), ("apps", "api")]}
+    # Every line on the map gets a state, including those with no traffic data.
+    assert set(data["links"]) == set(data["rates"]) | {
+        "apps-internet", "backup-mac", "traefik-prometheus", "api-prometheus", "adguard-prometheus", "phone-prometheus"}
+    assert data["phone"]["screen_shown"] is False
 
 
 def test_display_page(client):
@@ -224,3 +228,27 @@ async def test_weather_carries_what_the_aquarium_sky_needs(monkeypatch):
                   "wind_mph": 9.5, "sunrise": 1790689389, "sunset": 1790732203}
     params = http.get.call_args.kwargs["params"]
     assert params["timeformat"] == "unixtime" and "sunrise" in params["daily"]
+
+
+def test_line_states_are_patterns_not_counts():
+    svc = {"coredns": "up", "adguard": "up", "internet": "up", "rustdesk": "up", "traefik": "up", "api": "up",
+           "chat": "up", "argocd": "up", "prometheus": "up", "phone": "up", "backup": "up", "mac": "down"}
+    rates = {"lan-coredns": 0.8, "lan-rustdesk": 0.0, "apps-api": 0.0}
+    v = values(scrape_traefik=1, scrape_api=1, scrape_adguard=0, scrape_pi=None)
+    states = display.edge_states(rates, svc, v)
+    assert states["lan-coredns"] == "active"  # traffic now: a steady stream
+    assert states["lan-rustdesk"] == "idle"  # both ends up, quiet: a trickle
+    assert states["apps-api"] == "idle"  # Apps -> FastAPI is about chat
+    assert states["apps-internet"] == "idle"  # Argo CD: nothing measured, so idle while up
+    assert states["traefik-prometheus"] == "idle"
+    assert states["adguard-prometheus"] == "down"  # its scrape is failing
+    assert states["phone-prometheus"] == "unknown"  # no data: no dots
+    assert states["backup-mac"] == "down"  # the Mac's repository isn't readable
+
+
+def test_backup_and_mac_status():
+    ok = display.services([], values(backup_age_h=3, backup_exit=0, backup_readable=1), "up", "up")
+    assert ok["backup"] == "up" and ok["mac"] == "up"
+    stale = display.services([], values(backup_age_h=40, backup_exit=0, backup_readable=1), "up", "up")
+    assert stale["backup"] == "down"
+    assert display.services([], values(), "up", "up")["backup"] == "unknown"

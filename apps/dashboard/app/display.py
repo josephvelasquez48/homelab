@@ -52,6 +52,8 @@ RATE_QUERIES = {
     # screen to a viewer, in is input. kB/s, like the phone's audio.
     "rustdesk_out_kbps": "sum(rate(rustdesk_sent_bytes_total[1m])) / 1000 or vector(0)",
     "rustdesk_in_kbps": "sum(rate(rustdesk_received_bytes_total[1m])) / 1000 or vector(0)",
+    # The chat app's conversations through the api (Apps -> FastAPI).
+    "chat_api": 'sum(rate(http_requests_total{handler=~"/v1/conversations.*"}[5m])) or vector(0)',
 }
 
 VALUE_QUERIES = {
@@ -73,6 +75,16 @@ VALUE_QUERIES = {
     "backup_exit": "homelab_backup_last_exit_code",
     "targets_up": "sum(up)",
     "targets": "count(up)",
+    # Prometheus's scrapes, one per line into the Prometheus box. node-pi is
+    # the Pi's node_exporter, which also carries the phone bridge's,
+    # RustDesk's and the backups' textfiles - the line from the phone bridge.
+    "scrape_traefik": 'min(up{job="kubernetes-pods",pod=~"traefik-.*"})',
+    "scrape_api": 'min(up{job="kubernetes-pods",pod=~"api-.*"})',
+    "scrape_adguard": 'min(up{job="kubernetes-pods",pod=~"adguard-exporter-.*"})',
+    "scrape_pi": 'min(up{job="node-pi"})',
+    "backup_readable": "min(homelab_backup_repository_readable)",
+    # 1 while the Pi's call screen covers the display: the page pauses.
+    "phone_screen": "phone_screen_shown",
 }
 
 # Map boxes that are pods: box -> (namespace, pod name prefix).
@@ -309,6 +321,52 @@ def services(pods: list[dict], v: dict, dns: str, rustdesk: str) -> dict[str, st
     out["ollama"] = {True: "up", False: "down", None: "unknown"}[flag(v["inference"])]
     out["rustdesk"] = rustdesk
     out["internet"] = "up" if v["adguard_up"] and (v["dns_today"] or 0) > (v["blocked_today"] or 0) else "unknown"
+    # The nightly backup on the Pi (backup/): a snapshot in the last 26 h
+    # and a clean last run. The Mac holds the repository it writes to.
+    age, code = v["backup_age_h"], v["backup_exit"]
+    out["backup"] = "unknown" if age is None or code is None else ("up" if age < 26 and code == 0 else "down")
+    out["mac"] = {True: "up", False: "down", None: "unknown"}[flag(v["backup_readable"])]
+    return out
+
+
+# Lines whose ends' health isn't simply their boxes': the Apps box is four
+# apps, so a line from it uses the one app it's about; a scrape line is
+# healthy when Prometheus can scrape that target.
+EDGE_ENDS = {
+    "apps-api": ("chat", "api"),
+    "apps-internet": ("argocd", "internet"),
+}
+EDGE_SCRAPE = {
+    "traefik-prometheus": "scrape_traefik",
+    "api-prometheus": "scrape_api",
+    "adguard-prometheus": "scrape_adguard",
+    "phone-prometheus": "scrape_pi",
+}
+
+
+def edge_states(rates: dict[str, float], svc: dict[str, str], v: dict) -> dict[str, str]:
+    """One of active / idle / down / unknown per line - the page draws a
+    fixed pattern for each, not a dot per request:
+
+    - down: either end down (or a scrape failing): red dots that stop short
+    - unknown: no data for an end: no dots
+    - active: traffic measured on it now: a steady stream
+    - idle: both ends up, nothing measured (or nothing to measure - the
+      scrapes, Argo CD's checks of GitHub, the backups): a slow trickle
+    """
+    status = lambda box: "up" if box == "lan" else svc.get(box, "unknown")  # noqa: E731
+    out = {}
+    for edge in [*rates, "apps-internet", "backup-mac", *EDGE_SCRAPE]:
+        a, b = EDGE_ENDS.get(edge) or edge.split("-", 1)
+        ends = [status(a), status(b)]
+        if edge in EDGE_SCRAPE:
+            ends.append({True: "up", False: "down", None: "unknown"}[flag(v[EDGE_SCRAPE[edge]])])
+        if "down" in ends:
+            out[edge] = "down"
+        elif "unknown" in ends:
+            out[edge] = "unknown"
+        else:
+            out[edge] = "active" if (rates.get(edge) or 0) > 0.001 else "idle"
     return out
 
 
@@ -337,6 +395,7 @@ def edge_rates(r: dict, v: dict) -> dict[str, float]:
         "phone-iphone": mic,
         "lan-rustdesk": z(r["rustdesk_in_kbps"]),
         "rustdesk-lan": z(r["rustdesk_out_kbps"]),
+        "apps-api": z(r["chat_api"]),
     }
 
 
@@ -411,9 +470,11 @@ async def gather(k8s_client: httpx.AsyncClient, http: httpx.AsyncClient, argo_ta
     blocked_share = (
         rates["dns_blocked"] / rates["dns"] if rates["dns"] and rates["dns_blocked"] is not None else 0.0
     )
+    edge = edge_rates(rates, values)
     return {
         "services": svc,
-        "rates": edge_rates(rates, values),
+        "rates": edge,
+        "links": edge_states(edge, svc, values),
         "blocked_share": min(max(blocked_share, 0.0), 1.0),
         "stats": {
             "dns_per_min": None if rates["dns"] is None else rates["dns"] * 60,
@@ -429,6 +490,8 @@ async def gather(k8s_client: httpx.AsyncClient, http: httpx.AsyncClient, argo_ta
             "connected": flag(values["phone_connected"]),
             "in_call": flag(values["phone_call"]),
             "pc_present": flag(values["phone_pc"]),
+            # The Pi's call screen is covering the display: nothing to animate.
+            "screen_shown": bool(flag(values["phone_screen"])),
         },
         "nodes": [{"name": n["name"], "ready": n["ready"]} for n in nodes],
         "pods": pods,

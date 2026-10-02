@@ -270,6 +270,10 @@ class Hub:
             self._screen_hidden_for = None
         return self._screen_hidden_for is not None and live <= self._screen_hidden_for
 
+    def screen_shown(self) -> bool:
+        """Is the Pi's call screen up? A call is, and Home didn't send it away."""
+        return any(c.state != "disconnected" for c in self.tel.state.calls) and not self.screen_hidden()
+
     def show_screen(self) -> None:
         """Undo Home: the Pi's call screen comes back for the calls up now
         (the display's Call button, via apps/pi-display/show-call.sh)."""
@@ -359,6 +363,9 @@ class Hub:
             "phone_call_tx_bytes_total": self.bridge.tx_bytes,
             "phone_media_sent_bytes_total": self.media.sent_bytes if self.media else 0,
             "phone_pc_checkins_total": self.pc_checkins,
+            # The Pi's call screen is up (a call, not sent home): the display
+            # under it pauses its animation (apps/dashboard, display.js).
+            "phone_screen_shown": int(self.screen_shown()),
         }
         try:
             metrics.write(values, self.history.counts() if self.history else {})

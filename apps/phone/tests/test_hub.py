@@ -421,3 +421,16 @@ async def test_home_on_the_pi_screen_hides_it_until_a_new_call():
     assert not hub.screen_hidden()  # all over: forgotten
     tel.state.calls.append(Call("/ag1/call1", "incoming", "+15555550123", ""))
     assert not hub.screen_hidden()  # even a reused path is a new call
+
+
+@pytest.mark.asyncio
+async def test_the_pi_call_screen_counts_as_up_unless_sent_home():
+    # phone_screen_shown: the display under the call screen pauses while it's up.
+    hub, tel = make(transport="active", calls=[Call("/ag1/call1", "active", "+15555550123", "")])
+    assert hub.screen_shown()
+    touch = FakeSocket()
+    await hub.add(touch, local=True)
+    await hub.command(touch, {"action": "screen-home"})
+    assert not hub.screen_shown()  # sent home: the display runs
+    tel.state.calls.clear()
+    assert not hub.screen_shown()  # no call
