@@ -358,12 +358,17 @@ $("desk-go").addEventListener("click", () => {
 // the screen's refresh (every 16.7 ms), so skipping any under 41.7 ms since
 // the last drew only every third - 20 fps. Keep a schedule instead: draw at
 // the first refresh past each 24th of a second.
+// The aquarium at night: 12 fps. It's calm and dark then, the fish swim
+// at the same speed (their motion is per second, not per frame), and it
+// halves what Chromium redraws. The map keeps 24: its dots move fast.
 const FRAME_MS = 1000 / 24;
+const NIGHT_FRAME_MS = 1000 / 12;
 let prev = performance.now(), next = prev;
 function frame(t) {
   requestAnimationFrame(frame);
   if (t < next - 1) return;
-  next = t - next > FRAME_MS ? t + FRAME_MS : next + FRAME_MS; // fell behind: don't try to catch up
+  const step = view === 1 && Tank.night() ? NIGHT_FRAME_MS : FRAME_MS;
+  next = t - next > step ? t + step : next + step; // fell behind: don't try to catch up
   const dt = Math.min((t - prev) / 1000, 0.1);
   prev = t;
   if (view === 0) stepDots(dt);
