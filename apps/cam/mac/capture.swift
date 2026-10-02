@@ -95,16 +95,19 @@ final class FrameWriter: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate 
         CVPixelBufferLockBaseAddress(image, .readOnly)
         defer { CVPixelBufferUnlockBaseAddress(image, .readOnly) }
         // NV12 is two planes, luma then interleaved chroma at half height.
-        // Rows can be padded past the picture width, so copy row by row.
+        // Rows can be padded past the picture width; only then copy row by
+        // row, since a write per row is most of this process's CPU.
         for plane in 0..<CVPixelBufferGetPlaneCount(image) {
             guard let base = CVPixelBufferGetBaseAddressOfPlane(image, plane) else { return }
             let stride = CVPixelBufferGetBytesPerRowOfPlane(image, plane)
             let rowBytes = CVPixelBufferGetWidthOfPlane(image, plane) * (plane == 0 ? 1 : 2)
-            for row in 0..<CVPixelBufferGetHeightOfPlane(image, plane) {
-                if !writeAll(base + row * stride, rowBytes) {
-                    log("ffmpeg stopped reading")
-                    stop(1)
-                }
+            let rows = CVPixelBufferGetHeightOfPlane(image, plane)
+            let ok = stride == rowBytes
+                ? writeAll(base, rowBytes * rows)
+                : (0..<rows).allSatisfy { writeAll(base + $0 * stride, rowBytes) }
+            if !ok {
+                log("ffmpeg stopped reading")
+                stop(1)
             }
         }
         lastFrame = Date()

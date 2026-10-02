@@ -58,6 +58,9 @@ with agent.open('wb') as f:
         'StandardOutPath': str(config / 'mediamtx.log'),
         'StandardErrorPath': str(config / 'mediamtx.log'),
     }, f)
+# Started fresh each install. launchd never rotates it, and a bad ffmpeg
+# flag once filled it with 5 MB of warnings in ten minutes.
+(config / 'mediamtx.log').write_text('')
 subprocess.run(['launchctl', 'bootstrap', domain, str(agent)], check=True)
 
 # The API answering means the config parsed and every listener bound.
