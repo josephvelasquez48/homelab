@@ -11,6 +11,9 @@
     # its ufw rules: ansible-playbook playbooks/site.yml --tags vpn
     - role: wireguard
       tags: [wireguard, vpn]
+    # Funnel only: the webcam viewer's public link (docs/cam.md).
+    - role: tailscale
+      tags: tailscale
     - role: k3s
       tags: k3s # run alone: ansible-playbook playbooks/site.yml --tags k3s
     - dns_monitoring

@@ -53,6 +53,12 @@ webrtcLocalUDPAddress: :8189
 # en0 is the LAN. Without this MediaMTX also offers bridge100, the Multipass
 # network m1-node's VM sits on, which no phone can reach.
 webrtcIPsFromInterfacesList: [en0]
+# Viewers on the internet (the public link, docs/cam.md) can't reach en0's
+# address. STUN tells MediaMTX the home connection's public address, which
+# it offers too; the router forwards UDP 8189 to this Mac. Asked fresh each
+# time, so a changed public IP needs no edit here.
+webrtcICEServers2:
+  - url: stun:stun.cloudflare.com:3478
 
 paths:
   cam:

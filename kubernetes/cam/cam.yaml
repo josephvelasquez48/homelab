@@ -78,6 +78,10 @@ metadata:
   name: cam
   namespace: cam
 spec:
+  # Pinned (to the address it was first given) because Tailscale Funnel on
+  # the Pi's host proxies to it directly - the host can't resolve cluster
+  # DNS names. See docs/cam.md, "Sharing by link".
+  clusterIP: 10.43.187.92
   selector: { app: cam }
   ports:
     - port: 8000
