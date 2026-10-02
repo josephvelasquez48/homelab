@@ -9,7 +9,7 @@ Built in three phases, each working on its own before the next:
 |---|---|---|
 | 1 | The camera as a WebRTC stream on the Mac | **Done** 2026-10-02 |
 | 2 | `cam.home`: a web app in the cluster with per-person accounts and the viewer page | **Done** 2026-10-02 |
-| 3 | WireGuard on the Pi, for watching away from home ([vpn.md](vpn.md)) | **Running** 2026-10-02; phone test pending |
+| 3 | Away from home: a public link (Tailscale Funnel) - see "Sharing by link" | **Done** 2026-10-02 |
 
 ## The web app (phase 2)
 
@@ -160,8 +160,12 @@ A healthy start logs
 
 ## Sharing by link (Tailscale Funnel)
 
-Added after phase 3, because a VPN app and a CA certificate is too much to
-ask of someone you just want to show the camera. Now an invite link is all
+Phase 3 was first a WireGuard VPN on the Pi. It worked - a phone on
+cellular watched through it - but every viewer then needed the WireGuard
+app, a device config made over SSH, and the homelab CA installed, which is
+too much to ask of someone you just want to show the camera. It was
+replaced the same day and removed (the firewall role deletes its old
+rules). Now an invite link is all
 anyone needs: **People → Invite someone → Copy → send it.** It opens on any
 phone, anywhere, and they choose a password and watch.
 
@@ -173,7 +177,7 @@ anyone's browser ◄──── video, UDP ──── router (forward UDP 818
 - **The page**: `https://cam.taile847cc.ts.net`, published by Tailscale
   Funnel from the Pi, with a Let's Encrypt certificate Tailscale renews.
   Nothing new is open on the router for it. `PUBLIC_URL` points there, so
-  invite links do too; `cam.home` keeps working at home and over the VPN.
+  invite links do too; `cam.home` keeps working at home.
 - **The video** still flows straight from the Mac. MediaMTX asks a STUN
   server (Cloudflare's) for the home connection's public address and offers
   it to viewers; the router forwards UDP 8189 to the Mac.

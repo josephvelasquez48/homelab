@@ -6,11 +6,7 @@
     - common # cgroup fix + reboot - must run before docker/k3s
     - docker
     - role: firewall
-      tags: [firewall, vpn]
-    # The home VPN, for the camera away from home (docs/vpn.md). Run with
-    # its ufw rules: ansible-playbook playbooks/site.yml --tags vpn
-    - role: wireguard
-      tags: [wireguard, vpn]
+      tags: firewall
     # Funnel only: the webcam viewer's public link (docs/cam.md).
     - role: tailscale
       tags: tailscale
