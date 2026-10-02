@@ -5,3 +5,4 @@
   ansible.builtin.systemd:
     name: "wg-quick@{{ wireguard_interface }}"
     state: restarted
+  ignore_errors: "{{ ansible_check_mode }}"  # see the start task
