@@ -74,6 +74,30 @@ ansible-playbook playbooks/site.yml --tags vpn --limit pi --check --diff -c loca
 ansible-playbook playbooks/site.yml --tags vpn --limit pi -c local
 ```
 
+## How it was checked
+
+Before any phone, from a throwaway client on the Pi itself: a WireGuard
+interface created in the main namespace (so its UDP socket reaches
+`wg0` like a phone's would) and moved into a network namespace, with an
+in-memory key and a live-only peer at 10.8.0.250 on `wg0`. Through it, on
+2026-10-02:
+
+| Check | Result |
+|---|---|
+| Handshake | after 5.1 s (the first initiation was lost; WireGuard's 5 s retry got it) |
+| DNS `cam.home` over UDP and TCP | 192.168.1.253 |
+| `https://cam.home/login`, certificate verified | 200 - through Traefik's NetworkPolicy from 10.8.0.250 |
+| UDP to the Mac's 8189 | forwarded, and counted by the MASQUERADE rule |
+| The desktop's Ollama (192.168.1.131:11434) | blocked by ufw - not in the forwarding rule |
+
+What that can't cover is the router's port forward and a real phone's
+WebRTC session - those need a phone on cellular, not yet done.
+
+Also checked after applying: the ufw diff was exactly the three new rules
+(plus ufw's own IPv6 copy of the 51821 one), the NAT diff exactly the
+MASQUERADE rule, flannel still on 51820, both nodes Ready, and a second
+run reported `changed=0`.
+
 ## Limits
 
 - **The home IP can change.** `wireguard_endpoint` is the connection's

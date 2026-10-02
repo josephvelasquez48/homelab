@@ -9,7 +9,7 @@ Built in three phases, each working on its own before the next:
 |---|---|---|
 | 1 | The camera as a WebRTC stream on the Mac | **Done** 2026-10-02 |
 | 2 | `cam.home`: a web app in the cluster with per-person accounts and the viewer page | **Done** 2026-10-02 |
-| 3 | WireGuard on the Pi, for watching away from home | Next |
+| 3 | WireGuard on the Pi, for watching away from home ([vpn.md](vpn.md)) | **Running** 2026-10-02; phone test pending |
 
 ## The web app (phase 2)
 
