@@ -232,3 +232,7 @@ body.popup.touch button.round svg { width: 44px; height: 44px; }
 body.popup.touch button.round span { font-size: 16px; top: calc(100% + 10px); }
 body.popup.touch .keypad { grid-template-columns: repeat(3, 84px); gap: 14px 28px; }
 body.popup.touch .keypad button { width: 84px; height: 84px; font-size: 30px; }
+/* Home: a compact button centred under the call's own, tall enough to tap. */
+body.popup.touch #home-row { justify-content: center; margin-top: 14px; }
+#screen-home { flex: none; padding: 14px 28px; font-size: 16px; border-radius: 999px; }
+#screen-home svg { width: 18px; height: 18px; }
