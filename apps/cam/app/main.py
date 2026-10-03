@@ -81,6 +81,14 @@ async def lifespan(app: FastAPI):
             # camera, which it does on the first viewer (up to ~2 s).
             timeout=httpx.Timeout(15.0, connect=3.0),
         )
+    if not hasattr(app.state, "focus"):
+        # focusd beside MediaMTX (apps/cam/mac/focusd.py). camctl answers in
+        # well under a second; the read timeout only covers a stuck camera.
+        app.state.focus = httpx.AsyncClient(
+            base_url=config.FOCUS_URL,
+            auth=(config.MEDIAMTX_USER, config.MEDIAMTX_PASSWORD),
+            timeout=httpx.Timeout(10.0, connect=3.0),
+        )
     # WHEP sessions this app created: MediaMTX's session id -> (who owns it,
     # when), so only that viewer can end it. In memory: one replica, and a
     # lost entry only means MediaMTX times the session out on its own.
@@ -88,6 +96,7 @@ async def lifespan(app: FastAPI):
     app.state.ceremonies = {}
     yield
     await app.state.mediamtx.aclose()
+    await app.state.focus.aclose()
     await app.state.store.close()
 
 
@@ -603,3 +612,38 @@ async def whep_end(session_id: str, request: Request, user: User = Depends(requi
     except httpx.HTTPError:
         pass  # MediaMTX ends it anyway once the browser stops sending
     return Response(status_code=204)
+
+
+# Focus: the admins' slider on the viewer, relayed to focusd on the Mac.
+# Admins only because it changes the picture for everyone watching.
+
+async def _focus(request: Request, method: str, body: dict | None = None) -> dict:
+    try:
+        upstream = await request.app.state.focus.request(method, "/focus", json=body)
+    except httpx.HTTPError:
+        raise HTTPException(503, "Focus control is offline - the Mac may be asleep or off")
+    if upstream.status_code != 200:
+        try:
+            detail = upstream.json().get("error") or ""
+        except ValueError:
+            detail = ""
+        status = 400 if upstream.status_code == 400 else 503
+        raise HTTPException(status, detail or f"The focus service answered {upstream.status_code}")
+    return upstream.json()
+
+
+@app.get("/api/focus")
+async def focus_status(request: Request, admin: User = Depends(require_admin)) -> dict:
+    return await _focus(request, "GET")
+
+
+@app.post("/api/focus", dependencies=[Depends(require_same_origin)])
+async def focus_set(request: Request, admin: User = Depends(require_admin)) -> dict:
+    body = await json_body(request)
+    if body.get("auto") is True:
+        return await _focus(request, "PUT", {"auto": True})
+    focus = body.get("focus")
+    # The C922's range; focusd and the camera check again.
+    if type(focus) is not int or not 0 <= focus <= 250:
+        raise HTTPException(400, 'Expected {"auto": true} or {"focus": 0-250}')
+    return await _focus(request, "PUT", {"focus": focus})

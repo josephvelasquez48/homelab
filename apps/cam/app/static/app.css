@@ -251,6 +251,30 @@ a:hover { text-decoration: underline; }
   font-size: 13px;
 }
 
+/* Focus (admins): Far-Near slider and autofocus, under the video */
+
+.focus-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 10px;
+  margin-top: 12px;
+  padding: 10px 14px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  font-size: 13.5px;
+}
+.focus-bar[hidden] { display: none; }
+.focus-bar label { margin: 0; font-weight: 700; }
+.focus-bar .end { color: var(--muted); font-size: 12.5px; }
+.focus-bar input[type="range"] { flex: 1 1 140px; min-width: 120px; accent-color: var(--accent); }
+.focus-bar output { min-width: 3ch; text-align: right; font-variant-numeric: tabular-nums; }
+.focus-bar.auto input[type="range"], .focus-bar.auto output { opacity: .5; }
+.focus-bar .btn[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
+.focus-msg { flex-basis: 100%; color: var(--danger); font-size: 12.5px; }
+.focus-msg:empty { display: none; }
+
 /* Cards, forms, tables (sign-in, invite, account, admin) */
 
 .page {

@@ -11,7 +11,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app import config, main
-from tests.fakes import FakeMediaMTX, FakeStore, SoftAuthenticator
+from tests.fakes import FakeFocus, FakeMediaMTX, FakeStore, SoftAuthenticator
 
 HEADERS = {"X-Requested-With": "cam"}
 
@@ -31,9 +31,11 @@ def app():
     main._failures.clear()
     main.app.state.store = FakeStore()
     main.app.state.mediamtx = FakeMediaMTX()
+    main.app.state.focus = FakeFocus()
     yield main.app
     del main.app.state.store
     del main.app.state.mediamtx
+    del main.app.state.focus
 
 
 @pytest.fixture
