@@ -155,15 +155,22 @@ do {
     device.unlockForConfiguration()
 
     // The remembered focus (camctl.c): the camera keeps a setting only while
-    // it has power, so a replug or a reboot would quietly undo it. Nothing
-    // remembered, or camctl missing, leaves the camera as it is.
+    // it has power, so a replug or a reboot would quietly undo it. Applied
+    // once it's streaming - sent the moment the session started, it was
+    // overwritten by the camera's own start-up (autofocus back on) - and
+    // again a little later in case start-up took longer. Nothing remembered,
+    // or camctl missing, leaves the camera as it is.
     let camctl = URL(fileURLWithPath: CommandLine.arguments[0])
         .deletingLastPathComponent().appendingPathComponent("camctl")
     if FileManager.default.isExecutableFile(atPath: camctl.path) {
-        let focus = Process()
-        focus.executableURL = camctl
-        focus.arguments = ["apply"]
-        try? focus.run()
+        for delay in [2.0, 6.0] {
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+                let focus = Process()
+                focus.executableURL = camctl
+                focus.arguments = ["apply"]
+                try? focus.run()
+            }
+        }
     }
 } catch {
     log("\(error)")
