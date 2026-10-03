@@ -1,0 +1,12 @@
+# Opens homelab-bluetooth:// links: the display's Bluetooth button
+# (static/display.js) follows one, Chromium hands it to xdg-open, and this
+# turns the Pi's Bluetooth on or off. install.sh fills in @BIN@ and makes it
+# the handler. (A script, not an inline sh -c: this xdg-open splits Exec on
+# spaces.)
+[Desktop Entry]
+Type=Application
+Name=Pi Bluetooth on/off
+Comment=Turn the Pi's Bluetooth on or off (apps/pi-display)
+Exec=@BIN@/pi-display-set-bluetooth %u
+NoDisplay=true
+MimeType=x-scheme-handler/homelab-bluetooth;

@@ -367,6 +367,11 @@ class Hub:
             # under it pauses its animation (apps/dashboard, display.js).
             "phone_screen_shown": int(self.screen_shown()),
         }
+        # The Pi's Bluetooth adapter, for the display's Bluetooth button. Left
+        # out until the reconnector has looked (no data, not "off").
+        powered = self.reconnector.powered if self.reconnector else None
+        if powered is not None:
+            values["phone_bluetooth_powered"] = int(powered)
         try:
             metrics.write(values, self.history.counts() if self.history else {})
         except OSError as e:

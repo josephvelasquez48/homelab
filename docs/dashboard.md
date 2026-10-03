@@ -17,7 +17,9 @@ status, and Ollama unloads idle models by itself
   and read access to Argo CD Applications in the `argocd` namespace only.
   For the debug pages (below), pod logs and events, bound namespace by
   namespace to the ones on the map. It uses the pod's own ServiceAccount
-  token, no kubeconfig. Nothing on it changes anything, so there's no login.
+  token, no kubeconfig. Nothing it serves changes anything, so there's no
+  login; the display's buttons act through link handlers on the Pi itself
+  (below), not through the dashboard.
 
 ## The Pi's always-on display
 
@@ -100,6 +102,18 @@ it away for the rest of the call; **Call** brings it back. The same trick as
 Desktop: a `homelab-call://` link, pre-approved by `install.sh`, whose
 handler `apps/pi-display/show-call.sh` asks the phone service on loopback
 (docs/phone.md).
+
+**The Pi's Bluetooth:** the **Bluetooth on** button in the bottom bar turns
+the Pi's Bluetooth off (it asks first: the iPhone disconnects, so no calls
+or music through the Pi, and a Bluetooth mouse stops too); it then reads
+**Bluetooth off**, and a tap turns it straight back on. Same trick again: a
+`homelab-bluetooth://on` or `://off` link, pre-approved by `install.sh`,
+whose handler `apps/pi-display/set-bluetooth.sh` runs `bluetoothctl power`
+(BlueZ lets any local user power the adapter, so no sudo). Off lasts until
+it's turned back on or the Pi restarts. The button shows the adapter as the
+phone service last saw it (`phone_bluetooth_powered`, written every few
+seconds), so it flips a poll or two after the tap, and it's hidden while
+there's no data. While it's off the phone service doesn't try to reconnect.
 
 **Deploys reach the screen on their own:** the dashboard sends
 `Cache-Control: no-cache` for its pages and `/static` files, so a browser

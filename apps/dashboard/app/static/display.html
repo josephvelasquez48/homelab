@@ -35,19 +35,21 @@
   #offline { position: absolute; top: 116px; right: 22px; z-index: 4; display: none; } /* under the stats row */
   html.mouse, html.mouse body { cursor: auto; } /* a real mouse is moving: see the script below */
   /* Big enough for a finger: ~44 px tall in the 56 px bar. */
-  #to-desktop, #to-call { pointer-events: auto; background: #2C2C2A; color: #D3D1C7; border: 0; border-radius: 999px;
+  #to-desktop, #to-call, #to-bt { pointer-events: auto; background: #2C2C2A; color: #D3D1C7; border: 0; border-radius: 999px;
     font: inherit; font-size: 18px; font-weight: 600; padding: 11px 30px; }
   #to-call { background: #D4537E; color: #fff; margin-right: 4px; }
-  #to-call[hidden] { display: none; }
-  #desk-confirm { position: absolute; inset: 0; z-index: 6; display: flex; align-items: center; justify-content: center;
+  #to-call[hidden], #to-bt[hidden] { display: none; }
+  #to-bt { padding: 11px 22px; margin-right: 4px; }
+  #to-bt.off { background: transparent; color: #888780; box-shadow: inset 0 0 0 2px #444441; }
+  #confirm { position: absolute; inset: 0; z-index: 6; display: flex; align-items: center; justify-content: center;
     background: rgba(0, 0, 0, .55); }
-  #desk-confirm[hidden] { display: none; }
-  #desk-confirm .box { background: #F1EFE8; color: #2C2C2A; border-radius: 12px; padding: 22px 26px; max-width: 460px; }
-  #desk-confirm b { font-size: 20px; }
-  #desk-confirm p { margin: 8px 0 18px; font-size: 16px; line-height: 1.45; color: #444441; }
-  #desk-confirm button { font: inherit; font-size: 17px; border: 0; border-radius: 999px; padding: 10px 22px; margin-right: 10px; }
-  #desk-go { background: #185FA5; color: #fff; }
-  #desk-cancel { background: #D3D1C7; color: #2C2C2A; }
+  #confirm[hidden] { display: none; }
+  #confirm .box { background: #F1EFE8; color: #2C2C2A; border-radius: 12px; padding: 22px 26px; max-width: 460px; }
+  #confirm b { font-size: 20px; }
+  #confirm p { margin: 8px 0 18px; font-size: 16px; line-height: 1.45; color: #444441; }
+  #confirm button { font: inherit; font-size: 17px; border: 0; border-radius: 999px; padding: 10px 22px; margin-right: 10px; }
+  #confirm-go { background: #185FA5; color: #fff; }
+  #confirm-cancel { background: #D3D1C7; color: #2C2C2A; }
 </style>
 </head>
 <body>
@@ -68,15 +70,16 @@
     <span class="dot" id="ticker-dot"></span>
     <span id="ticker"></span>
     <button id="to-call" hidden>Call</button>
+    <button id="to-bt" hidden></button>
     <button id="to-desktop">Desktop</button>
     <span id="pager"><span class="on"></span><span></span></span>
   </div>
   <span class="pill bad" id="offline">No data - dashboard unreachable</span>
-  <div id="desk-confirm" hidden>
+  <div id="confirm" hidden>
     <div class="box">
-      <b>Show the Pi desktop?</b>
-      <p>The display closes. To bring it back, tap <b>Homelab display</b> on the desktop.</p>
-      <button id="desk-go">Show desktop</button><button id="desk-cancel">Cancel</button>
+      <b id="confirm-title"></b>
+      <p id="confirm-text"></p>
+      <button id="confirm-go"></button><button id="confirm-cancel">Cancel</button>
     </div>
   </div>
 </div>

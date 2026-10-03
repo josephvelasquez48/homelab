@@ -22,6 +22,10 @@ in for PC_GONE_SECONDS (the agent polls every second while it runs), the
 phone is disconnected and *blocked*: BlueZ refuses its connection
 attempts straight away but keeps the pairing. When the PC is back it's
 unblocked and reconnected on the next check, a few seconds later.
+
+With the Pi's Bluetooth turned off (the display's Bluetooth button,
+apps/pi-display), there's nothing to do: no connects, no blocking. The
+adapter's state is kept for the phone_bluetooth_powered gauge.
 """
 import asyncio
 import logging
@@ -34,6 +38,7 @@ log = logging.getLogger("phone.reconnect")
 
 BLUEZ = "org.bluez"
 DEVICE_IFACE = "org.bluez.Device1"
+ADAPTER_PATH = "/org/bluez/hci0"
 HFP_AG_UUID = "0000111f-0000-1000-8000-00805f9b34fb"
 A2DP_SOURCE_UUID = "0000110a-0000-1000-8000-00805f9b34fb"  # the phone's media side
 INTERVAL_SECONDS = 30  # between connect attempts
@@ -55,6 +60,12 @@ def reconnect_candidates(objects: dict) -> list[str]:
         if value("Paired") and value("Trusted") and not value("Connected") and HFP_AG_UUID in (value("UUIDs") or []):
             found.append(path)
     return found
+
+
+def adapter_powered(objects: dict) -> bool | None:
+    """Whether the Pi's Bluetooth is on; None with no adapter at all."""
+    adapter = objects.get(ADAPTER_PATH, {}).get("org.bluez.Adapter1")
+    return None if adapter is None else bool(getattr(adapter.get("Powered"), "value", False))
 
 
 def paired_phones(objects: dict) -> dict[str, bool]:
@@ -94,6 +105,7 @@ class Reconnector:
         self.successes = 0
         self.bus: MessageBus | None = None  # set by run()
         self._last_reason: str | None = None
+        self.powered: bool | None = None  # the adapter, as of the last check
 
     async def _call(self, path, iface, member, signature="", body=()):
         reply = await self.bus.call(
@@ -152,6 +164,9 @@ class Reconnector:
     async def check(self, now: float) -> None:
         """One pass: block or unblock for the PC, then maybe try to connect."""
         [objects] = await self._call("/", "org.freedesktop.DBus.ObjectManager", "GetManagedObjects")
+        self.powered = adapter_powered(objects)
+        if self.powered is False:
+            return  # Bluetooth turned off on purpose: nothing would connect
         phones = paired_phones(objects)
         if not self.pc_present():
             for path, blocked in phones.items():

@@ -268,6 +268,31 @@ async def test_phone_is_blocked_while_the_pc_is_off_and_back_when_it_returns():
 
 
 @pytest.mark.asyncio
+async def test_nothing_connects_or_blocks_while_bluetooth_is_off():
+    from app import reconnect
+
+    pc = {"on": True}
+    r = reconnect.Reconnector(lambda: False, lambda: pc["on"])
+    fake = FakeBluezObjects(phone=dev())
+    adapter = {"org.bluez.Adapter1": {"Powered": Variant("b", False)}}
+
+    async def call(path, iface, member, *args):
+        result = await fake(path, iface, member, *args)
+        return [{**result[0], reconnect.ADAPTER_PATH: adapter}] if member == "GetManagedObjects" else result
+
+    r._call = call
+    await r.check(now=0)
+    pc["on"] = False
+    await r.check(now=5)
+    assert fake.calls == [] and r.powered is False
+
+    adapter["org.bluez.Adapter1"]["Powered"] = Variant("b", True)  # turned back on
+    await r.check(now=10)
+    assert r.powered is True
+    assert [c[1] for c in fake.calls] == ["Set"]  # the PC is off: block, as usual
+
+
+@pytest.mark.asyncio
 async def test_connect_attempts_stay_30_s_apart():
     from app import reconnect
 

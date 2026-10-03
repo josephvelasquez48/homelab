@@ -139,6 +139,7 @@ def test_display_endpoint(client, monkeypatch):
     assert set(data["links"]) == set(data["rates"]) | {
         "apps-internet", "backup-mac", "traefik-prometheus", "api-prometheus", "adguard-prometheus", "phone-prometheus"}
     assert data["phone"]["screen_shown"] is False
+    assert data["phone"]["bluetooth"] is None  # no data: the display hides its button
 
 
 def test_display_page(client):
@@ -147,7 +148,8 @@ def test_display_page(client):
     assert '<script src="/static/tank.js">' in res.text  # the aquarium, before display.js uses it
     assert '<script src="/static/display.js">' in res.text
     assert res.text.index("/static/tank.js") < res.text.index("/static/display.js")
-    assert 'id="to-desktop"' in res.text and 'id="desk-confirm" hidden' in res.text  # the Desktop button, confirm first
+    assert 'id="to-desktop"' in res.text and 'id="confirm" hidden' in res.text  # the Desktop button, confirm first
+    assert 'id="to-bt" hidden' in res.text  # shown once the phone service reports the adapter
 
 
 def test_pages_and_scripts_are_rechecked_on_every_load(client):

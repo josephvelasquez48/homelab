@@ -87,6 +87,8 @@ VALUE_QUERIES = {
     "backup_readable": "min(homelab_backup_repository_readable)",
     # 1 while the Pi's call screen covers the display: the page pauses.
     "phone_screen": "phone_screen_shown",
+    # The Pi's Bluetooth adapter, for the display's Bluetooth button.
+    "phone_bluetooth": "phone_bluetooth_powered",
 }
 
 # Map boxes that are pods: box -> (namespace, pod name prefix).
@@ -525,6 +527,8 @@ async def gather(k8s_client: httpx.AsyncClient, http: httpx.AsyncClient, argo_ta
             "pc_present": flag(values["phone_pc"]),
             # The Pi's call screen is covering the display: nothing to animate.
             "screen_shown": bool(flag(values["phone_screen"])),
+            # The Pi's Bluetooth is on; None when the phone service hasn't said.
+            "bluetooth": flag(values["phone_bluetooth"]),
         },
         "nodes": [{"name": n["name"], "ready": n["ready"]} for n in nodes],
         "pods": pods,

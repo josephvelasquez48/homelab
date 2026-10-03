@@ -5,7 +5,8 @@
 #
 # The page itself is served by the dashboard (apps/dashboard, /display);
 # this only opens it full screen whenever the desktop is logged in, and
-# wires up the page's Desktop button and the icon that brings it back.
+# wires up the page's Desktop, Call and Bluetooth buttons and the icon
+# that brings it back.
 set -euo pipefail
 
 APP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -38,6 +39,10 @@ install -m 755 "$APP_DIR/show-call.sh" "$HOME/.local/bin/pi-display-show-call"
 sed -i "s|@CA@|$(realpath "$CA")|" "$HOME/.local/bin/pi-display-show-call"
 sed "s|@BIN@|$HOME/.local/bin|" "$APP_DIR/homelab-call.desktop" > "$HOME/.local/share/applications/homelab-call.desktop"
 xdg-mime default homelab-call.desktop x-scheme-handler/homelab-call
+# Its Bluetooth button follows homelab-bluetooth://on or ://off.
+install -m 755 "$APP_DIR/set-bluetooth.sh" "$HOME/.local/bin/pi-display-set-bluetooth"
+sed "s|@BIN@|$HOME/.local/bin|" "$APP_DIR/homelab-bluetooth.desktop" > "$HOME/.local/share/applications/homelab-bluetooth.desktop"
+xdg-mime default homelab-bluetooth.desktop x-scheme-handler/homelab-bluetooth
 update-desktop-database "$HOME/.local/share/applications"
 # And the way back: "Homelab display" in the menu and on the desktop.
 cp "$APP_DIR/pi-display.desktop" "$HOME/.local/share/applications/"
@@ -56,6 +61,7 @@ prefs = json.loads(path.read_text()) if path.exists() else {}
 pairs = prefs.setdefault("protocol_handler", {}).setdefault("allowed_origin_protocol_pairs", {})
 pairs.setdefault("https://dashboard.home", {})["homelab-desktop"] = True
 pairs["https://dashboard.home"]["homelab-call"] = True
+pairs["https://dashboard.home"]["homelab-bluetooth"] = True
 path.write_text(json.dumps(prefs))
 EOF
 
