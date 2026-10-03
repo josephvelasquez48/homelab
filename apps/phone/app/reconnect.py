@@ -24,8 +24,9 @@ attempts straight away but keeps the pairing. When the PC is back it's
 unblocked and reconnected on the next check, a few seconds later.
 
 With the Pi's Bluetooth turned off (the display's Bluetooth button,
-apps/pi-display), there's nothing to do: no connects, no blocking. The
-adapter's state is kept for the phone_bluetooth_powered gauge.
+apps/pi-display, or the switch on the phone page), there's nothing to do:
+no connects, no blocking. The adapter's state, re-read every check, is what
+both of those show, so each follows the other.
 """
 import asyncio
 import logging
@@ -160,6 +161,17 @@ class Reconnector:
             path, "org.freedesktop.DBus.Properties", "Set", "ssv", [DEVICE_IFACE, "Blocked", Variant("b", blocked)]
         )
         log.info("%s %s", "blocked (PC is off)" if blocked else "unblocked (PC is back)", path)
+
+    async def set_powered(self, on: bool) -> None:
+        """Turn the Pi's Bluetooth on or off (the phone page's switch)."""
+        await self._call(
+            ADAPTER_PATH, "org.freedesktop.DBus.Properties", "Set", "ssv",
+            ["org.bluez.Adapter1", "Powered", Variant("b", on)],
+        )
+        self.powered = on
+        if on:
+            self._next_attempt = 0.0  # reconnect the phone now, not in up to 30 s
+        log.info("Bluetooth turned %s", "on" if on else "off")
 
     async def check(self, now: float) -> None:
         """One pass: block or unblock for the PC, then maybe try to connect."""

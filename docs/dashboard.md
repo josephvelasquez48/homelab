@@ -110,10 +110,15 @@ or music through the Pi, and a Bluetooth mouse stops too); it then reads
 `homelab-bluetooth://on` or `://off` link, pre-approved by `install.sh`,
 whose handler `apps/pi-display/set-bluetooth.sh` runs `bluetoothctl power`
 (BlueZ lets any local user power the adapter, so no sudo). Off lasts until
-it's turned back on or the Pi restarts. The button shows the adapter as the
-phone service last saw it (`phone_bluetooth_powered`, written every few
-seconds), so it flips a poll or two after the tap, and it's hidden while
-there's no data. While it's off the phone service doesn't try to reconnect.
+it's turned back on or the Pi restarts. The phone page has the same control
+(*Pi's Bluetooth*, docs/phone.md), and the two follow each other: both show
+the adapter itself, as the phone service reads it every 5 s. The phone page
+gets it pushed within those 5 s; the display reads it from
+`phone_bluetooth_powered`, written straight after the phone page's switch
+moves, so it follows within about 20 s (scrape plus poll). After a tap on
+the display, the button shows the new state at once, until the gauge agrees
+or a minute passes. It's hidden while there's no data. While Bluetooth is
+off, the phone service doesn't try to reconnect.
 
 **Deploys reach the screen on their own:** the dashboard sends
 `Cache-Control: no-cache` for its pages and `/static` files, so a browser

@@ -293,6 +293,24 @@ async def test_nothing_connects_or_blocks_while_bluetooth_is_off():
 
 
 @pytest.mark.asyncio
+async def test_set_powered_sets_the_adapter_and_reconnects_straight_away():
+    from app import reconnect
+
+    r = reconnect.Reconnector(lambda: False, lambda: True)
+    calls = []
+
+    async def call(path, iface, member, *args):
+        calls.append((path, member, *args[1:]))
+        return []
+
+    r._call = call
+    r._next_attempt = 999
+    await r.set_powered(True)
+    assert calls == [(reconnect.ADAPTER_PATH, "Set", ["org.bluez.Adapter1", "Powered", Variant("b", True)])]
+    assert r.powered is True and r._next_attempt == 0.0
+
+
+@pytest.mark.asyncio
 async def test_connect_attempts_stay_30_s_apart():
     from app import reconnect
 

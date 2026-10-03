@@ -276,10 +276,10 @@ function renderBars() {
   // Only seen while a call is up and its screen was sent home: it covers
   // this page otherwise.
   $("to-call").hidden = !ph.in_call;
-  const bt = $("to-bt");
-  bt.hidden = ph.bluetooth === null; // no data: no button to guess with
-  bt.classList.toggle("off", ph.bluetooth === false);
-  bt.textContent = ph.bluetooth === false ? "Bluetooth off" : "Bluetooth on";
+  const bt = $("to-bt"), btOn = bluetoothShown();
+  bt.hidden = btOn === null; // no data: no button to guess with
+  bt.classList.toggle("off", btOn === false);
+  bt.textContent = btOn === false ? "Bluetooth off" : "Bluetooth on";
 }
 
 let tickIndex = 0;
@@ -348,7 +348,8 @@ $("screen").addEventListener("click", (e) => {
 });
 
 // ---- Asking first ----
-// One dialog for the buttons that ask before acting: Go follows the link.
+// One dialog for the buttons that ask before acting: Go follows the link
+// (or runs the function).
 // Taps here don't switch views.
 const confirmBox = $("confirm");
 let confirmHref = null;
@@ -368,7 +369,8 @@ confirmBox.addEventListener("click", (e) => {
 });
 $("confirm-go").addEventListener("click", () => {
   closeConfirm();
-  location.href = confirmHref;
+  if (typeof confirmHref === "function") confirmHref();
+  else location.href = confirmHref;
 });
 
 // ---- The Pi's desktop ----
@@ -396,15 +398,29 @@ $("to-call").addEventListener("click", (e) => {
 // Same trick: homelab-bluetooth://on or ://off, and apps/pi-display's
 // handler powers the adapter with bluetoothctl. Turning it off asks first:
 // it takes the iPhone (calls and music) and a Bluetooth mouse with it. The
-// button shows the adapter as the phone service last saw it, so it flips a
-// poll or two after the tap.
+// button shows the adapter as the phone service reports it, which is also
+// what the phone page's switch shows, so each follows the other (the report
+// takes up to ~20 s to get here). After a tap here it shows what was asked
+// for straight away, until the report agrees or a minute passes.
+let btWanted = null, btWantedUntil = 0;
+function wantBluetooth(on) {
+  btWanted = on;
+  btWantedUntil = Date.now() + 60000;
+  location.href = on ? "homelab-bluetooth://on" : "homelab-bluetooth://off";
+  if (state) renderBars();
+}
+function bluetoothShown() {
+  const reported = state.phone.bluetooth;
+  if (btWanted === null || reported === btWanted || Date.now() > btWantedUntil) btWanted = null;
+  return btWanted === null ? reported : btWanted;
+}
 $("to-bt").addEventListener("click", (e) => {
   e.stopPropagation();
-  if (state.phone.bluetooth === false) return void (location.href = "homelab-bluetooth://on");
+  if (bluetoothShown() === false) return wantBluetooth(true);
   ask("Turn off the Pi's Bluetooth?",
     "The iPhone disconnects: no calls or music through the Pi until it's back on. " +
     "A Bluetooth mouse stops too. Tap <b>Bluetooth off</b> here to turn it on again.",
-    "Turn off", "homelab-bluetooth://off");
+    "Turn off", () => wantBluetooth(false));
 });
 
 // ---- Loop ----
