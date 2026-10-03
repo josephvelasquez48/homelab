@@ -277,6 +277,24 @@ function commandsSection(commands) {
   }))];
 }
 
+// What the box is, what's gone wrong with it before and what fixed it, and
+// where it's written up (app/guide.py). A fish's page shows its box's.
+function howSection(g) {
+  if (!g || !g.how || !g.how.length) return null;
+  return [h("h2", {}, "How it works"), h("div", { class: "panel" }, h("ul", { class: "how" }, g.how.map((t) => h("li", {}, t))))];
+}
+
+function fixesSection(g) {
+  if (!g || !g.fixes || !g.fixes.length) return null;
+  return [h("h2", {}, "Known problems and fixes"), h("div", { class: "panel" },
+    g.fixes.map(([symptom, fix]) => h("div", { class: "fix" }, h("b", {}, symptom), h("span", {}, fix))))];
+}
+
+function docsSection(g) {
+  if (!g || !g.docs || !g.docs.length) return null;
+  return [h("h2", {}, "Read more (in the repo)"), h("div", { class: "docs" }, g.docs.map((d) => h("code", {}, d)))];
+}
+
 // ---- render, keeping what's open and where each log is scrolled ----
 
 function render() {
@@ -298,8 +316,10 @@ function render() {
   out.replaceChildren(...[
     d.connections && d.connections.length ? [h("h2", {}, d.box ? `Connections (as part of ${d.box.title})` : "Connections"),
       diagram(d.connections, d.box ? d.box.title : d.title, d.box ? "unknown" : d.status)] : null,
+    howSection(d.guide),
     alertsSection(d.alerts),
     metricsSection(d.metrics),
+    fixesSection(d.guide),
     nodesSection(d.nodes),
     targetsSection(d.down_targets),
     podsSection(d),
@@ -307,6 +327,7 @@ function render() {
     logsSection(d.logs, openState),
     argoSection(d.argo),
     commandsSection(d.commands),
+    docsSection(d.guide),
   ].flat(2).filter(Boolean));
 
   // Logs open at their newest line, or where they were left.
