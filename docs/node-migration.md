@@ -117,8 +117,8 @@ there. Afterwards: all pods ready, cross-node pod traffic and cluster DNS
 | `m1-node` (VM) | `52:54:00:D1:C5:8E` | 192.168.1.63 |
 | Windows desktop | `CC:28:AA:53:AA:A4` | 192.168.1.131 |
 | `joe` (Pi) | `2C:CF:67:59:A4:C6` | 192.168.1.253 (also static on the Pi) |
-| MacBook Ethernet (j5create USB adapter; the webcam, [cam.md](cam.md)) | `00:05:1B:69:01:62` | 192.168.1.219 |
-| MacBook Wi-Fi (optional now; nothing depends on it) | `8E:2C:55:53:09:94` (a macOS private address for the 2.4 GHz network) | 192.168.1.180 |
+| MacBook Ethernet (j5create USB adapter; the webcam, [cam.md](cam.md)) | `00:05:1B:69:01:62` | 192.168.1.219 (reserved late 2026-10-02 - until then only a 2-hour lease the router happened to renew). The router lists it with a 90-day countdown, not "Permanent" like the others: macOS asks for a 90-day lease and the router grants what's asked, where the Linux machines ask for nothing and get an endless one. Still reserved |
+| MacBook Wi-Fi (optional now; nothing depends on it) | `8E:2C:55:53:09:94` (a macOS private address for the 2.4 GHz network) | none since 2026-10-02 (was .180; its row on the router became the Ethernet's) |
 
 `kubernetes/ai/inference.yaml` holds the desktop's address. Argo CD
 ignores Endpoints, so a change there needs `kubectl apply` by hand.
