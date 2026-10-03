@@ -155,6 +155,9 @@ class Hub:
         state["settings"] = dict(self.settings)
         state["handoff"] = self._handoff
         state["muted"] = self.muted
+        # The Pi's Bluetooth adapter, as last read (every few seconds), so the
+        # switch follows the display's button too. None: not known yet.
+        state["bluetooth"] = self.reconnector.powered if self.reconnector else None
         return state
 
     def extras(self) -> dict:
@@ -367,6 +370,11 @@ class Hub:
             # under it pauses its animation (apps/dashboard, display.js).
             "phone_screen_shown": int(self.screen_shown()),
         }
+        # The Pi's Bluetooth adapter, for the display's Bluetooth button. Left
+        # out until the reconnector has looked (no data, not "off").
+        powered = self.reconnector.powered if self.reconnector else None
+        if powered is not None:
+            values["phone_bluetooth_powered"] = int(powered)
         try:
             metrics.write(values, self.history.counts() if self.history else {})
         except OSError as e:
@@ -520,6 +528,15 @@ class Hub:
                 self._screen_hidden_for = frozenset(
                     c.path for c in self.tel.state.calls if c.state != "disconnected")
                 return None
+            elif action == "set-bluetooth":
+                if not (self.reconnector and self.reconnector.bus):
+                    return "Bluetooth control isn't available"
+                try:
+                    await self.reconnector.set_powered(bool(msg.get("value")))
+                except RuntimeError as e:
+                    return f"Bluetooth: {e}"
+                if self.write_metrics:
+                    self._write_metrics()  # now, so the display's button follows sooner
             elif action == "refresh-contacts":
                 if self.contacts and self.tel.state.connected:
                     self.contacts.updated = 0  # due now; the extras loop picks it up

@@ -276,6 +276,10 @@ function renderBars() {
   // Only seen while a call is up and its screen was sent home: it covers
   // this page otherwise.
   $("to-call").hidden = !ph.in_call;
+  const bt = $("to-bt"), btOn = bluetoothShown();
+  bt.hidden = btOn === null; // no data: no button to guess with
+  bt.classList.toggle("off", btOn === false);
+  bt.textContent = btOn === false ? "Bluetooth off" : "Bluetooth on";
 }
 
 let tickIndex = 0;
@@ -343,23 +347,43 @@ $("screen").addEventListener("click", (e) => {
   if (view === 1) Tank.resize();
 });
 
+// ---- Asking first ----
+// One dialog for the buttons that ask before acting: Go follows the link
+// (or runs the function).
+// Taps here don't switch views.
+const confirmBox = $("confirm");
+let confirmHref = null;
+function closeConfirm() { confirmBox.hidden = true; clearTimeout(closeConfirm.timer); }
+function ask(title, html, go, href) {
+  $("confirm-title").textContent = title;
+  $("confirm-text").innerHTML = html;
+  $("confirm-go").textContent = go;
+  confirmHref = href;
+  confirmBox.hidden = false;
+  clearTimeout(closeConfirm.timer);
+  closeConfirm.timer = setTimeout(closeConfirm, 15000); // unanswered: back to the display
+}
+confirmBox.addEventListener("click", (e) => {
+  e.stopPropagation();
+  if (e.target === confirmBox || e.target.id === "confirm-cancel") closeConfirm();
+});
+$("confirm-go").addEventListener("click", () => {
+  closeConfirm();
+  if (typeof confirmHref === "function") confirmHref();
+  else location.href = confirmHref;
+});
+
 // ---- The Pi's desktop ----
 // The Desktop button, once confirmed, follows a homelab-desktop:// link.
 // Chromium hands it to apps/pi-display's handler, which closes this display
 // (pi-display.service) so the desktop shows; its "Homelab display" icon
 // brings it back. install.sh pre-approves the link for this page, so there
-// is no "open this application?" prompt. Taps here don't switch views.
-const deskConfirm = $("desk-confirm");
-function closeDeskConfirm() { deskConfirm.hidden = true; clearTimeout(closeDeskConfirm.timer); }
+// is no "open this application?" prompt.
 $("to-desktop").addEventListener("click", (e) => {
   e.stopPropagation();
-  deskConfirm.hidden = false;
-  clearTimeout(closeDeskConfirm.timer);
-  closeDeskConfirm.timer = setTimeout(closeDeskConfirm, 15000); // unanswered: back to the display
-});
-deskConfirm.addEventListener("click", (e) => {
-  e.stopPropagation();
-  if (e.target === deskConfirm || e.target.id === "desk-cancel") closeDeskConfirm();
+  ask("Show the Pi desktop?",
+    "The display closes. To bring it back, tap <b>Homelab display</b> on the desktop.",
+    "Show desktop", "homelab-desktop://show");
 });
 // ---- Back to a call ----
 // The Pi's call screen has a Home button that sends it away for the rest
@@ -370,9 +394,33 @@ $("to-call").addEventListener("click", (e) => {
   e.stopPropagation();
   location.href = "homelab-call://show";
 });
-$("desk-go").addEventListener("click", () => {
-  closeDeskConfirm();
-  location.href = "homelab-desktop://show";
+// ---- The Pi's Bluetooth ----
+// Same trick: homelab-bluetooth://on or ://off, and apps/pi-display's
+// handler powers the adapter with bluetoothctl. Turning it off asks first:
+// it takes the iPhone (calls and music) and a Bluetooth mouse with it. The
+// button shows the adapter as the phone service reports it, which is also
+// what the phone page's switch shows, so each follows the other (the report
+// takes up to ~20 s to get here). After a tap here it shows what was asked
+// for straight away, until the report agrees or a minute passes.
+let btWanted = null, btWantedUntil = 0;
+function wantBluetooth(on) {
+  btWanted = on;
+  btWantedUntil = Date.now() + 60000;
+  location.href = on ? "homelab-bluetooth://on" : "homelab-bluetooth://off";
+  if (state) renderBars();
+}
+function bluetoothShown() {
+  const reported = state.phone.bluetooth;
+  if (btWanted === null || reported === btWanted || Date.now() > btWantedUntil) btWanted = null;
+  return btWanted === null ? reported : btWanted;
+}
+$("to-bt").addEventListener("click", (e) => {
+  e.stopPropagation();
+  if (bluetoothShown() === false) return wantBluetooth(true);
+  ask("Turn off the Pi's Bluetooth?",
+    "The iPhone disconnects: no calls or music through the Pi until it's back on. " +
+    "A Bluetooth mouse stops too. Tap <b>Bluetooth off</b> here to turn it on again.",
+    "Turn off", () => wantBluetooth(false));
 });
 
 // ---- Loop ----

@@ -474,6 +474,7 @@ function render(s) {
   $("phone-dot").className = `dot ${s.connected ? "on" : "off"}`;
   $("phone-status").textContent = s.connected
     ? "iPhone connected"
+    : s.bluetooth === false ? "The Pi's Bluetooth is off"
     : "iPhone not connected - check Bluetooth on the phone";
 
   // Shown until audio is actually running: an auto-enabled context that
@@ -492,6 +493,9 @@ function render(s) {
   if (s.audioError) showError(`Audio: ${s.audioError}`);
   if (s.settings) $("keep-phone").checked = !!s.settings.keepPhoneAnswered;
   if (s.settings) $("media-on-pc").checked = !!s.settings.mediaOnPc;
+  // The adapter itself, so this follows the display's Bluetooth button too.
+  $("bluetooth-row").hidden = s.bluetooth == null;
+  $("bluetooth").checked = !!s.bluetooth;
   renderAudioSummary();
 
   const call = pickCall(s.calls);
@@ -673,6 +677,14 @@ $("enable-audio").onclick = enableAudio;
 // Stored on the Pi, so it holds for every browser and across restarts.
 $("keep-phone").onchange = (e) => send({ action: "set-keep-phone", value: e.target.checked });
 $("media-on-pc").onchange = (e) => send({ action: "set-media-on-pc", value: e.target.checked });
+$("bluetooth").onchange = (e) => {
+  const on = e.target.checked;
+  if (!on && !confirm("Turn off the Pi's Bluetooth? The iPhone disconnects: no calls or music through the Pi until it's back on.")) {
+    e.target.checked = true;
+    return;
+  }
+  send({ action: "set-bluetooth", value: on });
+};
 $("mic").onchange = (e) => switchMic(e.target.value);
 function dbToGain(db) {
   return Math.pow(10, Number(db) / 20);

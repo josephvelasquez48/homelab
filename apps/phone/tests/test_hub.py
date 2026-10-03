@@ -207,6 +207,7 @@ async def test_mic_choice_is_saved_and_shared(tmp_path):
 class FakeReconnector:
     def __init__(self):
         self.resets = []
+        self.powered = True
 
     async def reset_hands_free(self, address):
         self.resets.append(address)
@@ -434,3 +435,41 @@ async def test_the_pi_call_screen_counts_as_up_unless_sent_home():
     assert not hub.screen_shown()  # sent home: the display runs
     tel.state.calls.clear()
     assert not hub.screen_shown()  # no call
+
+
+class FakeAdapter:
+    """A reconnector stand-in that owns the Pi's Bluetooth adapter."""
+
+    def __init__(self, powered=True, error=None):
+        self.powered = powered
+        self.bus = object()
+        self.error = error
+
+    async def set_powered(self, on):
+        if self.error:
+            raise RuntimeError(self.error)
+        self.powered = on
+
+
+@pytest.mark.asyncio
+async def test_bluetooth_switch_turns_the_adapter_off_and_on():
+    hub, _ = make()
+    hub.reconnector = FakeAdapter()
+    page = FakeSocket()
+    await hub.add(page)
+    assert hub.snapshot()["bluetooth"] is True
+    assert await hub.command(page, {"action": "set-bluetooth", "value": False}) is None
+    assert hub.snapshot()["bluetooth"] is False
+    assert await hub.command(page, {"action": "set-bluetooth", "value": True}) is None
+    assert hub.snapshot()["bluetooth"] is True
+
+
+@pytest.mark.asyncio
+async def test_bluetooth_switch_reports_failures_and_missing_control():
+    hub, _ = make()
+    page = FakeSocket()
+    await hub.add(page)
+    assert hub.snapshot()["bluetooth"] is None  # no reconnector: the page hides the switch
+    assert await hub.command(page, {"action": "set-bluetooth", "value": False}) == "Bluetooth control isn't available"
+    hub.reconnector = FakeAdapter(error="org.bluez.Error.Busy")
+    assert await hub.command(page, {"action": "set-bluetooth", "value": False}) == "Bluetooth: org.bluez.Error.Busy"

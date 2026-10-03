@@ -45,9 +45,14 @@ iPhone ──Bluetooth──► Pi: PipeWire / WirePlumber, hands-free role (+ A
 the tray. From the top:
 
 - **Audio** (folds to a one-line summary; click to open) - call volume
-  in dB (-40 to +12, starting at -10), and while the mic is on, which mic. Two switches:
+  in dB (-40 to +12, starting at -10), and while the mic is on, which mic. Switches:
   - *Music and videos on this PC* - off plays them on the iPhone. Calls
     come to the PC either way. The iPhone's volume buttons set the level.
+  - *Pi's Bluetooth* - turns the Pi's Bluetooth adapter off (asks first:
+    the iPhone disconnects, and nothing reconnects it while it's off) or
+    back on. It shows the adapter itself, re-read every 5 s, so it follows
+    the display's Bluetooth button and the display's button follows it
+    (docs/dashboard.md). A Pi restart turns it back on.
   - *Keep iPhone-answered calls on the iPhone* - calls you pick up on the
     phone stay there.
   - *Noise filter* - Off / Normal / Strong, with a status dot and "removing
