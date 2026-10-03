@@ -11,12 +11,14 @@ data:
   # MediaMTX on the MacBook itself (not m1-node, its VM): the camera is a
   # USB device on macOS. Its stream login only works from the nodes'
   # addresses, which is where pod traffic leaves from.
-  MEDIAMTX_URL: "http://192.168.1.180:8889"
+  # The Mac's Ethernet adapter (reserved on the router since 2026-10-02);
+  # its Wi-Fi is .180 and still carries the m1-node VM's bridge.
+  MEDIAMTX_URL: "http://192.168.1.219:8889"
   MEDIAMTX_PATH: "cam"
   MEDIAMTX_USER: "cam-app"
   # The Tailscale Funnel address, not cam.home: invite links have to open
   # on anyone's phone, anywhere, with no VPN or homelab CA. cam.home still
-  # works at home and over the VPN. docs/cam.md, "Sharing by link".
+  # works at home (it redirects here). docs/cam.md, "Sharing by link".
   PUBLIC_URL: "https://cam.taile847cc.ts.net"
 ---
 apiVersion: apps/v1
