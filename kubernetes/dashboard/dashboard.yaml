@@ -58,6 +58,136 @@ subjects:
     name: dashboard
     namespace: dashboard
 ---
+# The debug pages behind the display (tap a box or a fish): pod logs and
+# events. A ClusterRole only so the rules are written once - it's bound
+# per namespace below, so the dashboard can read logs only in the
+# namespaces on the map. Not cam: its logs carry viewers' addresses and
+# invite links, and the dashboard has no login. app/component.py also masks
+# anything credential-shaped in what it shows.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: dashboard-debug
+rules:
+  - apiGroups: [""]
+    resources: ["pods/log"]
+    verbs: ["get"]
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: dashboard-debug
+  namespace: kube-system
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: dashboard-debug
+subjects:
+  - kind: ServiceAccount
+    name: dashboard
+    namespace: dashboard
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: dashboard-debug
+  namespace: backend
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: dashboard-debug
+subjects:
+  - kind: ServiceAccount
+    name: dashboard
+    namespace: dashboard
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: dashboard-debug
+  namespace: data
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: dashboard-debug
+subjects:
+  - kind: ServiceAccount
+    name: dashboard
+    namespace: dashboard
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: dashboard-debug
+  namespace: monitoring
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: dashboard-debug
+subjects:
+  - kind: ServiceAccount
+    name: dashboard
+    namespace: dashboard
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: dashboard-debug
+  namespace: argocd
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: dashboard-debug
+subjects:
+  - kind: ServiceAccount
+    name: dashboard
+    namespace: dashboard
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: dashboard-debug
+  namespace: chat
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: dashboard-debug
+subjects:
+  - kind: ServiceAccount
+    name: dashboard
+    namespace: dashboard
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: dashboard-debug
+  namespace: kiwix
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: dashboard-debug
+subjects:
+  - kind: ServiceAccount
+    name: dashboard
+    namespace: dashboard
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: dashboard-debug
+  namespace: dashboard
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: dashboard-debug
+subjects:
+  - kind: ServiceAccount
+    name: dashboard
+    namespace: dashboard
+---
 # Serves the Pi's always-on display (dashboard.home/display) and nothing
 # else: the status page, its login and the Free the GPU button were
 # removed - Ollama unloads idle models by itself (docs/gaming-mode.md).

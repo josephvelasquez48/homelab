@@ -15,8 +15,9 @@ status, and Ollama unloads idle models by itself
   when you'd want to check status.
 - **Read-only, narrow RBAC:** `get`/`list` on nodes and pods, pod metrics,
   and read access to Argo CD Applications in the `argocd` namespace only.
-  It uses the pod's own ServiceAccount token, no kubeconfig. Nothing on it
-  changes anything, so there's no login.
+  For the debug pages (below), pod logs and events, bound namespace by
+  namespace to the ones on the map. It uses the pod's own ServiceAccount
+  token, no kubeconfig. Nothing on it changes anything, so there's no login.
 
 ## The Pi's always-on display
 
@@ -60,7 +61,7 @@ to switch between two views:
   snow, storm; dawn, day, dusk, night) to the address to preview any of
   them.
 
-Tap a box or a fish for details. The top bar has the time, weather (if
+Tap a box or a fish for its debug page (below). The top bar has the time, weather (if
 `WEATHER_LAT`/`WEATHER_LON` are set), overall health and the iPhone; the
 bottom ticker cycles alerts, down nodes, Argo CD, backups and AdGuard.
 
@@ -114,6 +115,40 @@ at 24 the map alone measured about half a core (49%, 2026-10-01). Dots and
 fish move per second, not per frame, so a lower rate only makes their steps
 bigger. The aquarium's bubbles were removed the same day: decoration that
 meant nothing.
+
+## Debug pages
+
+Tapping a box on the map opens `/component/<box>`, and tapping a fish opens
+`/component/pod/<namespace>/<pod>` (`app/component.py`,
+`static/component.js`). They also work from any browser at
+`https://dashboard.home/component/api`. Each page has:
+
+- **Connections**, drawn: what sends to this box (left) and what it sends
+  to (right). Each line is labelled with what flows along it and the port,
+  and drawn the way the map has it right now: green while traffic flows,
+  grey dashes while quiet, red when an end is down. Tap a neighbour to open
+  its page.
+- **Numbers** from Prometheus, coloured when there's a clear good or bad.
+- **For anything in the cluster:**
+  - each pod's state, restarts and why it last ended (OOMKilled, exit code);
+  - CPU, and memory against the limit;
+  - Kubernetes events (they're kept for an hour);
+  - the last 150 log lines of each container, plus the log from before the
+    last restart, which is usually where a crash says why.
+- **For anything outside it** (the Pi's Docker and systemd services, the
+  Mac, the desktop): the commands that show its logs. The dashboard can't
+  read those itself. Giving it a way in (the Docker socket, the host's
+  journal) would hand a page with no login far more than it needs.
+
+**What it can read:** logs and events only in the namespaces on the map
+(`dashboard-debug` RoleBindings in `kubernetes/dashboard/dashboard.yaml`).
+That excludes `cam`, whose logs carry viewers' addresses and invite links.
+Anything credential-shaped (tokens, passwords, `user:pass@` URLs, invite
+paths) is masked before it leaves the dashboard, in case a library logs one.
+
+**On the Pi:** the page refreshes every 15 s and costs the Pi nothing in
+between (nothing on it animates). Opened from the display, it goes back to
+the map after 3 minutes untouched, so the screen never stays on a log.
 
 ## Worth knowing from the SSH era
 
