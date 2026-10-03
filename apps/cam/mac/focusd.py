@@ -17,6 +17,7 @@ import base64
 import hmac
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
+import socketserver
 from pathlib import Path
 import subprocess
 import threading
@@ -89,4 +90,12 @@ class Handler(BaseHTTPRequestHandler):
         pass  # a slider drag is dozens of lines of nothing; errors reach the app
 
 
-ThreadingHTTPServer(('0.0.0.0', PORT), Handler).serve_forever()
+class Server(ThreadingHTTPServer):
+    def server_bind(self) -> None:
+        # HTTPServer's own also looks up this machine's name (getfqdn), which
+        # on this Mac waits ~40 s on mDNS before it starts listening.
+        socketserver.TCPServer.server_bind(self)
+        self.server_name, self.server_port = self.server_address[:2]
+
+
+Server(('0.0.0.0', PORT), Handler).serve_forever()
