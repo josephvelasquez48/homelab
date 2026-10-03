@@ -6,7 +6,7 @@ DATABASE_URL = os.environ.get("DATABASE_URL", "")
 # Service/Endpoints pair: Argo CD ignores Endpoints, so a changed address
 # there syncs "successfully" and changes nothing (kubernetes/ai/inference.yaml
 # learned that). Here it's a ConfigMap value, which Argo does apply.
-MEDIAMTX_URL = os.environ.get("MEDIAMTX_URL", "http://192.168.1.180:8889")
+MEDIAMTX_URL = os.environ.get("MEDIAMTX_URL", "http://192.168.1.219:8889")
 MEDIAMTX_PATH = os.environ.get("MEDIAMTX_PATH", "cam")
 # The viewer login from ~/.config/homelab-cam/viewer-password on the Mac.
 # Server-side only, like chat's API key: the browser never needs it, because

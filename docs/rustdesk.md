@@ -54,7 +54,7 @@ strong permanent password, and **Enable direct IP access** off.
 
 ## The Mac
 
-The MacBook (`192.168.1.180`, also the host of m1-node) runs the client too,
+The MacBook (Ethernet `192.168.1.219`; also the host of m1-node) runs the client too,
 ID `359301729`. Set up over SSH on 2026-10-01: `brew install --cask
 rustdesk`, and the three server options above written into
 `~/Library/Preferences/com.carriez.RustDesk/RustDesk2.toml` before its first

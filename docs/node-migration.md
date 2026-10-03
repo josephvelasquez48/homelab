@@ -83,6 +83,33 @@ The macOS update fixed it properly (`strchrnul` resolves, `-accel` lists
 **Lesson:** a crash with an empty message and a frame at address zero is
 a missing weak-linked symbol until proven otherwise.
 
+## Bridged over Ethernet (2026-10-02)
+
+The VM was bridged over the Mac's **Wi-Fi** until it got a USB Ethernet
+adapter (j5create AX88179B, `en9`, 1 Gbit/s). Over Wi-Fi, macOS shares its
+one link with the VM - the Pi saw 192.168.1.63 behind the Mac's Wi-Fi MAC -
+and every network change on the Mac (an extender, a band switch, a router
+blip) broke Pi-to-VM traffic. Once a flannel WireGuard flow got stuck in
+that sharing layer for 20 minutes: ping and fresh flows passed, the
+tunnel's own flow didn't, until it was paused long enough to expire.
+
+**Moving it.** Multipass 1.16.4 doesn't list the USB adapter as a network
+(its name, "AX88179B", isn't one it recognises), though macOS's vmnet does
+bridge it - `vmnet_copy_shared_interface_list()` returned `[en9, en0]`. And
+Multipass has no command to change an existing VM's bridge. So, with the
+node drained and the VM and multipassd stopped, the VM's entry in
+`/var/root/Library/Application Support/multipassd/qemu/multipassd-vm-instances.json`
+had its bridged card's `"id"` changed from `en0` to `en9`, matched by its
+MAC and keeping it - so the VM kept `enp0s2`, its reserved 192.168.1.63 and
+K3s's `--node-ip`/`--flannel-iface` pins, and nothing in the cluster or on
+the router changed. QEMU now runs it with `-nic vmnet-bridged,ifname=en9`,
+and the Pi sees the VM's own MAC (`52:54:00:d1:c5:8e`) for .63. Two
+details: the multipass CLI has to run as the logged-in user (root isn't
+authenticated with the service), and each K3s agent start makes a new
+flannel key, leaving stale, route-less peers on the Pi until K3s restarts
+there. Afterwards: all pods ready, cross-node pod traffic and cluster DNS
+(worst 39 ms) fine.
+
 ## Addresses
 
 | Device | MAC | Reserved IP |
@@ -91,7 +118,7 @@ a missing weak-linked symbol until proven otherwise.
 | Windows desktop | `CC:28:AA:53:AA:A4` | 192.168.1.131 |
 | `joe` (Pi) | `2C:CF:67:59:A4:C6` | 192.168.1.253 (also static on the Pi) |
 | MacBook Ethernet (j5create USB adapter; the webcam, [cam.md](cam.md)) | `00:05:1B:69:01:62` | 192.168.1.219 |
-| MacBook Wi-Fi (m1-node is bridged over it) | `8E:2C:55:53:09:94` (a macOS private address for the 2.4 GHz network - keep it Fixed) | 192.168.1.180 |
+| MacBook Wi-Fi (optional now; nothing depends on it) | `8E:2C:55:53:09:94` (a macOS private address for the 2.4 GHz network) | 192.168.1.180 |
 
 `kubernetes/ai/inference.yaml` holds the desktop's address. Argo CD
 ignores Endpoints, so a change there needs `kubectl apply` by hand.
