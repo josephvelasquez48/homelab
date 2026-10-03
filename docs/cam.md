@@ -275,10 +275,8 @@ in Homebrew - upgraded on purpose now and then (see Installing).
   USB adapter (`en9`, `00:05:1b:69:01:62`, 1 Gbit/s), reserved on the
   router at **192.168.1.219**, which `MEDIAMTX_URL` and the UDP 8189
   forward point at. MediaMTX offers `en9` first and the Wi-Fi as a
-  fallback. The Mac's Wi-Fi stays on at 192.168.1.180 because the m1-node
-  VM is still bridged over it: Multipass doesn't list the USB adapter as a
-  bridgeable network, and swapping an existing VM's bridge would recreate
-  its NIC (new MAC, losing the .63 that K3s is pinned to) - a separate job.
+  fallback. The m1-node VM moved to the same adapter afterwards (see
+  [node-migration.md](node-migration.md)), so the Wi-Fi is optional.
 - **`cam.home` needs the homelab CA trusted** on a phone to open without a
   warning ([https.md](https.md)). The public link doesn't - its certificate
   is Let's Encrypt's.
