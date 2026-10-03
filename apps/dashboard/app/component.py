@@ -121,7 +121,7 @@ COMPONENTS: dict[str, dict] = {
         "about": "Calls and music from the iPhone over the Pi's Bluetooth to the PC (apps/phone). A systemd user service on the Pi.",
         "metrics": [
             _m("Last update", "time() - phone_bridge_last_update_timestamp_seconds", "s ago", lambda v: v < 120),
-            _m("Bridge running", "phone_bridge_running", "", ok_if_1),
+            _m("Call audio being bridged", "phone_bridge_running"),  # 1 only during a call
             _m("iPhone connected", "phone_connected", "", ok_if_1),
             _m("PC app present", "phone_pc_present", "", ok_if_1),
             _m("On a call", "phone_call_active"),
