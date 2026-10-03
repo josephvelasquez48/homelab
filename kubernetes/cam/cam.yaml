@@ -46,7 +46,7 @@ spec:
         kubernetes.io/hostname: joe
       containers:
         - name: cam
-          image: ghcr.io/josephvelasquez48/homelab-cam:c2cf9c7a1ea5
+          image: ghcr.io/josephvelasquez48/homelab-cam:cf82c95ffd90
           envFrom:
             - configMapRef: { name: cam-config }
             # DATABASE_URL (the cam role in Postgres) and MEDIAMTX_PASSWORD
