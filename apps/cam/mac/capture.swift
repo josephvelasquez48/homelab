@@ -153,6 +153,18 @@ do {
     try ffmpeg.run()
     session.startRunning()
     device.unlockForConfiguration()
+
+    // The remembered focus (camctl.c): the camera keeps a setting only while
+    // it has power, so a replug or a reboot would quietly undo it. Nothing
+    // remembered, or camctl missing, leaves the camera as it is.
+    let camctl = URL(fileURLWithPath: CommandLine.arguments[0])
+        .deletingLastPathComponent().appendingPathComponent("camctl")
+    if FileManager.default.isExecutableFile(atPath: camctl.path) {
+        let focus = Process()
+        focus.executableURL = camctl
+        focus.arguments = ["apply"]
+        try? focus.run()
+    }
 } catch {
     log("\(error)")
     stop(1)

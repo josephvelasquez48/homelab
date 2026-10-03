@@ -39,6 +39,9 @@ password = password_file.read_text().strip()
 # on the Mac, and a binary in git would be one nobody can read.
 subprocess.run(['swiftc', '-O', str(here / 'capture.swift'), '-o', str(config / 'cam-capture')],
                check=True)
+# Focus control (camctl.c); cam-capture runs `camctl apply` from beside itself.
+subprocess.run(['clang', '-O2', '-Wall', '-framework', 'IOKit', '-framework', 'CoreFoundation',
+                str(here / 'camctl.c'), '-o', str(config / 'camctl')], check=True)
 
 template = (here / 'mediamtx.yml').read_text()
 (config / 'mediamtx.yml').write_text(
