@@ -12,7 +12,7 @@ data:
   # USB device on macOS. Its stream login only works from the nodes'
   # addresses, which is where pod traffic leaves from.
   # The Mac's Ethernet adapter (reserved on the router since 2026-10-02);
-  # its Wi-Fi is .180 and still carries the m1-node VM's bridge.
+  # its Wi-Fi (no longer reserved) carries nothing the homelab needs.
   MEDIAMTX_URL: "http://192.168.1.219:8889"
   MEDIAMTX_PATH: "cam"
   MEDIAMTX_USER: "cam-app"
