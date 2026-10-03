@@ -33,8 +33,6 @@
   #pager span { width: 8px; height: 8px; border-radius: 50%; background: var(--faint); }
   #pager span.on { background: var(--text); }
   #offline { position: absolute; top: 116px; right: 22px; z-index: 4; display: none; } /* under the stats row */
-  #detail { position: absolute; z-index: 5; display: none; background: #F1EFE8; color: #2C2C2A;
-    font-size: 15px; line-height: 1.5; padding: 8px 12px; border-radius: 6px; pointer-events: none; max-width: 320px; }
   html.mouse, html.mouse body { cursor: auto; } /* a real mouse is moving: see the script below */
   /* Big enough for a finger: ~44 px tall in the 56 px bar. */
   #to-desktop, #to-call { pointer-events: auto; background: #2C2C2A; color: #D3D1C7; border: 0; border-radius: 999px;
@@ -74,7 +72,6 @@
     <span id="pager"><span class="on"></span><span></span></span>
   </div>
   <span class="pill bad" id="offline">No data - dashboard unreachable</span>
-  <div id="detail"></div>
   <div id="desk-confirm" hidden>
     <div class="box">
       <b>Show the Pi desktop?</b>

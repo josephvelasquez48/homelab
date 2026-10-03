@@ -1030,14 +1030,6 @@ function drawTank(t, dt) {
 
 // ---- What display.js calls ----
 
-function describe(p) {
-  const mib = (b) => `${Math.round(b / MIB)} MiB`;
-  const mem = p.mem_bytes == null ? "memory: no data"
-    : `memory ${mib(p.mem_bytes)}` + (p.mem_limit ? ` of ${mib(p.mem_limit)} (${Math.round(memShare(p) * 100)}%)` : ", no limit");
-  const cpu = p.cpu_m == null ? "CPU: no data" : `CPU ${p.cpu_m < 10 ? p.cpu_m.toFixed(1) : Math.round(p.cpu_m)}m`;
-  return `<b>${p.namespace}/${p.name}</b><br>${p.reason || (p.ready ? "running" : p.phase.toLowerCase())}` +
-    ` on ${p.node || "no node"}<br>${mem}<br>${cpu}<br>${p.restarts} restart${p.restarts === 1 ? "" : "s"}`;
-}
 
 window.Tank = {
   // A new /api/display: fish join, leave, grow and change speed.
@@ -1047,7 +1039,8 @@ window.Tank = {
   night() { return scene().phase === "night"; },
   resize: sizeCanvas,
   // The details of the fish under a tap (page coordinates), or null.
-  detailAt(x, y) {
+  // The pod under a tap (within 40 px of a fish), or null.
+  podAt(x, y) {
     const r = canvas.getBoundingClientRect();
     let best = null, bestD = 40;
     for (const f of fish.values()) {
@@ -1055,7 +1048,7 @@ window.Tank = {
       const d = Math.hypot(f.sx - (x - r.left), f.sy - (y - r.top)) - f.sr * 0.6;
       if (d < bestD) { best = f; bestD = d; }
     }
-    return best ? describe(best.pod) : null;
+    return best ? best.pod : null;
   },
 };
 })();

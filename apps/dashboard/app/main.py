@@ -1,12 +1,13 @@
+import asyncio
 import hashlib
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
-from app import display, k8s
+from app import component, display, k8s
 from app.config import ALERTMANAGER_URL
 import httpx
 
@@ -36,7 +37,7 @@ app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 async def revalidate_pages(request: Request, call_next):
     response = await call_next(request)
     path = request.url.path
-    if path == "/display" or path.startswith("/static/"):
+    if path == "/display" or path.startswith(("/static/", "/component/")):
         response.headers.setdefault("Cache-Control", "no-cache")
     return response
 
@@ -60,6 +61,20 @@ async def index():
 async def display_page():
     """The Pi's always-on screen (apps/pi-display opens it full screen)."""
     return FileResponse(STATIC_DIR / "display.html")
+
+
+@app.get("/component/{cid}")
+async def component_page(cid: str):
+    """A box's debug page (tap it on the map)."""
+    if cid not in component.COMPONENTS:
+        raise HTTPException(404, "No such component")
+    return FileResponse(STATIC_DIR / "component.html")
+
+
+@app.get("/component/pod/{namespace}/{name}")
+async def pod_page(namespace: str, name: str):
+    """A fish's debug page (tap it in the aquarium)."""
+    return FileResponse(STATIC_DIR / "component.html")
 
 
 @app.get("/health")
@@ -102,3 +117,45 @@ async def display_state():
     )
     state["page_version"] = PAGE_VERSION
     return state
+
+
+def _status(services: dict, cid: str) -> str:
+    """A box's status, the way the map colours it (static/display.js serviceStatus)."""
+    if cid == "lan":
+        return "up"
+    if cid == "apps":
+        apps = [services.get(a, "unknown") for a in ("grafana", "argocd", "chat", "kiwix")]
+        return "down" if "down" in apps else "up" if all(a == "up" for a in apps) else "unknown"
+    return services.get(cid, "unknown")
+
+
+@app.get("/api/component/{cid}")
+async def component_state(cid: str):
+    if cid not in component.COMPONENTS:
+        raise HTTPException(404, "No such component")
+    k8s_client, http = app.state.k8s, app.state.http
+    # The map's own reading, so the page says what the box said.
+    state = await display.gather(k8s_client, http, k8s.get_argo_applications(k8s_client),
+                                 _active_alerts(http), k8s.get_nodes(k8s_client))
+    out = await component.component(
+        k8s_client, http, cid, state["services"],
+        k8s.get_argo_applications(k8s_client), asyncio.sleep(0, state["alerts"]), k8s.get_nodes(k8s_client))
+    out["status"] = _status(state["services"], cid)
+    out["connections"] = component.connections(cid, state["links"], state["rates"], state["services"], _status)
+    return out
+
+
+@app.get("/api/pod/{namespace}/{name}")
+async def pod_state(namespace: str, name: str):
+    k8s_client, http = app.state.k8s, app.state.http
+    out = await component.single_pod(k8s_client, namespace, name, _active_alerts(http))
+    if out is None:
+        raise HTTPException(404, "That pod is gone - it was probably replaced. Go back and tap its fish again.")
+    # Its box's connections, when it belongs to one (an api pod: FastAPI's).
+    cid = component.component_of_pod(namespace, name)
+    if cid:
+        state = await display.gather(k8s_client, http, k8s.get_argo_applications(k8s_client),
+                                     asyncio.sleep(0, out["alerts"]), k8s.get_nodes(k8s_client))
+        out["box"] = {"id": cid, "title": component.COMPONENTS[cid]["title"]}
+        out["connections"] = component.connections(cid, state["links"], state["rates"], state["services"], _status)
+    return out

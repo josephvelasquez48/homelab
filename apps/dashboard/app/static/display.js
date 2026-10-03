@@ -63,7 +63,6 @@ const EDGES = [
 ];
 
 const APPS = ["grafana", "argocd", "chat", "kiwix"];
-const APP_NAMES = { grafana: "Grafana", argocd: "Argo CD", chat: "Chat", kiwix: "Wikipedia" };
 
 // ---- State ----
 
@@ -322,33 +321,18 @@ async function poll() {
   $("offline").style.display = Date.now() - lastOk > 3 * POLL_MS ? "block" : "none";
 }
 
-// ---- Interaction: tap to switch views; hold on something for details ----
-
-function showDetail(text, x, y) {
-  const d = $("detail");
-  d.innerHTML = text;
-  d.style.display = "block";
-  d.style.left = Math.min(x + 12, innerWidth - 340) + "px";
-  d.style.top = Math.max(y - 60, 64) + "px";
-  clearTimeout(showDetail.timer);
-  showDetail.timer = setTimeout(() => (d.style.display = "none"), 4000);
-}
-
-function boxDetail(id) {
-  if (!state) return null;
-  const [, , title] = BOXES[id];
-  if (id === "apps") return `<b>Apps</b><br>` + APPS.map((a) => `${APP_NAMES[a]}: ${state.services[a]}`).join("<br>");
-  return `<b>${title}</b><br>${serviceStatus(id)}`;
-}
+// ---- Interaction: tap to switch views; tap a box or fish for its page ----
 
 document.addEventListener("contextmenu", (e) => e.preventDefault());
 $("screen").addEventListener("click", (e) => {
+  // A box or a fish opens its page: connections, numbers, pods, events and
+  // recent logs (static/component.js). It comes back here by itself.
   if (view === 0) {
     const g = e.target.closest && e.target.closest("g[data-id]");
-    if (g) return showDetail(boxDetail(g.dataset.id), e.clientX, e.clientY);
+    if (g) return (location.href = `/component/${g.dataset.id}?from=display`);
   } else {
-    const detail = Tank.detailAt(e.clientX, e.clientY);
-    if (detail) return showDetail(detail, e.clientX, e.clientY);
+    const pod = Tank.podAt(e.clientX, e.clientY);
+    if (pod) return (location.href = `/component/pod/${encodeURIComponent(pod.namespace)}/${encodeURIComponent(pod.name)}?from=display`);
   }
   view = 1 - view;
   $("arch-view").classList.toggle("hidden", view !== 0);
@@ -356,7 +340,6 @@ $("screen").addEventListener("click", (e) => {
   $("title").textContent = view ? "Cluster aquarium" : "Homelab";
   $("pager").children[0].classList.toggle("on", view === 0);
   $("pager").children[1].classList.toggle("on", view === 1);
-  $("detail").style.display = "none";
   if (view === 1) Tank.resize();
 });
 
