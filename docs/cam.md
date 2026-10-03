@@ -161,6 +161,31 @@ the camera off until someone re-allows it at the Mac. Upgrade on purpose:
 the installer, re-allow at the Mac. Rebuilding cam-capture doesn't need
 this: the permission goes to the process launchd started, mediamtx.
 
+## Focus
+
+`camctl` (`apps/cam/mac/camctl.c`, built by install.py) sets the C922's
+focus with standard UVC requests through IOKit - macOS has no API for a
+webcam's focus, but the camera takes these; no root needed, and it works
+while streaming.
+
+```sh
+~/.config/homelab-cam/camctl status     # autofocus on/off, focus, range (0-250, step 5; 0 is far)
+~/.config/homelab-cam/camctl set auto   # autofocus on
+~/.config/homelab-cam/camctl set 5      # autofocus off, fixed at 5
+```
+
+A `set` is remembered (`~/.config/homelab-cam/focus`) and cam-capture
+re-applies it 2 s and 6 s after it starts the camera: the C922 keeps a
+setting only while it has power, and sent at the very start it was undone
+by the camera's own start-up.
+
+**Set to 5 on 2026-10-02**, from a sweep scoring each focus step by the
+mean edge strength of its frames (numbers only): 0-10 scored about 1.37,
+falling to 0.007 at 250. Autofocus had already been resting near 0, so
+the softness people saw was mostly the dark enclosure and objects too
+close to the lens, not focus; fixing it stops the autofocus hunting.
+Re-run a sweep if the camera moves.
+
 ## Checking it
 
 ```sh
