@@ -24,6 +24,7 @@ from datetime import datetime, timezone
 import httpx
 
 from app import display
+from app.guide import GUIDES
 
 LOG_LINES = 150
 PREVIOUS_LOG_LINES = 60
@@ -123,6 +124,8 @@ COMPONENTS: dict[str, dict] = {
             _m("Last update", "time() - phone_bridge_last_update_timestamp_seconds", "s ago", lambda v: v < 120),
             _m("Call audio being bridged", "phone_bridge_running"),  # 1 only during a call
             _m("iPhone connected", "phone_connected", "", ok_if_1),
+            _m("Pi's Bluetooth on", "phone_bluetooth_powered", "", ok_if_1),
+            _m("Reconnect attempts (1h)", "increase(phone_reconnect_attempts_total[1h])"),
             _m("PC app present", "phone_pc_present", "", ok_if_1),
             _m("On a call", "phone_call_active"),
             _m("Music to the PC", "sum(rate(phone_media_sent_bytes_total[1m])) / 1000", "kB/s"),
@@ -150,6 +153,7 @@ COMPONENTS: dict[str, dict] = {
         "about": "Paired with the Pi over Bluetooth (calls: HFP, music: A2DP).",
         "metrics": [
             _m("Connected", "phone_connected", "", ok_if_1),
+            _m("Pi's Bluetooth on", "phone_bluetooth_powered", "", ok_if_1),
             _m("On a call", "phone_call_active"),
         ],
         "commands": [
@@ -518,6 +522,7 @@ async def component(k8s: httpx.AsyncClient, http: httpx.AsyncClient, cid: str,
         "status": services.get(cid, "unknown"),
         "metrics": [] if isinstance(metrics, BaseException) else metrics,
         "commands": spec.get("commands", []),
+        "guide": GUIDES.get(cid),
         "alerts": None if isinstance(alerts, BaseException) else alerts,
         "time": time.time(),
     }

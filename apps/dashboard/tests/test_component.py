@@ -1,3 +1,4 @@
+import json
 import re
 from pathlib import Path
 from unittest.mock import AsyncMock
@@ -168,3 +169,20 @@ def test_every_box_and_line_on_the_map_has_a_page_entry():
     block = js[js.index("const EDGES = ["):js.index("];", js.index("const EDGES = ["))]
     edges = {f"{a}-{b}" for a, b in re.findall(r'\["(\w+)", "(\w+)"', block)}
     assert edges and edges == set(component.EDGE_INFO)
+
+
+def test_every_box_has_a_guide_and_its_docs_exist():
+    repo = Path(__file__).resolve().parents[3]
+    assert set(component.GUIDES) == set(component.COMPONENTS)
+    for cid, g in component.GUIDES.items():
+        assert g["how"] and g["fixes"] and g["docs"], cid
+        assert all(len(f) == 2 and all(f) for f in g["fixes"]), cid
+        for doc in g["docs"]:
+            assert (repo / doc).is_file(), f"{cid}: {doc}"
+
+
+def test_pages_carry_their_guide(client, monkeypatch):
+    _setup(client, monkeypatch, FakeK8s([_pod("api-1")]))
+    as_json = lambda g: json.loads(json.dumps(g))  # noqa: E731 - (symptom, fix) tuples arrive as lists
+    assert client.get("/api/component/phone").json()["guide"] == as_json(component.GUIDES["phone"])
+    assert client.get("/api/pod/backend/api-1").json()["guide"] == as_json(component.GUIDES["api"])  # a fish: its box's

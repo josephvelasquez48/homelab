@@ -147,7 +147,13 @@ Tapping a box on the map opens `/component/<box>`, and tapping a fish opens
   and drawn the way the map has it right now: green while traffic flows,
   grey dashes while quiet, red when an end is down. Tap a neighbour to open
   its page.
+- **How it works**: a few lines on what the box is and how its data flows.
 - **Numbers** from Prometheus, coloured when there's a clear good or bad.
+- **Known problems and fixes**: symptom, then what to do - each one from
+  the docs or a real incident, never a guess (`app/guide.py`, with the
+  docs it came from under **Read more**). A fish's page shows its box's.
+  A test checks every box has one and every doc it names exists; when a
+  doc's story changes, change its guide too.
 - **For anything in the cluster:**
   - each pod's state, restarts and why it last ended (OOMKilled, exit code);
   - CPU, and memory against the limit;

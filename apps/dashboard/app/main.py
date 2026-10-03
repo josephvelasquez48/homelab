@@ -157,5 +157,6 @@ async def pod_state(namespace: str, name: str):
         state = await display.gather(k8s_client, http, k8s.get_argo_applications(k8s_client),
                                      asyncio.sleep(0, out["alerts"]), k8s.get_nodes(k8s_client))
         out["box"] = {"id": cid, "title": component.COMPONENTS[cid]["title"]}
+        out["guide"] = component.GUIDES.get(cid)
         out["connections"] = component.connections(cid, state["links"], state["rates"], state["services"], _status)
     return out
