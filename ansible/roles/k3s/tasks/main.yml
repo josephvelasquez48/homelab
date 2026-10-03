@@ -43,18 +43,37 @@
     mode: "0644"
   register: k3s_resolv
 
-- name: Point K3s at that resolv.conf
+- name: Point K3s at that resolv.conf (and, on the server, the pod network)
   ansible.builtin.copy:
     dest: /etc/rancher/k3s/config.yaml
     content: |
       # Written by ansible (roles/k3s).
       resolv-conf: /etc/rancher/k3s/resolv.conf
+      {% if k3s_role == "server" %}
+      flannel-backend: {{ k3s_flannel_backend }}
+      {% endif %}
     mode: "0644"
   register: k3s_config
 
+# The backend used to be a flag added to the unit by hand
+# (--flannel-backend=wireguard-native). A command-line flag beats
+# config.yaml, so it has to go for the setting above to apply.
+- name: Take the flannel backend out of the server's unit
+  ansible.builtin.lineinfile:
+    path: /etc/systemd/system/k3s.service
+    regexp: '^\s*--flannel-backend='
+    state: absent
+  register: k3s_unit
+  when: k3s_role == "server"
+
+- name: Reload systemd for the edited unit
+  ansible.builtin.systemd:
+    daemon_reload: true
+  when: k3s_role == "server" and k3s_unit.changed
+
 # A k3s restart leaves running pods alone; CoreDNS then needs its own
 # restart to read the new upstream. Only when something changed.
-- name: Restart K3s for the new DNS upstream
+- name: Restart K3s for the new DNS upstream or pod network
   ansible.builtin.systemd:
     name: "{{ 'k3s' if k3s_role == 'server' else 'k3s-agent' }}"
     state: restarted

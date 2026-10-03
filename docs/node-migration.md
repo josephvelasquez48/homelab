@@ -63,10 +63,10 @@ VM needs the control nodes' keys in `ubuntu`'s `authorized_keys`, then
 `ansible-playbook playbooks/site.yml --tags k3s --limit m1`
 ([ansible.md](ansible.md)).
 
-**Not done:** switching flannel back to `vxlan`. It still runs
-`wireguard-native`, which works fine between the two nodes. If it's ever
-switched, the old backend's routes have to be deleted by hand on every
-node ([kubernetes.md](kubernetes.md)).
+**Flannel:** switched from `wireguard-native` to `host-gw` on 2026-10-02,
+once both nodes were plain LAN hosts ([kubernetes.md](kubernetes.md) has
+why). The old `flannel-wg` interfaces (and their routes) were deleted by
+hand on both nodes, since flannel doesn't remove them.
 
 ## The macOS bug worth remembering
 

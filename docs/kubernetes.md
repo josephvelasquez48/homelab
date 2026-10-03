@@ -38,10 +38,20 @@ the phone bridge (it needs the Bluetooth radio - [phone.md](phone.md)).
 
 ### Networking and security
 
-- **Pod network:** flannel with the `wireguard-native` backend
-  (`--flannel-backend` on the K3s server). It was chosen when the worker
-  was WSL2, where `vxlan` and `host-gw` both failed (below). The move back
-  to `vxlan` planned in node-migration.md hasn't been done.
+- **Pod network:** flannel with the **`host-gw`** backend (since
+  2026-10-02): plain routes between the nodes, which share the LAN - no
+  tunnel, no encapsulation. Set as `flannel-backend` in the server's
+  `/etc/rancher/k3s/config.yaml` by `roles/k3s` (`k3s_flannel_backend`).
+  It was `wireguard-native` before, chosen when the worker was WSL2, where
+  `vxlan` and `host-gw` both failed (below). WireGuard's one long-lived UDP
+  flow (51820 to 51820) then kept getting stuck in the TP-Link router's flow
+  cache after every move of m1-node (Wi-Fi changes, then Wi-Fi to
+  Ethernet): VM-to-Pi packets passed, Pi-to-VM packets on that flow never
+  reached the Mac (a capture on its adapter showed none), while ping and
+  any new flow did - so pod traffic between the nodes died until the flow
+  sat idle long enough to expire. host-gw has no such flow. **The cost:**
+  pod traffic between nodes - the api's connection to Postgres, say -
+  crosses the home LAN unencrypted.
 - **Ingress:** Traefik (bundled with K3s), HTTPS with the homelab CA
   ([https.md](https.md)).
 - **NetworkPolicies:** `traefik-lan-only` (Traefik reachable from the LAN,

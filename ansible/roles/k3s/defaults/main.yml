@@ -2,3 +2,12 @@
 # server: the Pi (K3s server). agent: a worker node - only its pod DNS
 # upstream is managed here. See tasks/main.yml.
 k3s_role: server
+
+# The pod network between the nodes (server only; agents follow the server).
+# host-gw since 2026-10-02: plain routes between the two nodes, which share a
+# LAN. wireguard-native before - its one long-lived UDP flow (51820<->51820)
+# got stuck in the router's flow cache after every move of the VM, so
+# Pi->m1-node pod traffic died while ping and new flows passed.
+# docs/kubernetes.md. The cost: pod traffic between nodes is unencrypted on
+# the LAN.
+k3s_flannel_backend: host-gw
