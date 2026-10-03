@@ -230,7 +230,7 @@ anyone's browser ◄──── video, UDP ──── router (forward UDP 818
    `autogroup:member`, and HTTPS certificates were enabled (admin console).
 4. `sudo tailscale funnel --bg http://10.43.187.92:8000` - tailscaled keeps
    it across restarts.
-5. Router: forward UDP 8189 → 192.168.1.180 (the Mac), and reserve that
+5. Router: forward UDP 8189 → the Mac (192.168.1.219 since it moved to Ethernet), and reserve that
    address for the Mac.
 
 ```sh
@@ -271,12 +271,14 @@ in Homebrew - upgraded on purpose now and then (see Installing).
 ## Limits
 
 - **Only while the Mac is on and logged in**, like the backups and m1-node.
-- **The MacBook's address is reserved** (192.168.1.180, since 2026-10-02)
-  against its Wi-Fi address `42:03:36:38:18:63` - a macOS *private* address
-  (the leading 42). It must stay **Fixed** (or private addresses Off) in
-  the Mac's Wi-Fi settings for this network: if macOS rotates it, the
-  router stops recognising the Mac, the reservation stops applying, and
-  `MEDIAMTX_URL` and the UDP 8189 forward both point at nothing.
+- **The camera is on the Mac's Ethernet** (since 2026-10-02): a j5create
+  USB adapter (`en9`, `00:05:1b:69:01:62`, 1 Gbit/s), reserved on the
+  router at **192.168.1.219**, which `MEDIAMTX_URL` and the UDP 8189
+  forward point at. MediaMTX offers `en9` first and the Wi-Fi as a
+  fallback. The Mac's Wi-Fi stays on at 192.168.1.180 because the m1-node
+  VM is still bridged over it: Multipass doesn't list the USB adapter as a
+  bridgeable network, and swapping an existing VM's bridge would recreate
+  its NIC (new MAC, losing the .63 that K3s is pinned to) - a separate job.
 - **`cam.home` needs the homelab CA trusted** on a phone to open without a
   warning ([https.md](https.md)). The public link doesn't - its certificate
   is Let's Encrypt's.
