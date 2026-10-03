@@ -289,3 +289,21 @@ def test_one_stuck_source_does_not_freeze_the_display(monkeypatch):
 
     state = asyncio.run(display.gather(None, None, none(), none(), none()))
     assert state["stats"]["pi_cpu"] is None and state["stats"]["pods_total"] == 0
+
+
+def test_prometheus_nan_reads_as_no_data():
+    """A quantile over no requests comes back as NaN: no data, not a value."""
+    import asyncio
+    from unittest.mock import AsyncMock, MagicMock
+    from app import display
+
+    def answer(value):
+        client = MagicMock()
+        client.get = AsyncMock(return_value=MagicMock(
+            raise_for_status=lambda: None,
+            json=lambda: {"data": {"result": [{"value": [0, value]}]}}))
+        return client
+
+    assert asyncio.run(display._query(answer("NaN"), "q")) is None
+    assert asyncio.run(display._query(answer("+Inf"), "q")) is None
+    assert asyncio.run(display._query(answer("2.5"), "q")) == 2.5

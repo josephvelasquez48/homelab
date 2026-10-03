@@ -19,6 +19,7 @@ works because this pod is pinned to the Pi: same-node pod traffic to the
 node's IP isn't filtered by ufw (see kubernetes/monitoring/adguard-exporter.yaml).
 """
 import asyncio
+import math
 import socket
 import struct
 import time
@@ -113,7 +114,11 @@ async def _query(client: httpx.AsyncClient, expr: str) -> float | None:
         r = await client.get(f"{PROMETHEUS_URL}/api/v1/query", params={"query": expr})
         r.raise_for_status()
         result = r.json()["data"]["result"]
-        return float(result[0]["value"][1]) if result else None
+        value = float(result[0]["value"][1]) if result else None
+        # NaN is Prometheus's answer to, say, a latency quantile with no
+        # requests in the window. It's "no data", and it can't be sent as
+        # JSON - the api's debug page answered 500 on it (2026-10-03).
+        return value if value is None or math.isfinite(value) else None
     except Exception:
         return None
 
