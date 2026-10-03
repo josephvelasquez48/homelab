@@ -2,7 +2,8 @@
 
 Renders mediamtx.yml into ~/.config/homelab-cam/ with the viewer password,
 and (re)loads the local.homelab.cam agent, which keeps MediaMTX running for
-as long as the user is logged in. Run it from the repo checkout:
+as long as the user is logged in, and local.homelab.camfocus (focusd.py, the
+focus slider's back end). Run it from the repo checkout:
 
     /opt/homebrew/bin/python3 apps/cam/mac/install.py
 
@@ -18,12 +19,16 @@ import os
 from pathlib import Path
 import plistlib
 import secrets
+import shutil
 import subprocess
 import time
+import urllib.error
 import urllib.request
 
 MEDIAMTX = '/opt/homebrew/opt/mediamtx/bin/mediamtx'
 LABEL = 'local.homelab.cam'
+FOCUS_LABEL = 'local.homelab.camfocus'
+PYTHON = '/opt/homebrew/bin/python3'
 
 os.umask(0o077)
 here = Path(__file__).resolve().parent
@@ -47,24 +52,36 @@ template = (here / 'mediamtx.yml').read_text()
 (config / 'mediamtx.yml').write_text(
     template.replace('{{VIEWER_PASSWORD}}', password).replace('{{CONFIG_DIR}}', str(config)))
 
-agent = Path.home() / 'Library/LaunchAgents' / (LABEL + '.plist')
 domain = 'gui/%d' % os.getuid()
-agent.parent.mkdir(parents=True, exist_ok=True)
-# Not loaded is fine here (first install), so the exit code is not checked.
-subprocess.run(['launchctl', 'bootout', domain, str(agent)], stderr=subprocess.DEVNULL)
-with agent.open('wb') as f:
-    plistlib.dump({
-        'Label': LABEL,
-        'ProgramArguments': [MEDIAMTX, str(config / 'mediamtx.yml')],
-        'RunAtLoad': True,
-        'KeepAlive': True,
-        'StandardOutPath': str(config / 'mediamtx.log'),
-        'StandardErrorPath': str(config / 'mediamtx.log'),
-    }, f)
-# Started fresh each install. launchd never rotates it, and a bad ffmpeg
-# flag once filled it with 5 MB of warnings in ten minutes.
-(config / 'mediamtx.log').write_text('')
-subprocess.run(['launchctl', 'bootstrap', domain, str(agent)], check=True)
+
+
+def agent(label: str, program: list[str], log: Path) -> None:
+    """(Re)load one LaunchAgent, replacing its plist."""
+    plist = Path.home() / 'Library/LaunchAgents' / (label + '.plist')
+    plist.parent.mkdir(parents=True, exist_ok=True)
+    # Not loaded is fine here (first install), so the exit code is not checked.
+    subprocess.run(['launchctl', 'bootout', domain, str(plist)], stderr=subprocess.DEVNULL)
+    with plist.open('wb') as f:
+        plistlib.dump({
+            'Label': label,
+            'ProgramArguments': program,
+            'RunAtLoad': True,
+            'KeepAlive': True,
+            'StandardOutPath': str(log),
+            'StandardErrorPath': str(log),
+        }, f)
+    # Started fresh each install. launchd never rotates it, and a bad ffmpeg
+    # flag once filled MediaMTX's with 5 MB of warnings in ten minutes.
+    log.write_text('')
+    subprocess.run(['launchctl', 'bootstrap', domain, str(plist)], check=True)
+
+
+agent(LABEL, [MEDIAMTX, str(config / 'mediamtx.yml')], config / 'mediamtx.log')
+
+# The focus slider's way to camctl (focusd.py), run from the config dir so
+# it finds camctl and the password beside itself.
+shutil.copy(here / 'focusd.py', config / 'focusd.py')
+agent(FOCUS_LABEL, [PYTHON, str(config / 'focusd.py')], config / 'focusd.log')
 
 # The API answering means the config parsed and every listener bound.
 for _ in range(20):
@@ -75,4 +92,13 @@ for _ in range(20):
         time.sleep(0.5)
 else:
     raise SystemExit('MediaMTX did not come up - see %s' % (config / 'mediamtx.log'))
-print('Webcam stream installed: WebRTC on :8889, camera on demand at path "cam"')
+for _ in range(20):
+    try:
+        urllib.request.urlopen('http://127.0.0.1:8890/focus', timeout=1)
+    except urllib.error.HTTPError:
+        break  # 401 without the login: it's up
+    except OSError:
+        time.sleep(0.5)
+else:
+    raise SystemExit('focusd did not come up - see %s' % (config / 'focusd.log'))
+print('Webcam stream installed: WebRTC on :8889, camera on demand at path "cam", focus on :8890')

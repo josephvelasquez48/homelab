@@ -1,6 +1,7 @@
 // camctl: the C922's focus, over USB Video Class (UVC) controls.
 //
 //   camctl status            autofocus on or off, focus position and range
+//                            (--json on status or set: one JSON line)
 //   camctl set auto          autofocus on, and remember that
 //   camctl set <0-250>       autofocus off at that focus, and remember it
 //   camctl apply             re-apply what was remembered (cam-capture runs
@@ -132,7 +133,7 @@ static int apply(IOUSBDeviceInterface **dev, int is_auto, UInt16 focus) {
     return 0;
 }
 
-static int status(IOUSBDeviceInterface **dev) {
+static int status(IOUSBDeviceInterface **dev, int json) {
     UInt8 is_auto = 0;
     UInt16 cur, min, max, step;
     if (control(dev, GET_CUR, FOCUS_AUTO, &is_auto, 1) != 1 || read_focus(dev, GET_CUR, &cur) ||
@@ -146,6 +147,11 @@ static int status(IOUSBDeviceInterface **dev) {
         if (fscanf(f, "%31s", saved) != 1)
             strcpy(saved, "none");
         fclose(f);
+    }
+    if (json) {  // for focusd.py, the cam app's way in
+        printf("{\"auto\": %s, \"focus\": %u, \"min\": %u, \"max\": %u, \"step\": %u}\n",
+               is_auto ? "true" : "false", cur, min, max, step);
+        return 0;
     }
     printf("autofocus: %s\n", is_auto ? "on" : "off");
     printf("focus:     %u (range %u-%u, step %u; 0 is far)\n", cur, min, max, step);
@@ -166,8 +172,10 @@ int main(int argc, char **argv) {
     int is_auto;
     UInt16 focus = 0;
 
+    int json = strcmp(argv[argc - 1], "--json") == 0;
+
     if (strcmp(argv[1], "status") == 0)
-        return status(dev);
+        return status(dev, json);
 
     if (strcmp(argv[1], "set") == 0) {
         if (parse(dev, argv[2], &is_auto, &focus))
@@ -182,7 +190,7 @@ int main(int argc, char **argv) {
                 fprintf(f, "%u\n", focus);
             fclose(f);
         }
-        return status(dev);
+        return status(dev, json);
     }
 
     if (strcmp(argv[1], "apply") == 0) {

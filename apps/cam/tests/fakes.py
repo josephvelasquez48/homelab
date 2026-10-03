@@ -1,4 +1,4 @@
-"""In-memory stand-ins for Postgres, MediaMTX and a passkey authenticator.
+"""In-memory stand-ins for Postgres, MediaMTX, focusd and a passkey authenticator.
 
 FakeStore implements the same methods as app.store.Store, so the app runs
 unchanged on top of it - in the tests, and in devserver.py for looking at
@@ -215,10 +215,14 @@ class SoftAuthenticator:
 
 
 class FakeResponse:
-    def __init__(self, status_code, content=b"", headers=None):
+    def __init__(self, status_code, content=b"", headers=None, body=None):
         self.status_code = status_code
         self.content = content
         self.headers = headers or {}
+        self.body = body
+
+    def json(self):
+        return self.body
 
 
 class FakeMediaMTX:
@@ -242,6 +246,29 @@ class FakeMediaMTX:
     async def delete(self, url):
         self.deleted.append(url)
         return FakeResponse(200)
+
+    async def aclose(self):
+        pass
+
+
+class FakeFocus:
+    """Answers like focusd: camctl's status JSON, with the C922's range."""
+
+    def __init__(self):
+        self.state = {"auto": True, "focus": 0, "min": 0, "max": 250, "step": 5}
+        self.requests = []
+        self.fail_with = None
+
+    async def request(self, method, url, json=None):
+        if self.fail_with:
+            raise self.fail_with
+        self.requests.append((method, url, json))
+        if method == "PUT":
+            if json.get("auto"):
+                self.state["auto"] = True
+            else:
+                self.state.update(auto=False, focus=json["focus"] // 5 * 5)
+        return FakeResponse(200, b"", {}, dict(self.state))
 
     async def aclose(self):
         pass

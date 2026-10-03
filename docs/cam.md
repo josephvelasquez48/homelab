@@ -163,6 +163,14 @@ this: the permission goes to the process launchd started, mediamtx.
 
 ## Focus
 
+**On the page:** admins get a Far-Near slider and an Auto button under
+the video. It changes the picture for everyone watching, so viewers don't
+see it. The path is slider -> `POST /api/focus` (admin, same-origin) ->
+focusd on the Mac (`apps/cam/mac/focusd.py`, LaunchAgent
+`local.homelab.camfocus`, port 8890, MediaMTX's `cam-app` login and only
+from the nodes' addresses) -> `camctl set`. A slider setting is remembered
+like any other `set`.
+
 `camctl` (`apps/cam/mac/camctl.c`, built by install.py) sets the C922's
 focus with standard UVC requests through IOKit - macOS has no API for a
 webcam's focus, but the camera takes these; no root needed, and it works
@@ -192,6 +200,7 @@ Re-run a sweep if the camera moves.
 tail -f ~/.config/homelab-cam/mediamtx.log           # one line per viewer, and the helper's mode line
 curl -s http://127.0.0.1:9997/v3/paths/list           # is the stream up, who's reading
 launchctl kickstart -k gui/$(id -u)/local.homelab.cam # restart
+launchctl kickstart -k gui/$(id -u)/local.homelab.camfocus # restart focusd (log: focusd.log)
 ```
 
 A healthy start logs

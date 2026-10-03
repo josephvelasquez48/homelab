@@ -44,6 +44,17 @@
       </div>
     </div>
 
+    <!-- Admins only (viewer.js shows it): changes the picture for everyone. -->
+    <div id="focus" class="focus-bar" hidden>
+      <label for="focus-range">Focus</label>
+      <span class="end">Far</span>
+      <input id="focus-range" type="range" min="0" max="250" step="5" value="0" aria-describedby="focus-value">
+      <span class="end">Near</span>
+      <output id="focus-value" for="focus-range">-</output>
+      <button id="focus-auto" class="btn small" type="button" aria-pressed="false">Auto</button>
+      <span id="focus-msg" class="focus-msg" role="status"></span>
+    </div>
+
     <div class="below">
       <span>Mustard's enclosure</span>
       <span id="note">The camera only turns on while someone is watching.</span>

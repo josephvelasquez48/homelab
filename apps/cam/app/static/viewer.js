@@ -2,7 +2,7 @@
 // relays it to MediaMTX on the Mac) and plays what comes back. The video
 // flows straight from the Mac; this page and the app only set it up.
 
-import { drawMustard, fillNav, me, setMustardPose } from "/static/common.js";
+import { api, drawMustard, fillNav, me, setMustardPose } from "/static/common.js";
 
 const $ = (id) => document.getElementById(id);
 const video = $("video");
@@ -202,5 +202,59 @@ stage.addEventListener("touchstart", () => {
   controlsTimer = setTimeout(() => stage.classList.remove("show-controls"), 3000);
 }, { passive: true });
 
+// Focus, for admins: the slider sets it as it moves (autofocus off), Auto
+// hands it back to the camera. One request at a time - a drag fires dozens
+// of input events, and only the latest position matters.
+let focusBusy = false;
+let focusPending = null;
+
+function showFocus(state) {
+  $("focus").classList.toggle("auto", state.auto);
+  $("focus-auto").setAttribute("aria-pressed", String(state.auto));
+  // While dragging, the camera's answer would pull the thumb back.
+  if (!focusPending && document.activeElement !== $("focus-range")) $("focus-range").value = state.focus;
+  $("focus-value").textContent = state.auto ? "auto" : String(state.focus);
+}
+
+async function sendFocus(body) {
+  focusPending = body;
+  if (focusBusy) return;
+  focusBusy = true;
+  while (focusPending) {
+    const next = focusPending;
+    focusPending = null;
+    try {
+      const state = await api("/api/focus", { method: "POST", body: next });
+      $("focus-msg").textContent = "";
+      showFocus(state);
+    } catch (err) {
+      $("focus-msg").textContent = err.message;
+    }
+  }
+  focusBusy = false;
+}
+
+async function setupFocus(user) {
+  if (!user.is_admin) return;
+  const range = $("focus-range");
+  range.addEventListener("input", () => {
+    $("focus").classList.remove("auto");
+    $("focus-auto").setAttribute("aria-pressed", "false");
+    $("focus-value").textContent = range.value;
+    sendFocus({ focus: Number(range.value) });
+  });
+  $("focus-auto").addEventListener("click", () => sendFocus({ auto: true }));
+  $("focus").hidden = false;
+  try {
+    const state = await api("/api/focus");
+    range.min = state.min;
+    range.max = state.max;
+    range.step = state.step;
+    showFocus(state);
+  } catch (err) {
+    $("focus-msg").textContent = err.message;
+  }
+}
+
 drawMustard();
-me().then((user) => { fillNav(user); start(); }).catch(() => {});
+me().then((user) => { fillNav(user); start(); setupFocus(user); }).catch(() => {});

@@ -24,7 +24,7 @@ from fastapi.responses import RedirectResponse
 import uvicorn
 
 from app import config, main
-from tests.fakes import FakeMediaMTX, FakeStore, SoftAuthenticator
+from tests.fakes import FakeFocus, FakeMediaMTX, FakeStore, SoftAuthenticator
 
 
 async def seed(store: FakeStore) -> None:
@@ -52,6 +52,7 @@ def run() -> None:
     mediamtx.fail_with = httpx.ConnectError("dev server: no camera")
     main.app.state.store = store
     main.app.state.mediamtx = mediamtx
+    main.app.state.focus = FakeFocus()  # the slider works; there's just no picture
     uvicorn.run(main.app, host="127.0.0.1", port=PORT)
 
 
