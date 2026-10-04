@@ -75,7 +75,7 @@ VALUE_QUERIES = {
     # It reports percentages; the screen wants ratios like the others.
     "pc_temp_c": 'max(lhm_cpu_temperature_celsius{job="node-pc",sensorName="CPU Package"})',
     "pc_cpu": 'max(lhm_cpu_load_percent{job="node-pc",sensorName="CPU Total"}) / 100',
-    "pc_mem": 'max(lhm_memory_load_percent{job="node-pc",sensorName="Memory"}) / 100',
+    "pc_mem": 'max(lhm_memory_load_percent{job="node-pc",hardwareId="/ram"}) / 100',
     "api_p95_s": f'histogram_quantile(0.95, sum by (le) (rate(http_request_duration_seconds_bucket{{handler!~"{PROBE_HANDLERS}"}}[1h])))',
     # The phone service writes its gauges every few seconds; stale means it's down.
     "phone_age_s": "time() - phone_bridge_last_update_timestamp_seconds",
