@@ -293,6 +293,7 @@ def test_one_stuck_source_does_not_freeze_the_display(monkeypatch):
     assert state["stats"]["pi_cpu"] is None and state["stats"]["pods_total"] == 0
     assert state["stats"]["mac_temp_c"] is None and state["stats"]["mac_mem"] is None
     assert state["stats"]["pc_temp_c"] is None and state["stats"]["pc_cpu"] is None
+    assert state["stats"]["pc_gpu_temp_c"] is None
 
 
 def test_prometheus_nan_reads_as_no_data():
