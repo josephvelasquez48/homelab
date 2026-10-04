@@ -48,7 +48,8 @@ with plist.open('wb') as f:
 log.write_text('')
 subprocess.run(['launchctl', 'bootstrap', domain, str(plist)], check=True)
 
-for _ in range(20):
+# The first sample lands one interval after start, so allow a few.
+for _ in range(40):
     try:
         body = urllib.request.urlopen('http://127.0.0.1:%d/metrics' % PORT, timeout=1).read().decode()
         if 'macmon_cpu_temp_celsius' in body:
