@@ -65,6 +65,12 @@ data:
         static_configs:
           - targets: ["192.168.1.253:9100"]
 
+      # The MacBook itself (not m1-node, its VM): macmon, a LaunchAgent
+      # installed by apps/mac-stats/install.py. On the Mac's Ethernet address.
+      - job_name: node-mac
+        static_configs:
+          - targets: ["192.168.1.219:9101"]
+
       # adguard-exporter is a real in-cluster pod now (moved off Docker
       # Compose specifically so a NetworkPolicy could restrict it - see
       # kubernetes/monitoring/adguard-exporter.yaml), discovered the same

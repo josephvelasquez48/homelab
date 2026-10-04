@@ -291,6 +291,7 @@ def test_one_stuck_source_does_not_freeze_the_display(monkeypatch):
 
     state = asyncio.run(display.gather(None, None, none(), none(), none()))
     assert state["stats"]["pi_cpu"] is None and state["stats"]["pods_total"] == 0
+    assert state["stats"]["mac_temp_c"] is None and state["stats"]["mac_mem"] is None
 
 
 def test_prometheus_nan_reads_as_no_data():
