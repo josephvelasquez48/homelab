@@ -150,9 +150,10 @@ function buildStats() {
   // per machine wouldn't fit across 1280.
   const items = [["dns", "DNS", "#5DCAA5"], ["blocked", "Blocked today", "#F0997B"], ["pods", "Pods", "#AFA9EC"],
     ["api", "API", "#AFA9EC"], ["pi", "Pi  temp · CPU · mem", "#EF9F27"], ["mac", "Mac  temp · CPU · mem", "#85B7EB"],
-    ["pc", "PC  temp · CPU · mem", "#D85A30"]];
-  // A machine's cell is ~230 wide at most ("100° · 100% · 100%"); the last ends just inside 1280.
-  const xs = [30, 160, 300, 390, 530, 780, 1030];
+    ["pc", "PC  CPU° · GPU° · CPU · mem", "#D85A30"]];
+  // A machine's cell is ~150-200 wide in practice ("57° · 25% · 47%"; the PC's,
+  // with its GPU, "55° · 44° · 4% · 38%"); the PC's ends well inside 1280.
+  const xs = [30, 160, 300, 390, 520, 765, 1000];
   items.forEach(([id, label, color], i) => {
     const x = xs[i];
     // Right under the top bar, outside the map's group.
@@ -186,11 +187,11 @@ function renderMap() {
   statEls.blocked.textContent = fmt(st.blocked_pct, (v) => `${Math.round(v)}%`);
   statEls.pods.textContent = `${st.pods_ready}/${st.pods_total}`;
   statEls.api.textContent = fmt(st.api_rps, (v) => `${v < 10 ? v.toFixed(1) : Math.round(v)} req/s`);
-  const host = (t, c, m) => [fmt(t, (v) => `${Math.round(v)}°`), fmt(c, (v) => `${Math.round(v * 100)}%`),
-    fmt(m, (v) => `${Math.round(v * 100)}%`)].join("  ·  ");
-  statEls.pi.textContent = host(st.pi_temp_c, st.pi_cpu, st.pi_mem);
-  statEls.mac.textContent = host(st.mac_temp_c, st.mac_cpu, st.mac_mem);
-  statEls.pc.textContent = host(st.pc_temp_c, st.pc_cpu, st.pc_mem);
+  const deg = (v) => fmt(v, (x) => `${Math.round(x)}°`), pct = (v) => fmt(v, (x) => `${Math.round(x * 100)}%`);
+  const host = (...parts) => parts.join("  ·  ");
+  statEls.pi.textContent = host(deg(st.pi_temp_c), pct(st.pi_cpu), pct(st.pi_mem));
+  statEls.mac.textContent = host(deg(st.mac_temp_c), pct(st.mac_cpu), pct(st.mac_mem));
+  statEls.pc.textContent = host(deg(st.pc_temp_c), deg(st.pc_gpu_temp_c), pct(st.pc_cpu), pct(st.pc_mem));
   const podsUp = (ns, prefix) => state.pods.filter((p) => p.namespace === ns && p.name.startsWith(prefix));
   const api = podsUp("backend", "api-");
   boxEls.api.sub.textContent = api.length ? `api.home - ${api.filter((p) => p.ready).length}/${api.length} pods` : "api.home";

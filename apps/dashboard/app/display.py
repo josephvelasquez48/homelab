@@ -74,6 +74,8 @@ VALUE_QUERIES = {
     # The Windows desktop, from LibreHardwareMonitor's /metrics (docs/monitoring.md).
     # It reports percentages; the screen wants ratios like the others.
     "pc_temp_c": 'max(lhm_cpu_temperature_celsius{job="node-pc",sensorName="CPU Package"})',
+    # The RTX 3070 Ti's core (it also reports hot spot and memory junction).
+    "pc_gpu_temp_c": 'max(lhm_gpunvidia_temperature_celsius{job="node-pc",sensorName="GPU Core"})',
     "pc_cpu": 'max(lhm_cpu_load_percent{job="node-pc",sensorName="CPU Total"}) / 100',
     "pc_mem": 'max(lhm_memory_load_percent{job="node-pc",hardwareId="/ram"}) / 100',
     "api_p95_s": f'histogram_quantile(0.95, sum by (le) (rate(http_request_duration_seconds_bucket{{handler!~"{PROBE_HANDLERS}"}}[1h])))',
@@ -534,6 +536,7 @@ async def gather(k8s_client: httpx.AsyncClient, http: httpx.AsyncClient, argo_ta
             "mac_cpu": values["mac_cpu"],
             "mac_mem": values["mac_mem"],
             "pc_temp_c": values["pc_temp_c"],
+            "pc_gpu_temp_c": values["pc_gpu_temp_c"],
             "pc_cpu": values["pc_cpu"],
             "pc_mem": values["pc_mem"],
         },
