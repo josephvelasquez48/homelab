@@ -71,6 +71,12 @@ data:
         static_configs:
           - targets: ["192.168.1.219:9101"]
 
+      # The Windows desktop: LibreHardwareMonitor's web server (docs/monitoring.md),
+      # the one thing there that reads an Intel CPU's temperature.
+      - job_name: node-pc
+        static_configs:
+          - targets: ["192.168.1.131:8085"]
+
       # adguard-exporter is a real in-cluster pod now (moved off Docker
       # Compose specifically so a NetworkPolicy could restrict it - see
       # kubernetes/monitoring/adguard-exporter.yaml), discovered the same
