@@ -146,10 +146,13 @@ function buildMap() {
 
 const statEls = {};
 function buildStats() {
+  // Each machine is one cell (temp · CPU · memory): seven separate cells
+  // per machine wouldn't fit across 1280.
   const items = [["dns", "DNS", "#5DCAA5"], ["blocked", "Blocked today", "#F0997B"], ["pods", "Pods", "#AFA9EC"],
-    ["api", "API", "#AFA9EC"], ["temp", "Pi temp", "#EF9F27"], ["cpu", "Pi CPU", "#EF9F27"], ["mem", "Pi memory", "#EF9F27"]];
+    ["api", "API", "#AFA9EC"], ["pi", "Pi  temp · CPU · mem", "#EF9F27"], ["mac", "Mac  temp · CPU · mem", "#85B7EB"]];
+  const xs = [30, 190, 380, 510, 700, 960];
   items.forEach(([id, label, color], i) => {
-    const x = 30 + i * 175;
+    const x = xs[i];
     // Right under the top bar, outside the map's group.
     el("text", { x, y: 78, fill: "#888780", "font-size": 13 }, svg).textContent = label;
     statEls[id] = el("text", { x, y: 101, fill: color, "font-size": 21, "font-weight": 600 }, svg);
@@ -181,9 +184,10 @@ function renderMap() {
   statEls.blocked.textContent = fmt(st.blocked_pct, (v) => `${Math.round(v)}%`);
   statEls.pods.textContent = `${st.pods_ready}/${st.pods_total}`;
   statEls.api.textContent = fmt(st.api_rps, (v) => `${v < 10 ? v.toFixed(1) : Math.round(v)} req/s`);
-  statEls.temp.textContent = fmt(st.pi_temp_c, (v) => `${Math.round(v)}°C`);
-  statEls.cpu.textContent = fmt(st.pi_cpu, (v) => `${Math.round(v * 100)}%`);
-  statEls.mem.textContent = fmt(st.pi_mem, (v) => `${Math.round(v * 100)}%`);
+  const host = (t, c, m) => [fmt(t, (v) => `${Math.round(v)}°C`), fmt(c, (v) => `${Math.round(v * 100)}%`),
+    fmt(m, (v) => `${Math.round(v * 100)}%`)].join("  ·  ");
+  statEls.pi.textContent = host(st.pi_temp_c, st.pi_cpu, st.pi_mem);
+  statEls.mac.textContent = host(st.mac_temp_c, st.mac_cpu, st.mac_mem);
   const podsUp = (ns, prefix) => state.pods.filter((p) => p.namespace === ns && p.name.startsWith(prefix));
   const api = podsUp("backend", "api-");
   boxEls.api.sub.textContent = api.length ? `api.home - ${api.filter((p) => p.ready).length}/${api.length} pods` : "api.home";

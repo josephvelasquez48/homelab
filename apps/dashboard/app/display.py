@@ -66,6 +66,11 @@ VALUE_QUERIES = {
     "pi_temp_c": 'node_hwmon_temp_celsius{job="node-pi",chip="thermal_thermal_zone0",sensor="temp0"}',
     "pi_cpu": '1 - avg(rate(node_cpu_seconds_total{job="node-pi",mode="idle"}[2m]))',
     "pi_mem": '1 - node_memory_MemAvailable_bytes{job="node-pi"} / node_memory_MemTotal_bytes{job="node-pi"}',
+    # The MacBook, from macmon (apps/mac-stats). Active ratio, not "scaled":
+    # time not idle, the same measure as the Pi's.
+    "mac_temp_c": 'macmon_cpu_temp_celsius{job="node-mac"}',
+    "mac_cpu": 'macmon_cpu_active_ratio{job="node-mac"}',
+    "mac_mem": 'macmon_memory_ram_used_bytes{job="node-mac"} / macmon_memory_ram_total_bytes{job="node-mac"}',
     "api_p95_s": f'histogram_quantile(0.95, sum by (le) (rate(http_request_duration_seconds_bucket{{handler!~"{PROBE_HANDLERS}"}}[1h])))',
     # The phone service writes its gauges every few seconds; stale means it's down.
     "phone_age_s": "time() - phone_bridge_last_update_timestamp_seconds",
@@ -520,6 +525,9 @@ async def gather(k8s_client: httpx.AsyncClient, http: httpx.AsyncClient, argo_ta
             "pi_temp_c": values["pi_temp_c"],
             "pi_cpu": values["pi_cpu"],
             "pi_mem": values["pi_mem"],
+            "mac_temp_c": values["mac_temp_c"],
+            "mac_cpu": values["mac_cpu"],
+            "mac_mem": values["mac_mem"],
         },
         "phone": {
             "connected": flag(values["phone_connected"]),
