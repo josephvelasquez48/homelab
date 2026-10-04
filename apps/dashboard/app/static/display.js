@@ -149,8 +149,10 @@ function buildStats() {
   // Each machine is one cell (temp · CPU · memory): seven separate cells
   // per machine wouldn't fit across 1280.
   const items = [["dns", "DNS", "#5DCAA5"], ["blocked", "Blocked today", "#F0997B"], ["pods", "Pods", "#AFA9EC"],
-    ["api", "API", "#AFA9EC"], ["pi", "Pi  temp · CPU · mem", "#EF9F27"], ["mac", "Mac  temp · CPU · mem", "#85B7EB"]];
-  const xs = [30, 190, 380, 510, 700, 960];
+    ["api", "API", "#AFA9EC"], ["pi", "Pi  temp · CPU · mem", "#EF9F27"], ["mac", "Mac  temp · CPU · mem", "#85B7EB"],
+    ["pc", "PC  temp · CPU · mem", "#D85A30"]];
+  // A machine's cell is ~230 wide at most ("100° · 100% · 100%"); the last ends just inside 1280.
+  const xs = [30, 160, 300, 390, 530, 780, 1030];
   items.forEach(([id, label, color], i) => {
     const x = xs[i];
     // Right under the top bar, outside the map's group.
@@ -184,10 +186,11 @@ function renderMap() {
   statEls.blocked.textContent = fmt(st.blocked_pct, (v) => `${Math.round(v)}%`);
   statEls.pods.textContent = `${st.pods_ready}/${st.pods_total}`;
   statEls.api.textContent = fmt(st.api_rps, (v) => `${v < 10 ? v.toFixed(1) : Math.round(v)} req/s`);
-  const host = (t, c, m) => [fmt(t, (v) => `${Math.round(v)}°C`), fmt(c, (v) => `${Math.round(v * 100)}%`),
+  const host = (t, c, m) => [fmt(t, (v) => `${Math.round(v)}°`), fmt(c, (v) => `${Math.round(v * 100)}%`),
     fmt(m, (v) => `${Math.round(v * 100)}%`)].join("  ·  ");
   statEls.pi.textContent = host(st.pi_temp_c, st.pi_cpu, st.pi_mem);
   statEls.mac.textContent = host(st.mac_temp_c, st.mac_cpu, st.mac_mem);
+  statEls.pc.textContent = host(st.pc_temp_c, st.pc_cpu, st.pc_mem);
   const podsUp = (ns, prefix) => state.pods.filter((p) => p.namespace === ns && p.name.startsWith(prefix));
   const api = podsUp("backend", "api-");
   boxEls.api.sub.textContent = api.length ? `api.home - ${api.filter((p) => p.ready).length}/${api.length} pods` : "api.home";
