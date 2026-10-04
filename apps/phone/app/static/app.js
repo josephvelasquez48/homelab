@@ -677,14 +677,7 @@ $("enable-audio").onclick = enableAudio;
 // Stored on the Pi, so it holds for every browser and across restarts.
 $("keep-phone").onchange = (e) => send({ action: "set-keep-phone", value: e.target.checked });
 $("media-on-pc").onchange = (e) => send({ action: "set-media-on-pc", value: e.target.checked });
-$("bluetooth").onchange = (e) => {
-  const on = e.target.checked;
-  if (!on && !confirm("Turn off the Pi's Bluetooth? The iPhone disconnects: no calls or music through the Pi until it's back on.")) {
-    e.target.checked = true;
-    return;
-  }
-  send({ action: "set-bluetooth", value: on });
-};
+$("bluetooth").onchange = (e) => send({ action: "set-bluetooth", value: e.target.checked });
 $("mic").onchange = (e) => switchMic(e.target.value);
 function dbToGain(db) {
   return Math.pow(10, Number(db) / 20);

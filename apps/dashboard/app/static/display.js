@@ -348,8 +348,7 @@ $("screen").addEventListener("click", (e) => {
 });
 
 // ---- Asking first ----
-// One dialog for the buttons that ask before acting: Go follows the link
-// (or runs the function).
+// One dialog for the buttons that ask before acting: Go follows the link.
 // Taps here don't switch views.
 const confirmBox = $("confirm");
 let confirmHref = null;
@@ -369,8 +368,7 @@ confirmBox.addEventListener("click", (e) => {
 });
 $("confirm-go").addEventListener("click", () => {
   closeConfirm();
-  if (typeof confirmHref === "function") confirmHref();
-  else location.href = confirmHref;
+  location.href = confirmHref;
 });
 
 // ---- The Pi's desktop ----
@@ -396,9 +394,8 @@ $("to-call").addEventListener("click", (e) => {
 });
 // ---- The Pi's Bluetooth ----
 // Same trick: homelab-bluetooth://on or ://off, and apps/pi-display's
-// handler powers the adapter with bluetoothctl. Turning it off asks first:
-// it takes the iPhone (calls and music) and a Bluetooth mouse with it. The
-// button shows the adapter as the phone service reports it, which is also
+// handler powers the adapter with bluetoothctl. A tap toggles it, without
+// asking (asked to drop the confirmation, 2026-10-03). The button shows the adapter as the phone service reports it, which is also
 // what the phone page's switch shows, so each follows the other (the report
 // takes up to ~20 s to get here). After a tap here it shows what was asked
 // for straight away, until the report agrees or a minute passes.
@@ -416,11 +413,7 @@ function bluetoothShown() {
 }
 $("to-bt").addEventListener("click", (e) => {
   e.stopPropagation();
-  if (bluetoothShown() === false) return wantBluetooth(true);
-  ask("Turn off the Pi's Bluetooth?",
-    "The iPhone disconnects: no calls or music through the Pi until it's back on. " +
-    "A Bluetooth mouse stops too. Tap <b>Bluetooth off</b> here to turn it on again.",
-    "Turn off", () => wantBluetooth(false));
+  wantBluetooth(bluetoothShown() === false);
 });
 
 // ---- Loop ----

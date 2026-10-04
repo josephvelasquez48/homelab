@@ -104,7 +104,7 @@ handler `apps/pi-display/show-call.sh` asks the phone service on loopback
 (docs/phone.md).
 
 **The Pi's Bluetooth:** the **Bluetooth on** button in the bottom bar turns
-the Pi's Bluetooth off (it asks first: the iPhone disconnects, so no calls
+the Pi's Bluetooth off, without asking (the iPhone disconnects, so no calls
 or music through the Pi, and a Bluetooth mouse stops too); it then reads
 **Bluetooth off**, and a tap turns it straight back on. Same trick again: a
 `homelab-bluetooth://on` or `://off` link, pre-approved by `install.sh`,
