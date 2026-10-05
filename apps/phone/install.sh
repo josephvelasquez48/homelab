@@ -30,6 +30,11 @@ else
   # Keep the password and session key; only repoint APP_DIR.
   sed -i "s|^APP_DIR=.*|APP_DIR=$APP_DIR|" "$CONF/env"
 fi
+# For the iPhone's "Send to PC" Shortcut: it can only make drops. Not
+# printed - read it when setting the Shortcut up (docs/phone.md, Drop).
+if ! grep -q '^PHONE_DROP_TOKEN=' "$CONF/env"; then
+  echo "PHONE_DROP_TOKEN=$(python3 -c 'import secrets; print(secrets.token_urlsafe(24))')" >> "$CONF/env"
+fi
 if ! grep -q '^PHONE_AGENT_TOKEN=' "$CONF/env"; then
   # Read by the desktop ring agent (agent/phone_agent.pyw); it goes into
   # the agent's config on the PC.

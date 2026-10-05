@@ -60,6 +60,7 @@ import webview
 
 import hotkeys
 import taskbar
+from drop import DropReceiver
 from tray import AMBER, GREEN, GREY, Tray
 
 CONFIG_DIR = Path(os.environ["APPDATA"]) / "phone-bridge"
@@ -197,6 +198,10 @@ class Agent:
         # None until the first poll, so a call missed before the agent
         # started isn't announced.
         self._seen_missed: int | None = None
+        # Drop (drop.py): on its own thread, so saving a big file never
+        # holds up the call check.
+        self.drops = DropReceiver(pi, self.tray.notify)
+        self._drop_thread: threading.Thread | None = None
         window.events.loaded += self.hook_permissions
         window.events.loaded += self.sign_in
         window.events.closing += self.on_closing
@@ -403,9 +408,23 @@ class Agent:
                 log.exception("update failed")
             time.sleep(min(30, POLL_SECONDS * max(1, failures)))
 
+    def check_drops(self, status: dict) -> None:
+        if "dropLatest" not in status or (self._drop_thread and self._drop_thread.is_alive()):
+            return
+
+        def run() -> None:
+            try:
+                self.drops.check(status["dropLatest"])
+            except (urllib.error.URLError, OSError, ValueError) as e:
+                log.warning("drop: %s", e)  # tried again on the next poll
+
+        self._drop_thread = threading.Thread(target=run, name="drop", daemon=True)
+        self._drop_thread.start()
+
     def apply(self, status: dict) -> None:
         self.update_tray(status)
         self.notify_new(status)
+        self.check_drops(status)
         # Shown for every call - ringing, answered on the iPhone, or dialed
         # from it - so its audio can be moved to the PC at any point, until
         # the call ends or the window is closed for that call.

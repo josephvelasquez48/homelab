@@ -5,6 +5,12 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="dark light">
   <title>Phone</title>
+  <!-- Add to Home Screen on the iPhone: opens full screen, like an app. -->
+  <link rel="manifest" href="/static/manifest.webmanifest">
+  <link rel="apple-touch-icon" href="/static/icon-180.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Homelab">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black">
   <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
@@ -75,6 +81,19 @@
     </section>
 
     <div class="card mic-warning" id="mic-warning" hidden></div>
+
+    <section class="card drop-card" id="drop-card">
+      <h2 id="drop-title">Drop</h2>
+      <textarea id="drop-text" rows="2" placeholder="Text to send"></textarea>
+      <div class="drop-actions">
+        <label class="button soft small" for="drop-files">Photos &amp; files</label>
+        <input type="file" id="drop-files" multiple hidden>
+        <span class="sub" id="drop-picked"></span>
+        <button class="primary small" id="drop-send" type="button">Send</button>
+      </div>
+      <ul class="list drops" id="drops"></ul>
+      <div class="sub" id="drops-empty">Nothing dropped in the last 7 days.</div>
+    </section>
 
     <section class="card call-card" id="call-card" hidden>
       <div class="avatar" id="call-avatar" aria-hidden="true"></div>

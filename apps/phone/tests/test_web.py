@@ -113,3 +113,11 @@ def test_media_stream_needs_the_token_and_all_audio_mode(client):
     assert client.get("/api/agent/media").status_code == 401
     # "Calls only" (and no media bridge in tests): nothing to stream, ask later.
     assert client.get("/api/agent/media", headers={"Authorization": "Bearer agent-token"}).status_code == 204
+
+
+def test_websocket_origin_may_be_the_forwarded_address_but_not_another_site():
+    ts = "cam.taile847cc.ts.net:8443"
+    assert main.same_origin({"host": "phone.home:8443", "origin": "https://phone.home:8443"})
+    assert main.same_origin({"host": "192.168.1.253:8443", "x-forwarded-host": ts, "origin": f"https://{ts}"})
+    assert not main.same_origin({"host": "phone.home:8443", "x-forwarded-host": ts, "origin": "https://evil.example"})
+    assert not main.same_origin({"host": "phone.home:8443"})  # no Origin at all

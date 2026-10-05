@@ -12,8 +12,13 @@ const AGENT = new URLSearchParams(location.search).has("agent");
 // ?touch=1: the Pi's own touchscreen (phone-screen.service). A remote control
 // - no speakers or mic there - so Answer sends the call to the PC.
 const TOUCH = new URLSearchParams(location.search).has("touch");
+// The iPhone itself (Safari, or the page added to its home screen): it has
+// no use for PC audio or the PC's dial pad, and what it drops comes from
+// the phone. iPadOS reports itself as a Mac, so check for touch too.
+const IOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
 if (POPUP) document.body.classList.add("popup");
 if (TOUCH) document.body.classList.add("touch");
+if (IOS) document.body.classList.add("ios");
 let popupHadCall = false;
 let popupCloseTimer = null;
 let ws = null;
@@ -621,6 +626,7 @@ let lastExtras = null;
 
 function renderExtras(x) {
   lastExtras = x;
+  renderDrops(x.drops || []);
   const arrows = { in: "↙", out: "↗", unknown: "•" };
   const shown = recentExpanded ? x.history : x.history.slice(0, RECENT_SHOWN);
   const more = $("recent-more");
@@ -828,3 +834,133 @@ async function autoEnableAudio() {
 
 connect();
 autoEnableAudio();
+
+// ---- Drop (app/drops.py) ------------------------------------------------------
+// Text, photos and files between the iPhone and the PC. What one side sends
+// the other gets: the PC's agent copies text to the clipboard and saves
+// files by itself; the iPhone has Copy and Save here.
+
+const SOURCE = IOS ? "phone" : "pc";
+$("drop-title").textContent = IOS ? "Drop to the PC" : "Drop to the iPhone";
+
+function sizeText(n) {
+  return n < 1024 ? `${n} B` : n < 1048576 ? `${Math.round(n / 1024)} KB` : `${(n / 1048576).toFixed(1)} MB`;
+}
+
+function actionButton(label, onClick, cls = "small") {
+  const b = document.createElement("button");
+  b.type = "button";
+  b.className = cls;
+  b.textContent = label;
+  b.onclick = onClick;
+  return b;
+}
+
+function flash(button, text) {
+  const before = button.textContent;
+  button.textContent = text;
+  setTimeout(() => (button.textContent = before), 1500);
+}
+
+// Save on the iPhone: the share sheet, whose "Save Image" puts a photo in
+// Photos (a download would go to Files). Elsewhere, a plain download.
+async function saveDrop(d, button) {
+  const url = `/api/drops/${d.id}/file`;
+  try {
+    if (IOS && navigator.canShare) {
+      const blob = await (await fetch(url)).blob();
+      const file = new File([blob], d.name, { type: d.mime });
+      if (navigator.canShare({ files: [file] })) {
+        await navigator.share({ files: [file] });
+        return;
+      }
+    }
+  } catch (e) {
+    if (e.name === "AbortError") return; // closed the share sheet
+  }
+  const a = document.createElement("a");
+  a.href = url + "?download=1";
+  a.download = d.name;
+  a.click();
+  flash(button, "Saving");
+}
+
+function renderDrops(drops) {
+  $("drops-empty").hidden = drops.length > 0;
+  $("drops").replaceChildren(...drops.map((d) => {
+    const item = document.createElement("li");
+    const body = document.createElement("div");
+    body.className = "body";
+    const from = d.source === "phone" ? "From iPhone" : "From PC";
+    const acts = document.createElement("div");
+    acts.className = "acts";
+    if (d.kind === "text") {
+      body.append(div(d.text, "text"), div(`${from} · ${when(d.created)}`, "meta"));
+      const copy = actionButton("Copy", async () => {
+        try { await navigator.clipboard.writeText(d.text); flash(copy, "Copied"); } catch { showError("Couldn't copy"); }
+      });
+      acts.append(copy);
+    } else {
+      if ((d.mime || "").startsWith("image/")) {
+        const img = document.createElement("img");
+        img.src = `/api/drops/${d.id}/file`;
+        img.alt = d.name;
+        img.loading = "lazy";
+        item.append(img);
+      }
+      body.append(div(d.name, "text"), div(`${from} · ${sizeText(d.size)} · ${when(d.created)}`, "meta"));
+      const save = actionButton("Save", () => saveDrop(d, save));
+      acts.append(save);
+    }
+    acts.append(actionButton("✕", async () => {
+      const r = await fetch(`/api/drops/${d.id}`, { method: "DELETE" });
+      if (!r.ok) showError("Couldn't delete it");
+    }, "small ghost"));
+    item.append(body, acts);
+    return item;
+  }));
+}
+
+$("drop-files").onchange = () => {
+  const n = $("drop-files").files.length;
+  $("drop-picked").textContent = n ? (n === 1 ? $("drop-files").files[0].name : `${n} files`) : "";
+};
+
+$("drop-send").onclick = async () => {
+  const text = $("drop-text").value;
+  const files = [...$("drop-files").files];
+  if (!text.trim() && !files.length) return;
+  const form = new FormData();
+  form.append("text", text);
+  form.append("source", SOURCE);
+  files.forEach((f) => form.append("files", f, f.name));
+  const button = $("drop-send");
+  button.disabled = true;
+  button.textContent = "Sending…";
+  try {
+    const r = await fetch("/api/drops", { method: "POST", body: form });
+    if (!r.ok) {
+      showError((await r.json().catch(() => ({}))).detail || `Couldn't send (${r.status})`);
+      return;
+    }
+    $("drop-text").value = "";
+    $("drop-files").value = "";
+    $("drop-picked").textContent = "";
+  } catch {
+    showError("Couldn't reach the Pi");
+  } finally {
+    button.disabled = false;
+    button.textContent = "Send";
+  }
+};
+
+// Paste a screenshot or a copied file straight into the box (on the PC).
+$("drop-text").addEventListener("paste", (e) => {
+  const pasted = [...(e.clipboardData?.files || [])];
+  if (!pasted.length) return;
+  e.preventDefault();
+  const dt = new DataTransfer();
+  [...$("drop-files").files, ...pasted].forEach((f) => dt.items.add(f));
+  $("drop-files").files = dt.files;
+  $("drop-files").onchange();
+});
