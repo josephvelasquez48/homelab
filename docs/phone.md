@@ -86,7 +86,16 @@ Ctrl+Alt+M mutes. The X hides the window; *Quit* in the tray stops the app.
 
 ## Drop: text and photos between the iPhone and the PC
 
-The page has three tabs: **Phone** (calls), **Drop**, and **Settings** -
+**On the iPhone it's a different app:** **Status** and **Drop** only, as
+"Homelab". Status is the dashboard's view of the homelab (fetched by the Pi
+from `dashboard.home`, cached 5 s, refreshed every 10 s while on screen):
+what's down, alerts, the Pi's, Mac's and PC's temperature, CPU and memory,
+every service's light, the latest events - and two switches, **Pi's
+Bluetooth** and **Display** (opens or closes the Pi's always-on screen,
+`pi-display.service`; opening needs the Pi's desktop logged in).
+`app/status.py`.
+
+On the PC the page has three tabs: **Phone** (calls), **Drop**, and **Settings** -
 the Audio section, contacts, and Drop's limits (how long drops are kept,
 the largest file, and each send link's sends and data a day and the most
 in one send). Limits are saved on the Pi with the other settings and held

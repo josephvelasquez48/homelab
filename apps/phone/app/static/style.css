@@ -278,7 +278,9 @@ body.ios #mic-warning { display: none !important; }
    No tab on body (the call popup, the Pi's screen): the old single page. */
 body[data-tab="phone"] main > .card[data-tab],
 body[data-tab="drop"] main > .card:not([data-tab="drop"]),
-body[data-tab="settings"] main > .card:not([data-tab="settings"]) { display: none !important; }
+body[data-tab="settings"] main > .card:not([data-tab="settings"]),
+body[data-tab="status"] main > .card:not([data-tab="status"]) { display: none !important; }
+body:not([data-tab]) main > .card[data-tab="status"] { display: none !important; }
 body:not([data-tab]) #drop-card, body:not([data-tab]) #limits-card { display: none !important; }
 body.ios #mic-row, body.ios #filter-row, body.ios #vol-row { display: none !important; }
 body.popup .tabs, body.touch .tabs { display: none !important; }
@@ -309,3 +311,18 @@ body.popup .tabs, body.touch .tabs { display: none !important; }
   border-radius: 10px; padding: 6px 10px; text-align: right; }
 .limit-row span { width: 84px; color: var(--muted); font-size: 14px; }
 .limit-head { margin: 10px 0 2px; }
+
+/* Status (the iPhone): the homelab at a glance, and two controls. */
+.st-headline { display: flex; align-items: center; gap: 10px; font-size: 18px; font-weight: 650; }
+.st-headline .dot { width: 11px; height: 11px; }
+#st-note { margin: 4px 0 8px; }
+.dot.warn { background: #ff9f0a; box-shadow: 0 0 0 4px color-mix(in srgb, #ff9f0a 20%, transparent); }
+.st-machines { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.st-machine { background: var(--card-2); border-radius: 12px; padding: 10px; }
+.st-machine b { display: block; margin-bottom: 4px; }
+.st-machine div { color: var(--muted); font-size: 13px; font-variant-numeric: tabular-nums; }
+.st-machine .hot { color: var(--bad); }
+.st-services { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px 14px; }
+.st-services div { display: flex; align-items: center; gap: 8px; font-size: 14px; }
+.st-alerts li, .st-events li { display: flex; gap: 10px; align-items: baseline; font-size: 14px; }
+.st-alerts li { color: var(--bad); }

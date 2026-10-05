@@ -22,6 +22,7 @@ import uvicorn
 from app.contacts import Contacts
 from app.drops import MAX_TEXT, DropError, Drops
 from app.guests import LinkError, Links
+from app import status as status_module
 from app.history import CallLog
 from app.hub import Hub
 from app.media import CHANNELS, RATE, MediaBridge
@@ -231,6 +232,30 @@ async def agent_media():
         media_type="application/octet-stream",
         headers={"X-Audio-Format": f"s16le; rate={RATE}; channels={CHANNELS}", "Cache-Control": "no-store"},
     )
+
+
+# ---- Status (app/status.py): the iPhone app's monitoring tab ------------------
+
+homelab_status = status_module.Status()
+
+
+@app.get("/api/status", dependencies=[Depends(require_page)])
+async def status():
+    return {
+        **await homelab_status.homelab(),
+        "bluetooth": hub.reconnector.powered if hub.reconnector else None,
+        "iphone": hub.tel.state.connected,
+        "display": await status_module.display_on(),
+    }
+
+
+@app.post("/api/display", dependencies=[Depends(require_page)])
+async def display(on: bool = Form(...)):
+    """Open or close the Pi's always-on display."""
+    error = await status_module.set_display(on)
+    if error:
+        raise HTTPException(status_code=409, detail=error)
+    return {"display": await status_module.display_on()}
 
 
 # ---- Drop (app/drops.py) ----------------------------------------------------
