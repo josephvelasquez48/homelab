@@ -523,7 +523,8 @@ function render(s) {
   document.body.classList.toggle("incoming", POPUP && !!call && (call.state === "incoming" || call.state === "waiting"));
   $("call-card").hidden = !call;
   $("dial-card").hidden = !!call || POPUP;
-  if (call && currentTab !== "phone") setTab("phone"); // a call always brings the Phone tab back
+  if (call && TABS.includes("phone") && currentTab !== "phone") setTab("phone"); // a call always brings the Phone tab back
+  renderStatusBluetooth(s);
   renderLimits(s.settings);
   if (POPUP) {
     // Opened for a call that was already answered elsewhere, or one that
@@ -1031,13 +1032,17 @@ let currentTab = "phone";
 let shownDrops = [];
 const MINE = SOURCE; // drops this side sent itself don't need a dot
 
-const TABS = ["phone", "drop", "settings"];
+// The iPhone has Status and Drop; the PC has Phone, Drop and Settings.
+const TABS = IOS ? ["status", "drop"] : ["phone", "drop", "settings"];
+for (const b of document.querySelectorAll("#tabs button")) b.hidden = !TABS.includes(b.dataset.tab);
+if (IOS) $("brand-name").textContent = "Homelab"; // no calls here: it's the homelab's app
 
 function setTab(tab) {
   currentTab = tab;
   document.body.dataset.tab = tab;
   for (const b of document.querySelectorAll("#tabs button")) b.setAttribute("aria-selected", String(b.dataset.tab === tab));
   if (tab === "drop") markDropsSeen();
+  if (tab === "status") loadStatus();
   try { localStorage.setItem("phone-tab", tab); } catch {}
 }
 
@@ -1058,7 +1063,7 @@ for (const b of document.querySelectorAll("#tabs button")) b.onclick = () => set
 if (!POPUP && !TOUCH) {
   let saved = "phone";
   try { saved = localStorage.getItem("phone-tab") || "phone"; } catch {}
-  setTab(TABS.includes(saved) ? saved : "phone");
+  setTab(TABS.includes(saved) ? saved : TABS[0]);
 }
 
 // ---- The viewer: a text or a photo, the whole window --------------------------
@@ -1219,3 +1224,129 @@ for (const input of document.querySelectorAll("[data-limit]")) {
   body.addEventListener("touchend", end);
   body.addEventListener("touchcancel", end);
 })();
+
+// ---- Status: the iPhone's monitoring tab (app/status.py) ------------------------
+// The dashboard's view of the homelab, through the Pi (cached there for a
+// few seconds), every 10 s while this tab is on screen - and the Pi's
+// Bluetooth and its display, to switch on and off.
+
+const STATUS_POLL_MS = 10000;
+const SERVICE_NAMES = {
+  traefik: "Traefik", api: "FastAPI", postgres: "Postgres", redis: "Redis", prometheus: "Prometheus",
+  argocd: "Argo CD", grafana: "Grafana", chat: "Chat", kiwix: "Wikipedia", coredns: "CoreDNS",
+  adguard: "AdGuard", phone: "Phone bridge", phone_pc: "Phone app (PC)", iphone: "iPhone",
+  ollama: "Ollama", rustdesk: "RustDesk", internet: "Internet", backup: "Backup", mac: "Mac",
+};
+let statusTimer = null;
+let displayBusy = false;
+
+const pct = (v) => (v == null ? "-" : `${Math.round(v * 100)}%`);
+const temp = (v) => (v == null ? "-" : `${Math.round(v)}°C`);
+
+function dotSpan(cls) {
+  const d = document.createElement("span");
+  d.className = `dot ${cls}`;
+  return d;
+}
+
+function renderStatus(st) {
+  const down = st.down || [], alerts = st.alerts || [];
+  const known = Object.values(st.services || {}).filter((v) => v !== "unknown").length;
+  const all = Object.keys(st.services || {}).length;
+  const problems = [down.length && `${down.length} down`, alerts.length && `${alerts.length} alert${alerts.length > 1 ? "s" : ""}`].filter(Boolean);
+  const [cls, headline] = !all ? ["off", "No data"]
+    : problems.length ? ["off", problems.join(", ")]
+    : known === all ? ["on", "All healthy"] : ["warn", `${known} of ${all} reporting`];
+  $("st-dot").className = `dot ${cls}`;
+  $("st-headline").textContent = headline;
+  $("st-note").textContent = st.error ? st.error
+    : down.length ? `Down: ${down.map((k) => SERVICE_NAMES[k] || k).join(", ")}` : "";
+
+  $("st-alerts-card").hidden = !alerts.length;
+  $("st-alerts").replaceChildren(...alerts.map((a) => {
+    const item = document.createElement("li");
+    item.textContent = a.summary || a.name || a.text || "Alert";
+    return item;
+  }));
+
+  const s = st.stats || {};
+  const machine = (name, t, cpu, mem, hotAt) => {
+    const box = document.createElement("div");
+    box.className = "st-machine";
+    const title = document.createElement("b");
+    title.textContent = name;
+    box.append(title, div(temp(t), t != null && t >= hotAt ? "hot" : ""), div(`CPU ${pct(cpu)}`), div(`Mem ${pct(mem)}`));
+    return box;
+  };
+  $("st-machines").replaceChildren(
+    machine("Pi", s.pi_temp_c, s.pi_cpu, s.pi_mem, 75),
+    machine("Mac", s.mac_temp_c, s.mac_cpu, s.mac_mem, 90),
+    machine("PC", s.pc_temp_c, s.pc_cpu, s.pc_mem, 85),
+  );
+
+  const order = Object.keys(SERVICE_NAMES).filter((k) => k in (st.services || {}));
+  $("st-services").replaceChildren(...order.map((k) => {
+    const v = st.services[k];
+    const row = document.createElement("div");
+    row.append(dotSpan(v === "up" ? "on" : v === "down" ? "off" : ""), SERVICE_NAMES[k]);
+    return row;
+  }));
+
+  const levels = { ok: "on", bad: "off", warn: "warn" };
+  $("st-events").replaceChildren(...(st.events || []).map((e) => {
+    const item = document.createElement("li");
+    item.append(dotSpan(levels[e.level] || ""), e.text);
+    return item;
+  }));
+
+  if (!displayBusy) {
+    $("st-display").checked = !!st.display;
+    $("st-display").disabled = st.display == null;
+    $("st-display-hint").textContent = st.display == null ? "Can't tell if it's open"
+      : st.display ? "Open on the Pi's screen" : "Closed - the Pi's desktop shows";
+  }
+}
+
+// The Bluetooth switch follows the live state the page already gets, so it
+// moves at once whichever side changed it.
+function renderStatusBluetooth(s) {
+  if (!IOS) return;
+  $("st-bluetooth").checked = !!s.bluetooth;
+  $("st-bluetooth").disabled = s.bluetooth == null;
+  $("st-bt-hint").textContent = s.bluetooth == null ? "No data yet"
+    : s.bluetooth ? (s.connected ? "On - iPhone connected" : "On") : "Off - the iPhone can't connect to the Pi";
+}
+
+async function loadStatus() {
+  clearTimeout(statusTimer);
+  if (currentTab !== "status" || document.visibilityState !== "visible") return;
+  try {
+    const r = await fetch("/api/status");
+    if (r.status === 401) return location.reload(); // signed out
+    renderStatus(await r.json());
+  } catch {
+    renderStatus({ error: "Couldn't reach the Pi" });
+  }
+  statusTimer = setTimeout(loadStatus, STATUS_POLL_MS);
+}
+document.addEventListener("visibilitychange", loadStatus);
+
+$("st-bluetooth").onchange = (e) => send({ action: "set-bluetooth", value: e.target.checked });
+$("st-display").onchange = async (e) => {
+  const on = e.target.checked;
+  displayBusy = true;
+  e.target.disabled = true;
+  $("st-display-hint").textContent = on ? "Opening…" : "Closing…";
+  try {
+    const form = new FormData();
+    form.append("on", on);
+    const r = await fetch("/api/display", { method: "POST", body: form });
+    if (!r.ok) showError((await r.json().catch(() => ({}))).detail || "Couldn't change the display");
+  } catch {
+    showError("Couldn't reach the Pi");
+  } finally {
+    displayBusy = false;
+    loadStatus();
+  }
+};
+if (currentTab === "status") loadStatus();

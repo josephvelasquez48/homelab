@@ -27,15 +27,46 @@
 
   <main>
     <header class="top">
-      <div class="brand"><span class="brand-icon"><svg><use href="#i-phone"/></svg></span>Phone</div>
+      <div class="brand"><span class="brand-icon"><svg><use href="#i-phone"/></svg></span><span id="brand-name">Phone</span></div>
       <form method="post" action="/logout"><button class="ghost small" type="submit">Log out</button></form>
     </header>
 
     <nav class="tabs" id="tabs" role="tablist">
+      <button type="button" role="tab" data-tab="status" id="tab-status" aria-selected="false" hidden>Status</button>
       <button type="button" role="tab" data-tab="phone" id="tab-phone" aria-selected="true">Phone</button>
       <button type="button" role="tab" data-tab="drop" id="tab-drop" aria-selected="false">Drop<span class="tab-dot" id="drop-dot" hidden></span></button>
       <button type="button" role="tab" data-tab="settings" id="tab-settings" aria-selected="false">Settings</button>
     </nav>
+
+    <!-- Status: the iPhone's monitoring tab (app/status.py). -->
+    <section class="card status-head" id="st-card" data-tab="status">
+      <div class="st-headline"><span class="dot" id="st-dot"></span><span id="st-headline">Loading…</span></div>
+      <div class="sub" id="st-note"></div>
+      <label class="switch-row">
+        <span><span class="title">Pi's Bluetooth</span><span class="hint" id="st-bt-hint">Calls and music through the Pi</span></span>
+        <input type="checkbox" class="switch" id="st-bluetooth">
+      </label>
+      <label class="switch-row">
+        <span><span class="title">Display</span><span class="hint" id="st-display-hint">The Pi's always-on screen</span></span>
+        <input type="checkbox" class="switch" id="st-display">
+      </label>
+    </section>
+    <section class="card" id="st-alerts-card" data-tab="status" hidden>
+      <h2>Alerts</h2>
+      <ul class="list st-alerts" id="st-alerts"></ul>
+    </section>
+    <section class="card" id="st-machines-card" data-tab="status">
+      <h2>Machines</h2>
+      <div class="st-machines" id="st-machines"></div>
+    </section>
+    <section class="card" id="st-services-card" data-tab="status">
+      <h2>Services</h2>
+      <div class="st-services" id="st-services"></div>
+    </section>
+    <section class="card" id="st-events-card" data-tab="status">
+      <h2>Latest</h2>
+      <ul class="list st-events" id="st-events"></ul>
+    </section>
 
     <section class="card settings" id="settings-card" data-tab="settings">
       <button class="section-toggle" id="audio-toggle" type="button" aria-expanded="false" aria-controls="audio-body">
