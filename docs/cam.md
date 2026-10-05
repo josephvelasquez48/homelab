@@ -282,15 +282,25 @@ could reach:
 | Passkeys replaced passwords | Viewers' weak or reused passwords were the easiest way in; a passkey can't be guessed, reused or phished |
 | Invite links last 24 hours, not 7 days | An unused link is an account for whoever opens it first |
 | Throttling per address only | The per-name lockout let anyone lock an account out |
-| Tailscale policy: no grants | The tailnet holds only the Pi, which needs no tailnet access - Funnel isn't governed by grants. Edited by the account owner (below) |
+| Tailscale policy: no grants | The tailnet held only the Pi, which needed no tailnet access - Funnel isn't governed by grants. Edited by the account owner (below). Since 2026-10-05 one grant: the owner's devices may reach the phone app on the Pi, port 8443 only |
 | UPnP off on the router | Nothing was using it (its table was empty); left on, any device could open ports to the internet |
 
 The tailnet policy (login.tailscale.com/admin/acls/file) keeps the Funnel
-permission and grants nothing else:
+permission and grants one thing: the account's own devices (the iPhone) may
+reach the phone app on the Pi, tailnet only, on port 8443 (docs/phone.md,
+Drop). Nothing else on the Pi is open to the tailnet. A device's traffic
+the policy doesn't allow shows in the Pi's tailscaled log as
+`Drop: TCP{...} no rules matched`.
 
 ```json
 {
-	"grants": [],
+	"hosts": {
+		"pi": "100.77.161.83",
+	},
+	"grants": [
+		// Your own devices (the iPhone) may reach the phone app on the Pi - port 8443 only.
+		{"src": ["autogroup:member"], "dst": ["pi"], "ip": ["tcp:8443"]},
+	],
 	"nodeAttrs": [
 		{"target": ["autogroup:member"], "attr": ["funnel"]},
 	],

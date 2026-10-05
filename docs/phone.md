@@ -117,7 +117,10 @@ It forwards to the Pi's LAN address, not `localhost`, on purpose: the app
 signs in anything arriving on loopback as the Pi's own touchscreen, so a
 proxy on loopback would skip the password. `https+insecure` because the
 hop is inside the Pi and the app's certificate is for `phone.home`. On the
-iPhone: the Tailscale app, signed in to the same account.
+iPhone: the Tailscale app, signed in to the same account. The tailnet
+policy has to allow it - one grant, port 8443 to the Pi only (docs/cam.md,
+Hardening); without it the page never loads and the Pi's tailscaled log
+says `no rules matched`.
 
 **"Send to PC" from the share sheet (a Shortcut):** in the Shortcuts app,
 new shortcut, then:
