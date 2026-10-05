@@ -31,6 +31,11 @@
       <form method="post" action="/logout"><button class="ghost small" type="submit">Log out</button></form>
     </header>
 
+    <nav class="tabs" id="tabs" role="tablist">
+      <button type="button" role="tab" data-tab="phone" id="tab-phone" aria-selected="true">Phone</button>
+      <button type="button" role="tab" data-tab="drop" id="tab-drop" aria-selected="false">Drop<span class="tab-dot" id="drop-dot" hidden></span></button>
+    </nav>
+
     <section class="card settings" id="settings-card">
       <button class="section-toggle" id="audio-toggle" type="button" aria-expanded="false" aria-controls="audio-body">
         <span class="section-title">Audio</span>
@@ -93,6 +98,15 @@
       </div>
       <ul class="list drops" id="drops"></ul>
       <div class="sub" id="drops-empty">Nothing dropped in the last 7 days.</div>
+      <div class="links" id="links-box">
+        <h2>Send links</h2>
+        <div class="sub">Let someone on your Wi-Fi send you things. A link works for 24 hours.</div>
+        <div class="drop-actions">
+          <input type="text" id="link-label" placeholder="Who it's for (optional)" maxlength="60">
+          <button class="soft small" id="link-make" type="button">Make a link</button>
+        </div>
+        <ul class="list" id="links"></ul>
+      </div>
     </section>
 
     <section class="card call-card" id="call-card" hidden>
@@ -145,6 +159,24 @@
 
     <div class="error" id="error"></div>
   </main>
+
+  <!-- Drop's viewer: a text or a photo, the whole window (app.js, viewer). -->
+  <div class="viewer" id="viewer" hidden role="dialog" aria-modal="true" aria-labelledby="viewer-title">
+    <div class="viewer-top">
+      <div class="viewer-head"><div id="viewer-title"></div><div class="meta" id="viewer-meta"></div></div>
+      <button class="small ghost" id="viewer-close" type="button" aria-label="Close">✕</button>
+    </div>
+    <div class="viewer-body" id="viewer-body"></div>
+    <div class="viewer-bar">
+      <button class="small soft" id="viewer-prev" type="button" aria-label="Previous">‹</button>
+      <span class="spacer"></span>
+      <button class="small soft" id="viewer-copy" type="button">Copy all</button>
+      <button class="small soft" id="viewer-save" type="button">Save</button>
+      <button class="small ghost" id="viewer-delete" type="button">Delete</button>
+      <span class="spacer"></span>
+      <button class="small soft" id="viewer-next" type="button" aria-label="Next">›</button>
+    </div>
+  </div>
   <script src="/static/app.js"></script>
 </body>
 </html>

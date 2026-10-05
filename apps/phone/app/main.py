@@ -5,6 +5,8 @@ Pi's Bluetooth radio and the logged-in user's PipeWire session, neither
 of which a pod can reach without giving it the host. See docs/phone.md.
 """
 import asyncio
+import contextlib
+import ipaddress
 import json
 import logging
 import os
@@ -15,9 +17,11 @@ from pathlib import Path
 from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, Request, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, RedirectResponse, Response, StreamingResponse
 from starlette.middleware.sessions import SessionMiddleware
+import uvicorn
 
 from app.contacts import Contacts
 from app.drops import MAX_FILE, MAX_TEXT, DropError, Drops
+from app.guests import LinkError, Links
 from app.history import CallLog
 from app.hub import Hub
 from app.media import CHANNELS, RATE, MediaBridge
@@ -44,6 +48,14 @@ AGENT_TOKEN = os.environ.get("PHONE_AGENT_TOKEN", "")
 # For the iPhone's "Send to PC" Shortcut (docs/phone.md): it can only make
 # drops, so a copy on the phone gives away nothing else.
 DROP_TOKEN = os.environ.get("PHONE_DROP_TOKEN", "")
+# Send links (app/guests.py) are served on their own listener: plain HTTP,
+# home network only (ufw, and on_home_network below), at the Pi's IP - a
+# guest's phone neither trusts the homelab CA nor always uses the Pi's DNS.
+GUEST_PORT = int(os.environ.get("PHONE_GUEST_PORT", "8081"))
+GUEST_URL = os.environ.get("PHONE_GUEST_URL", f"http://192.168.1.253:{GUEST_PORT}").rstrip("/")
+HOME_NETWORK = ipaddress.ip_network(os.environ.get("PHONE_HOME_NETWORK", "192.168.1.0/24"))
+# One guest send, whole request: a few photos, not a film.
+MAX_GUEST_REQUEST = 100 * 1024 * 1024
 
 DATA = Path(os.environ.get("PHONE_DATA", Path.home() / ".local/share/phone-bridge"))
 CONFIG = Path.home() / ".config/phone-bridge"
@@ -57,6 +69,17 @@ if os.environ.get("PHONE_EXTRAS", "1") == "1":
     hub.media = MediaBridge()
     hub.write_metrics = True
     hub.drops = Drops(DATA / "drops")
+    hub.links = Links(DATA / "send-links.json")
+    hub.links_base = GUEST_URL
+
+
+class _GuestServer(uvicorn.Server):
+    """The send-link listener, inside this process so guests' drops land in
+    the same store. It leaves signal handling to the main server."""
+
+    @contextlib.contextmanager
+    def capture_signals(self):
+        yield
 
 
 @asynccontextmanager
@@ -64,12 +87,23 @@ async def lifespan(app: FastAPI):
     if not PASSWORD:
         log.warning("PHONE_PASSWORD is not set - nobody can log in")
     task = asyncio.create_task(hub.run())
+    guests = None
+    if hub.links and GUEST_PORT:  # 0: no guest listener (tests)
+        guests = _GuestServer(uvicorn.Config(guest_app, host="0.0.0.0", port=GUEST_PORT,
+                                             log_level="warning", access_log=False, server_header=False))
+        guests_task = asyncio.create_task(guests.serve())
     yield
+    if guests:
+        guests.should_exit = True
+        await guests_task
     task.cancel()
     await hub.bridge.stop()
 
 
 app = FastAPI(lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
+# Send links only: /send/<token>, and nothing else - no session, no static
+# files, no API. Served by _GuestServer on GUEST_PORT.
+guest_app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
 app.add_middleware(
     SessionMiddleware,
     secret_key=SESSION_SECRET,
@@ -78,6 +112,15 @@ app.add_middleware(
     same_site="strict",
     https_only=True,
 )
+
+
+def on_home_network(client) -> bool:
+    """A send link's guest is on the home Wi-Fi. ufw already allows only the
+    LAN to the guest port; this is the same rule, held by the app too."""
+    try:
+        return bool(client) and ipaddress.ip_address(client.host) in HOME_NETWORK
+    except ValueError:
+        return False
 
 
 def check_password(candidate: str) -> bool:
@@ -257,6 +300,30 @@ async def page_drop_delete(drop_id: str):
     return {"ok": True}
 
 
+# ---- Send links (app/guests.py): the only public part ---------------------------
+
+
+def _links() -> Links:
+    if not hub.links:
+        raise HTTPException(status_code=404)
+    return hub.links
+
+
+@app.post("/api/links", dependencies=[Depends(require_page)])
+async def link_create(label: str = Form("")):
+    link = _links().create(label)
+    await hub.broadcast_extras()
+    return {"url": f"{GUEST_URL}/send/{link.token}", "expires": link.expires}
+
+
+@app.delete("/api/links/{token}", dependencies=[Depends(require_page)])
+async def link_revoke(token: str):
+    if not _links().revoke(token):
+        raise HTTPException(status_code=404)
+    await hub.broadcast_extras()
+    return {"ok": True}
+
+
 @app.get("/api/agent/drops", dependencies=[Depends(require_agent)])
 async def agent_drops(since: float = 0):
     """Drops from the phone the PC's agent hasn't handled yet."""
@@ -339,3 +406,58 @@ async def ws(websocket: WebSocket):
         pass
     finally:
         await hub.remove(websocket)
+
+
+# ---- Send links: the guest listener (app/guests.py) ----------------------------
+
+
+GUEST_HEADERS = {
+    "Cache-Control": "no-store",
+    "X-Robots-Tag": "noindex, nofollow",
+    "Referrer-Policy": "no-referrer",  # the link is the key: never send it on
+    "X-Frame-Options": "DENY",
+}
+
+
+@guest_app.get("/send/{token}")
+async def guest_page(token: str, request: Request):
+    if not on_home_network(request.client):
+        raise HTTPException(status_code=403)
+    page = "send.html" if hub.links and hub.links.live(token) else "send-expired.html"
+    return FileResponse(STATIC / page, headers=GUEST_HEADERS, status_code=200 if page == "send.html" else 404)
+
+
+@guest_app.post("/send/{token}")
+async def guest_send(token: str, request: Request):
+    """A guest's send: name, text and files. Checked against the link's caps
+    before the body is read, so an oversized upload never reaches the disk."""
+    if not on_home_network(request.client):
+        raise HTTPException(status_code=403)
+    link = hub.links.live(token) if hub.links else None
+    if not link:
+        raise HTTPException(status_code=404, detail="This link has expired. Ask for a new one.")
+    length = int(request.headers.get("content-length") or 0)
+    if not length or length > MAX_GUEST_REQUEST:
+        raise HTTPException(status_code=413, detail=f"That's too much at once - up to {MAX_GUEST_REQUEST // 1024 // 1024} MB a send.")
+    try:
+        hub.links.check_send(link, length)
+    except LinkError as e:
+        raise HTTPException(status_code=429, detail=str(e))
+    form = await request.form(max_files=20, max_fields=10)
+    sender = " ".join(str(form.get("name") or "").split())[:40] or "Guest"
+    text = str(form.get("text") or "")
+    files = [f for f in form.getlist("files") if hasattr(f, "read")]
+    drops, made = _drops(), []
+    try:
+        for f in files:
+            made.append(drops.add_file(f.filename or "file", f.content_type, await f.read(MAX_FILE + 1), "guest", sender))
+        if text.strip() or not files:
+            made.append(drops.add_text(text, "guest", sender))
+    except DropError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    finally:
+        await form.close()
+        if made:
+            hub.links.record_send(link, length)
+            await hub.broadcast_extras()
+    return {"sent": len(made)}

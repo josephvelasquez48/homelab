@@ -92,6 +92,8 @@ class Hub:
         self.reconnector = reconnector
         self.media: MediaBridge | None = None  # set in main.py with the extras
         self.drops = None  # app.drops.Drops, set in main.py with the extras
+        self.links = None  # app.guests.Links (send links), likewise
+        self.links_base = ""  # their public address, from main.py
         self.write_metrics = write_metrics
         self._was_connected = False
         self._link_written = None  # (iPhone connected, Bluetooth on) as last written to the metrics
@@ -170,6 +172,7 @@ class Hub:
             "contacts": len(self.contacts.names) if self.contacts else 0,
             "contactsError": self.contacts.error if self.contacts else None,
             "drops": self.drops.recent() if self.drops else [],
+            "links": [{**x, "url": f"{self.links_base}/send/{x['token']}"} for x in self.links.active()] if self.links else [],
         }
 
     async def broadcast_extras(self, only: WebSocket | None = None) -> None:

@@ -256,3 +256,43 @@ label.button { font-weight: 550; background: var(--card-2); color: var(--text); 
 body.popup #drop-card, body.touch #drop-card { display: none !important; }
 body.ios #audio-setup, body.ios #audio-dot, body.ios #audio-status, body.ios #dial-card,
 body.ios #mic-warning { display: none !important; }
+.drops .text { cursor: pointer; }
+.drops .text.open { display: block; -webkit-line-clamp: unset; overflow: visible; cursor: text; }
+.drops .from-guest { color: var(--accent); }
+.links { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--line); }
+.links input[type=text] { flex: 1; min-width: 0; font: inherit; font-size: 14px; color: var(--text); background: var(--card-2);
+  border: 1px solid var(--line); border-radius: 10px; padding: 6px 10px; }
+#links li { display: flex; gap: 10px; align-items: center; }
+#links .body { flex: 1; min-width: 0; }
+#links .url { font-size: 12px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Tabs: Phone (calls) and Drop. A class on body picks which cards show, so
+   the cards stay one column (the call popup reorders them). */
+.tabs { display: flex; gap: 6px; background: var(--card); border: 1px solid var(--line); border-radius: 14px;
+  padding: 4px; margin-bottom: 12px; }
+.tabs button { flex: 1; background: transparent; color: var(--muted); padding: 8px; border-radius: 10px; position: relative; }
+.tabs button[aria-selected="true"] { background: var(--card-2); color: var(--text); }
+.tab-dot { display: inline-block; vertical-align: super; margin-left: 5px; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); }
+.tab-dot[hidden] { display: none; }
+body.tab-drop main > .card:not(#drop-card), body.tab-drop main > section.card:not(#drop-card) { display: none !important; }
+body:not(.tab-drop) #drop-card { display: none !important; }
+body.popup .tabs, body.touch .tabs { display: none !important; }
+.drops li { cursor: pointer; }
+.drops li .acts { cursor: default; }
+
+/* The viewer: the whole window, a text you can select from or a photo. */
+.viewer { position: fixed; inset: 0; z-index: 50; background: var(--bg); display: flex; flex-direction: column; }
+.viewer[hidden] { display: none; }
+.viewer-top { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-bottom: 1px solid var(--line); }
+.viewer-head { flex: 1; min-width: 0; }
+#viewer-title { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.viewer .meta { color: var(--muted); font-size: 12px; }
+.viewer-body { flex: 1; overflow: auto; display: flex; }
+.viewer-body pre { margin: 0; padding: 16px; flex: 1; white-space: pre-wrap; word-break: break-word; user-select: text;
+  font: 15px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+.viewer-body img { margin: auto; max-width: 100%; max-height: 100%; object-fit: contain; cursor: zoom-in; }
+.viewer-body.full { display: block; }
+.viewer-body.full img { max-width: none; max-height: none; cursor: zoom-out; }
+.viewer-body .file { margin: auto; text-align: center; color: var(--muted); padding: 24px; }
+.viewer-bar { display: flex; align-items: center; gap: 8px; padding: 10px 14px; border-top: 1px solid var(--line); }
+.viewer-bar .spacer { flex: 1; }

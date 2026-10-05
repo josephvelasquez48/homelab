@@ -19,7 +19,7 @@ MAX_TEXT = 100_000  # characters
 MAX_FILE = 50 * 1024 * 1024  # bytes: a long iPhone video won't fit, a photo will
 KEEP_SECONDS = 7 * 24 * 3600
 KEEP_COUNT = 50
-SOURCES = ("phone", "pc")
+SOURCES = ("phone", "pc", "guest")  # guest: through a send link (app/guests.py)
 
 
 class DropError(ValueError):
@@ -30,12 +30,13 @@ class DropError(ValueError):
 class Drop:
     id: str
     kind: str  # "text" or "file"
-    source: str  # "phone" or "pc": the other side is where it's going
+    source: str  # "phone", "pc" or "guest": phone and guest drops go to the PC, pc ones to the phone
     created: float
     text: str | None = None
     name: str | None = None  # file name as sent, made safe
     mime: str | None = None
     size: int = 0
+    sender: str | None = None  # a guest's name, as they gave it
 
 
 def safe_name(name: str) -> str:
@@ -86,14 +87,16 @@ class Drops:
         self.prune()
         return drop
 
-    def add_text(self, text: str, source: str) -> Drop:
+    def add_text(self, text: str, source: str, sender: str | None = None) -> Drop:
         if not text.strip():
             raise DropError("Nothing to send")
         if len(text) > MAX_TEXT:
             raise DropError(f"Text is over {MAX_TEXT:,} characters")
-        return self._new(kind="text", source=source, text=text, size=len(text.encode()))
+        return self._new(kind="text", source=source, text=text, size=len(text.encode()), sender=sender)
 
-    def add_file(self, name: str, mime: str | None, data: bytes, source: str) -> Drop:
+    def add_file(self, name: str, mime: str | None, data: bytes, source: str, sender: str | None = None) -> Drop:
+        if source not in SOURCES:
+            raise DropError("unknown source")
         if not data:
             raise DropError("The file is empty")
         if len(data) > MAX_FILE:
@@ -101,7 +104,7 @@ class Drops:
         name = safe_name(name)
         mime = mime or mimetypes.guess_type(name)[0] or "application/octet-stream"
         drop = Drop(id=secrets.token_hex(8), kind="file", source=source, created=time.time(),
-                    name=name, mime=mime, size=len(data))
+                    name=name, mime=mime, size=len(data), sender=sender)
         self.folder.mkdir(parents=True, exist_ok=True)
         self._path(drop).write_bytes(data)
         self.items.append(drop)
@@ -133,6 +136,7 @@ class Drops:
         return self.items[-1].created if self.items else 0.0
 
     def for_pc_since(self, since: float) -> list[dict]:
-        """Drops from the phone made after the newest one the PC's agent has
-        handled. By time, not id, so a pruned drop can't make old ones new."""
-        return [asdict(d) for d in self.items if d.source == "phone" and d.created > since]
+        """Drops for the PC (from the phone or a guest) made after the newest
+        one the PC's agent has handled. By time, not id, so a pruned drop
+        can't make old ones new."""
+        return [asdict(d) for d in self.items if d.source != "pc" and d.created > since]
