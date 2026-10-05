@@ -84,6 +84,55 @@ to `/api/agent/screen-show` on loopback with the agent token.
 call) or grey. Ctrl+Alt+A answers, Ctrl+Alt+H declines or hangs up,
 Ctrl+Alt+M mutes. The X hides the window; *Quit* in the tray stops the app.
 
+## Drop: text and photos between the iPhone and the PC
+
+The **Drop** card on the phone page sends text, photos and files to the
+other side (`app/drops.py`):
+
+- **iPhone to PC:** what arrives is handled by the PC's agent by itself -
+  text goes on the clipboard, photos and files into `Downloads\Phone Drop`
+  (never overwriting; a repeated name gets "(2)"), each with a notification.
+  Drops sent while the PC is off arrive when it's back.
+- **PC to iPhone:** type or paste in the card (a screenshot pasted into the
+  box is attached), or pick files; on the iPhone the card lists it with
+  **Copy**, or **Save**, which opens the share sheet - *Save Image* puts a
+  photo in Photos.
+- Kept on the Pi for 7 days, the newest 50; up to 50 MB a file.
+
+**The iPhone app:** open the page in Safari, then Share > *Add to Home
+Screen*. It opens full screen with its own icon ("Homelab") and stays
+signed in for 30 days. On the iPhone the PC-only parts (PC audio, the dial
+pad) are hidden.
+
+**From anywhere, through Tailscale:** the Pi serves the page on its
+tailnet name, tailnet only (not Funnel), at
+`https://cam.taile847cc.ts.net:8443` - the same address at home and away,
+with a certificate the iPhone already trusts. Set up once on the Pi:
+
+```bash
+sudo tailscale serve --bg --https=8443 https+insecure://192.168.1.253:8443
+```
+
+It forwards to the Pi's LAN address, not `localhost`, on purpose: the app
+signs in anything arriving on loopback as the Pi's own touchscreen, so a
+proxy on loopback would skip the password. `https+insecure` because the
+hop is inside the Pi and the app's certificate is for `phone.home`. On the
+iPhone: the Tailscale app, signed in to the same account.
+
+**"Send to PC" from the share sheet (a Shortcut):** in the Shortcuts app,
+new shortcut, then:
+
+1. Its settings (the (i)): **Show in Share Sheet** on; accepts Images,
+   Text, Files, URLs.
+2. **Repeat with Each** item in *Shortcut Input*, containing
+3. **Get Contents of URL**: `https://cam.taile847cc.ts.net:8443/api/shortcut/drop`,
+   Method **POST**, Header `Authorization` = `Bearer ` + the drop token,
+   Request Body **Form**, one **File** field named `files` = *Repeat Item*.
+
+The drop token can only make drops - it opens nothing else. Read it on the
+Pi with `grep PHONE_DROP_TOKEN ~/.config/phone-bridge/env` (install.sh
+makes it). Shared text arrives as text on the PC's clipboard.
+
 ## Design choices
 
 - **A host service, not K3s.** It needs the Pi's Bluetooth radio and the

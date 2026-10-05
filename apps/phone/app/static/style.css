@@ -236,3 +236,23 @@ body.popup.touch .keypad button { width: 84px; height: 84px; font-size: 30px; }
 body.popup.touch #home-row { justify-content: center; margin-top: 14px; }
 #screen-home { flex: none; padding: 14px 28px; font-size: 16px; border-radius: 999px; }
 #screen-home svg { width: 18px; height: 18px; }
+
+/* Drop (app/drops.py): text, photos and files between the iPhone and the PC. */
+.drop-card textarea { width: 100%; box-sizing: border-box; resize: vertical; font: inherit; color: var(--text);
+  background: var(--card-2); border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; }
+.drop-actions { display: flex; align-items: center; gap: 10px; margin: 10px 0 4px; }
+.drop-actions .sub { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+label.button { font-weight: 550; background: var(--card-2); color: var(--text); padding: 6px 12px; font-size: 13px;
+  border-radius: 10px; cursor: pointer; }
+.drops li { display: flex; gap: 12px; align-items: center; }
+.drops .body { flex: 1; min-width: 0; }
+.drops .text { white-space: pre-wrap; word-break: break-word; display: -webkit-box; -webkit-line-clamp: 4;
+  -webkit-box-orient: vertical; overflow: hidden; }
+.drops .meta { color: var(--muted); font-size: 12px; margin-top: 2px; }
+.drops img { width: 56px; height: 56px; object-fit: cover; border-radius: 10px; flex: none; }
+.drops .acts { display: flex; gap: 6px; flex: none; }
+/* Not on the call popup or the Pi's screen; on the iPhone, the PC-only
+   parts (PC audio, dialing from the PC) go away. */
+body.popup #drop-card, body.touch #drop-card { display: none !important; }
+body.ios #audio-setup, body.ios #audio-dot, body.ios #audio-status, body.ios #dial-card,
+body.ios #mic-warning { display: none !important; }
