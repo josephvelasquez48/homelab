@@ -25,8 +25,9 @@ unblocked and reconnected on the next check, a few seconds later.
 
 With the Pi's Bluetooth turned off (the display's Bluetooth button,
 apps/pi-display, or the switch on the phone page), there's nothing to do:
-no connects, no blocking. The adapter's state, re-read every check, is what
-both of those show, so each follows the other.
+no connects, no blocking. The adapter's state is what both of those show,
+so each follows the other. BlueZ announces a change (PropertiesChanged), so
+it's known at once; the check every 5 s re-reads it in case one is missed.
 """
 import asyncio
 import logging
@@ -162,6 +163,12 @@ class Reconnector:
         )
         log.info("%s %s", "blocked (PC is off)" if blocked else "unblocked (PC is back)", path)
 
+    async def _call_bus(self, member: str, arg: str) -> None:
+        reply = await self.bus.call(Message(destination="org.freedesktop.DBus", path="/org/freedesktop/DBus",
+                                            interface="org.freedesktop.DBus", member=member, signature="s", body=[arg]))
+        if reply.message_type == MessageType.ERROR:
+            raise RuntimeError(f"{reply.error_name}: {reply.body[0] if reply.body else ''}")
+
     async def set_powered(self, on: bool) -> None:
         """Turn the Pi's Bluetooth on or off (the phone page's switch)."""
         await self._call(
@@ -237,8 +244,27 @@ class Reconnector:
             except (asyncio.TimeoutError, RuntimeError) as e:
                 log.info("reconnecting %s on %s: %s", uuid[4:8], path, e)
 
+    def on_signal(self, msg: Message) -> None:
+        """The adapter's Powered changed: note it now, not at the next check."""
+        if (msg.message_type != MessageType.SIGNAL or msg.member != "PropertiesChanged"
+                or msg.path != ADAPTER_PATH or not msg.body or msg.body[0] != "org.bluez.Adapter1"):
+            return
+        powered = msg.body[1].get("Powered")
+        if powered is None:
+            return
+        self.powered = bool(powered.value)
+        if self.powered:
+            self._next_attempt = 0.0  # back on: reconnect the phone now
+        log.info("Bluetooth %s", "on" if self.powered else "off")
+
     async def run(self) -> None:
         self.bus = await MessageBus(bus_type=BusType.SYSTEM).connect()
+        self.bus.add_message_handler(self.on_signal)
+        try:
+            await self._call_bus("AddMatch", f"type='signal',sender='{BLUEZ}',path='{ADAPTER_PATH}',"
+                                             "interface='org.freedesktop.DBus.Properties',member='PropertiesChanged'")
+        except RuntimeError as e:
+            log.warning("no Bluetooth change signals, checks only: %s", e)
         while True:
             await asyncio.sleep(CHECK_SECONDS)
             try:

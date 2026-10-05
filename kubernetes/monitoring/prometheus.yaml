@@ -60,10 +60,32 @@ data:
           - targets: ["localhost:9090"]
 
       # Anything on the Pi outside the cluster - node_exporter, still on
-      # Docker Compose, not migrated.
+      # Docker Compose, not migrated. Its textfile metrics (the phone
+      # bridge, RustDesk, backups) come from node-pi-textfile below instead,
+      # so they aren't collected twice under one name.
       - job_name: node-pi
         static_configs:
           - targets: ["192.168.1.253:9100"]
+        metric_relabel_configs:
+          - source_labels: [__name__]
+            regex: "(phone|rustdesk|homelab_backup|node_textfile)_.*"
+            action: drop
+
+      # The same node_exporter, textfile collector only, every 5 s: the
+      # display shows the iPhone and the Pi's Bluetooth from these, and at
+      # 15 s a change took up to ~35 s to reach it. ~25 samples and 3 ms a
+      # scrape, against ~1,800 and 76 ms for the full one, which stays at
+      # 15 s - load on the Pi is what clips phone audio.
+      - job_name: node-pi-textfile
+        scrape_interval: 5s
+        params:
+          collect[]: [textfile]
+        static_configs:
+          - targets: ["192.168.1.253:9100"]
+        metric_relabel_configs:
+          - source_labels: [__name__]
+            regex: "(phone|rustdesk|homelab_backup|node_textfile)_.*"
+            action: keep
 
       # The MacBook itself (not m1-node, its VM): macmon, a LaunchAgent
       # installed by apps/mac-stats/install.py. On the Mac's Ethernet address.

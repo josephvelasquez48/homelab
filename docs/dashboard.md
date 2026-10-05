@@ -112,10 +112,13 @@ whose handler `apps/pi-display/set-bluetooth.sh` runs `bluetoothctl power`
 (BlueZ lets any local user power the adapter, so no sudo). Off lasts until
 it's turned back on or the Pi restarts. The phone page has the same control
 (*Pi's Bluetooth*, docs/phone.md), and the two follow each other: both show
-the adapter itself, as the phone service reads it every 5 s. The phone page
-gets it pushed within those 5 s; the display reads it from
-`phone_bluetooth_powered`, written straight after the phone page's switch
-moves, so it follows within about 20 s (scrape plus poll). After a tap on
+the adapter itself, as BlueZ announces each change to the phone service.
+The phone page gets it pushed within a second; the display reads it from
+`phone_bluetooth_powered`, which the service rewrites the moment the
+adapter or the iPhone's connection changes, and Prometheus collects every
+5 s (`node-pi-textfile`), so it follows within about 10 s (scrape plus
+poll; it used to take up to ~35 s). The top bar's iPhone status follows
+the same way. After a tap on
 the display, the button shows the new state at once, until the gauge agrees
 or a minute passes. It's hidden while there's no data. While Bluetooth is
 off, the phone service doesn't try to reconnect.

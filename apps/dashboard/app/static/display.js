@@ -405,7 +405,7 @@ $("to-call").addEventListener("click", (e) => {
 // handler powers the adapter with bluetoothctl. A tap toggles it, without
 // asking (asked to drop the confirmation, 2026-10-03). The button shows the adapter as the phone service reports it, which is also
 // what the phone page's switch shows, so each follows the other (the report
-// takes up to ~20 s to get here). After a tap here it shows what was asked
+// takes up to ~10 s to get here). After a tap here it shows what was asked
 // for straight away, until the report agrees or a minute passes.
 let btWanted = null, btWantedUntil = 0;
 function wantBluetooth(on) {

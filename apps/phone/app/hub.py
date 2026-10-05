@@ -93,6 +93,7 @@ class Hub:
         self.media: MediaBridge | None = None  # set in main.py with the extras
         self.write_metrics = write_metrics
         self._was_connected = False
+        self._link_written = None  # (iPhone connected, Bluetooth on) as last written to the metrics
         # Set by "send audio to the iPhone": keep refusing the audio link
         # until the call ends or the PC asks for it back.
         self._phone_held = False
@@ -256,6 +257,14 @@ class Hub:
             # nobody still reports "bridged", which hides Take on PC from
             # the next page.
             await self.bridge.stop()
+
+        # The iPhone or the Pi's Bluetooth just changed: write the metrics
+        # now rather than at the next 15 s write, so the display follows
+        # within a scrape.
+        link = (state.connected, self.reconnector.powered if self.reconnector else None)
+        if self.write_metrics and link != self._link_written:
+            self._link_written = link
+            self._write_metrics()
 
         await self.broadcast_state()
 
@@ -535,8 +544,7 @@ class Hub:
                     await self.reconnector.set_powered(bool(msg.get("value")))
                 except RuntimeError as e:
                     return f"Bluetooth: {e}"
-                if self.write_metrics:
-                    self._write_metrics()  # now, so the display's button follows sooner
+                # The tick below sees the change and writes the metrics.
             elif action == "refresh-contacts":
                 if self.contacts and self.tel.state.connected:
                     self.contacts.updated = 0  # due now; the extras loop picks it up

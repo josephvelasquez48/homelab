@@ -95,7 +95,7 @@ VALUE_QUERIES = {
     "scrape_traefik": 'min(up{job="kubernetes-pods",pod=~"traefik-.*"})',
     "scrape_api": 'min(up{job="kubernetes-pods",pod=~"api-.*"})',
     "scrape_adguard": 'min(up{job="kubernetes-pods",pod=~"adguard-exporter-.*"})',
-    "scrape_pi": 'min(up{job="node-pi"})',
+    "scrape_pi": 'min(up{job=~"node-pi|node-pi-textfile"})',
     "backup_readable": "min(homelab_backup_repository_readable)",
     # 1 while the Pi's call screen covers the display: the page pauses.
     "phone_screen": "phone_screen_shown",

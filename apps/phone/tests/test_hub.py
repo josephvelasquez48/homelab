@@ -473,3 +473,20 @@ async def test_bluetooth_switch_reports_failures_and_missing_control():
     assert await hub.command(page, {"action": "set-bluetooth", "value": False}) == "Bluetooth control isn't available"
     hub.reconnector = FakeAdapter(error="org.bluez.Error.Busy")
     assert await hub.command(page, {"action": "set-bluetooth", "value": False}) == "Bluetooth: org.bluez.Error.Busy"
+
+
+@pytest.mark.asyncio
+async def test_metrics_written_when_the_phone_or_bluetooth_changes(monkeypatch):
+    hub, tel = make()
+    hub.reconnector = FakeAdapter()
+    hub.write_metrics = True
+    written = []
+    monkeypatch.setattr(hub, "_write_metrics", lambda: written.append(1))
+    await hub.tick()
+    await hub.tick()
+    assert len(written) == 1  # once for the first state, not every tick
+    hub.reconnector.powered = False
+    await hub.tick()
+    tel.state.connected = False
+    await hub.tick()
+    assert len(written) == 3
