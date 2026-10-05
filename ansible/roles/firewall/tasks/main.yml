@@ -33,6 +33,9 @@
     # Phone bridge (apps/phone): a host process like AdGuard's UI, not a
     # K3s Service, so unlike Traefik's ports this ufw rule does apply.
     - { port: "8443", proto: tcp, comment: "Phone bridge - LAN only" }
+    # Its send links for guests (apps/phone, app/guests.py): plain HTTP,
+    # served only to the home network - IPv4, as the links are.
+    - { port: "8081", proto: tcp, comment: "Phone bridge send links - LAN only" }
     # RustDesk server (docker/rustdesk): host networking, so ufw applies.
     # Its web-client ports (21118/21119) stay closed - nothing uses them.
     - { port: "21115:21117", proto: tcp, comment: "RustDesk server - LAN only" }

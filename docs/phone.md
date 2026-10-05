@@ -86,8 +86,10 @@ Ctrl+Alt+M mutes. The X hides the window; *Quit* in the tray stops the app.
 
 ## Drop: text and photos between the iPhone and the PC
 
-The **Drop** card on the phone page sends text, photos and files to the
-other side (`app/drops.py`):
+The page has two tabs, **Phone** (calls) and **Drop**; a dot on Drop means
+something arrived while you were on Phone, and a call always brings Phone
+back. Drop sends text, photos and files to the other side
+(`app/drops.py`):
 
 - **iPhone to PC:** what arrives is handled by the PC's agent by itself -
   text goes on the clipboard, photos and files into `Downloads\Phone Drop`
@@ -98,6 +100,27 @@ other side (`app/drops.py`):
   **Copy**, or **Save**, which opens the share sheet - *Save Image* puts a
   photo in Photos.
 - Kept on the Pi for 7 days, the newest 50; up to 50 MB a file.
+- **Viewer:** click a drop to open it in the whole window - a text you can
+  select any part of (or *Copy all*), or a photo fitted to the window
+  (click for full size). ‹ › or the arrow keys step through, Esc closes.
+
+**Send links, for guests on the home Wi-Fi** (`app/guests.py`): *Make a
+link* under Send links gives a link like
+`http://192.168.1.253:8081/send/<token>` to share with someone on your
+Wi-Fi. It opens a bare page - their name, a message, photos and files -
+and what they send shows in Drop as "From <name>". On the PC it never
+touches the clipboard: their text is saved as a `.txt` and their files go
+in `Downloads\Phone Drop\From <name>`, so you pick what to use.
+
+- A link lasts 24 hours, or until *Turn off*; each has its own caps (30
+  sends, 300 MB, one send every 2 s, 100 MB a send - checked before
+  anything is read), so a forwarded link can't fill the Pi.
+- **Home network only, on purpose:** its own plain-HTTP listener on 8081,
+  serving `/send/...` and nothing else of the app; ufw allows it from
+  `192.168.1.0/24` only (`ansible/roles/firewall`), and the app refuses
+  anyone else as well. Plain HTTP because a guest's phone doesn't trust the
+  homelab CA; the Wi-Fi's encryption covers it. The Pi's IP rather than a
+  `.home` name, since a guest's phone may not use the Pi for DNS.
 
 **The iPhone app:** open the page in Safari, then Share > *Add to Home
 Screen*. It opens full screen with its own icon ("Homelab") and stays

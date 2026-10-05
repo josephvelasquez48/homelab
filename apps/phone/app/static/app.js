@@ -523,6 +523,7 @@ function render(s) {
   document.body.classList.toggle("incoming", POPUP && !!call && (call.state === "incoming" || call.state === "waiting"));
   $("call-card").hidden = !call;
   $("dial-card").hidden = !!call || POPUP;
+  if (call && currentTab === "drop") setTab("phone"); // a call always brings the Phone tab back
   if (POPUP) {
     // Opened for a call that was already answered elsewhere, or one that
     // just ended: nothing to show, so get out of the way.
@@ -627,6 +628,7 @@ let lastExtras = null;
 function renderExtras(x) {
   lastExtras = x;
   renderDrops(x.drops || []);
+  renderLinks(x.links || []);
   const arrows = { in: "↙", out: "↗", unknown: "•" };
   const shown = recentExpanded ? x.history : x.history.slice(0, RECENT_SHOWN);
   const more = $("recent-more");
@@ -886,16 +888,25 @@ async function saveDrop(d, button) {
 }
 
 function renderDrops(drops) {
+  shownDrops = drops;
+  noteNewDrops(drops);
+  if (!$("viewer").hidden) refreshViewer();
   $("drops-empty").hidden = drops.length > 0;
-  $("drops").replaceChildren(...drops.map((d) => {
+  $("drops").replaceChildren(...drops.map((d, i) => {
     const item = document.createElement("li");
+    item.onclick = (e) => {
+      if (e.target.closest(".acts")) return; // its own buttons
+      openViewer(i);
+    };
     const body = document.createElement("div");
     body.className = "body";
-    const from = d.source === "phone" ? "From iPhone" : "From PC";
+    const from = d.source === "guest" ? `From ${d.sender || "a guest"}` : d.source === "phone" ? "From iPhone" : "From PC";
     const acts = document.createElement("div");
     acts.className = "acts";
     if (d.kind === "text") {
-      body.append(div(d.text, "text"), div(`${from} · ${when(d.created)}`, "meta"));
+      // Tap to read all of it - and select just the part you want.
+      const text = div(d.text, "text");
+      body.append(text, div(`${from} · ${when(d.created)}`, d.source === "guest" ? "meta from-guest" : "meta"));
       const copy = actionButton("Copy", async () => {
         try { await navigator.clipboard.writeText(d.text); flash(copy, "Copied"); } catch { showError("Couldn't copy"); }
       });
@@ -908,7 +919,7 @@ function renderDrops(drops) {
         img.loading = "lazy";
         item.append(img);
       }
-      body.append(div(d.name, "text"), div(`${from} · ${sizeText(d.size)} · ${when(d.created)}`, "meta"));
+      body.append(div(d.name, "text"), div(`${from} · ${sizeText(d.size)} · ${when(d.created)}`, d.source === "guest" ? "meta from-guest" : "meta"));
       const save = actionButton("Save", () => saveDrop(d, save));
       acts.append(save);
     }
@@ -963,4 +974,161 @@ $("drop-text").addEventListener("paste", (e) => {
   [...$("drop-files").files, ...pasted].forEach((f) => dt.items.add(f));
   $("drop-files").files = dt.files;
   $("drop-files").onchange();
+});
+
+// ---- Send links (app/guests.py) -----------------------------------------------
+// A link for someone on the home Wi-Fi to send you things; their drops show
+// above as "From <name>". Share it however you like - the share sheet on
+// the iPhone, or copy it.
+
+function renderLinks(links) {
+  $("links").replaceChildren(...links.map((l) => {
+    const item = document.createElement("li");
+    const body = document.createElement("div");
+    body.className = "body";
+    const left = Math.max(0, Math.round((l.expires - Date.now() / 1000) / 3600));
+    body.append(div(l.label || "Send link", "text"), div(`${l.sends} sent · ${left} h left`, "meta"), div(l.url, "url"));
+    const acts = document.createElement("div");
+    acts.className = "acts";
+    const share = actionButton(navigator.share ? "Share" : "Copy", async () => {
+      try {
+        if (navigator.share) await navigator.share({ title: "Send to me", url: l.url });
+        else { await navigator.clipboard.writeText(l.url); flash(share, "Copied"); }
+      } catch (e) { if (e.name !== "AbortError") showError("Couldn't share the link"); }
+    });
+    const off = actionButton("Turn off", async () => {
+      const r = await fetch(`/api/links/${encodeURIComponent(l.token)}`, { method: "DELETE" });
+      if (!r.ok) showError("Couldn't turn the link off");
+    }, "small ghost");
+    acts.append(share, off);
+    item.append(body, acts);
+    return item;
+  }));
+}
+
+$("link-make").onclick = async () => {
+  const form = new FormData();
+  form.append("label", $("link-label").value);
+  const r = await fetch("/api/links", { method: "POST", body: form });
+  if (!r.ok) return showError("Couldn't make a link");
+  $("link-label").value = "";
+};
+
+// ---- Tabs: Phone and Drop -------------------------------------------------------
+// Not on the call popup or the Pi's screen. The tab is remembered per
+// window; a dot on Drop says something arrived while you were on Phone.
+
+let currentTab = "phone";
+let shownDrops = [];
+const MINE = SOURCE; // drops this side sent itself don't need a dot
+
+function setTab(tab) {
+  currentTab = tab;
+  document.body.classList.toggle("tab-drop", tab === "drop");
+  for (const b of document.querySelectorAll("#tabs button")) b.setAttribute("aria-selected", String(b.dataset.tab === tab));
+  if (tab === "drop") markDropsSeen();
+  try { localStorage.setItem("phone-tab", tab); } catch {}
+}
+
+function markDropsSeen() {
+  const newest = shownDrops.length ? shownDrops[0].created : 0;
+  try { localStorage.setItem("drops-seen", String(newest)); } catch {}
+  $("drop-dot").hidden = true;
+}
+
+function noteNewDrops(drops) {
+  if (currentTab === "drop") return markDropsSeen();
+  let seen = 0;
+  try { seen = Number(localStorage.getItem("drops-seen") || 0); } catch {}
+  $("drop-dot").hidden = !drops.some((d) => d.created > seen && d.source !== MINE);
+}
+
+for (const b of document.querySelectorAll("#tabs button")) b.onclick = () => setTab(b.dataset.tab);
+if (!POPUP && !TOUCH) {
+  let saved = "phone";
+  try { saved = localStorage.getItem("phone-tab") || "phone"; } catch {}
+  setTab(saved === "drop" ? "drop" : "phone");
+}
+
+// ---- The viewer: a text or a photo, the whole window --------------------------
+// Text you can select any part of (or Copy all); a photo fitted to the
+// window - click for full size. ‹ › or the arrow keys step through the drops,
+// Esc closes.
+
+let viewerId = null;
+
+function openViewer(i) {
+  viewerId = shownDrops[i] ? shownDrops[i].id : null;
+  $("viewer").hidden = false;
+  refreshViewer();
+}
+
+function closeViewer() {
+  $("viewer").hidden = true;
+  $("viewer-body").replaceChildren();
+  viewerId = null;
+}
+
+function refreshViewer() {
+  const i = shownDrops.findIndex((d) => d.id === viewerId);
+  if (i < 0) return closeViewer(); // deleted, here or elsewhere
+  const d = shownDrops[i];
+  const from = d.source === "guest" ? `From ${d.sender || "a guest"}` : d.source === "phone" ? "From iPhone" : "From PC";
+  $("viewer-title").textContent = d.kind === "text" ? (d.text.split("\n")[0] || "Text").slice(0, 80) : d.name;
+  $("viewer-meta").textContent = `${from} · ${d.kind === "file" ? sizeText(d.size) + " · " : ""}${when(d.created)} · ${i + 1} of ${shownDrops.length}`;
+  $("viewer-prev").disabled = i === 0;
+  $("viewer-next").disabled = i === shownDrops.length - 1;
+  $("viewer-copy").hidden = d.kind !== "text";
+  $("viewer-save").hidden = d.kind !== "file";
+  const body = $("viewer-body");
+  if (body.dataset.id === d.id) return; // already showing it: keep the selection and scroll
+  body.dataset.id = d.id;
+  body.classList.remove("full");
+  if (d.kind === "text") {
+    const pre = document.createElement("pre");
+    pre.textContent = d.text;
+    body.replaceChildren(pre);
+  } else if ((d.mime || "").startsWith("image/")) {
+    const img = document.createElement("img");
+    img.src = `/api/drops/${d.id}/file`;
+    img.alt = d.name;
+    img.onclick = () => body.classList.toggle("full");
+    body.replaceChildren(img);
+  } else {
+    body.replaceChildren(div(`${d.name} - ${sizeText(d.size)}. No preview for this kind of file; Save it to open it.`, "file"));
+  }
+}
+
+function stepViewer(by) {
+  const i = shownDrops.findIndex((d) => d.id === viewerId);
+  const next = shownDrops[i + by];
+  if (next) { viewerId = next.id; refreshViewer(); }
+}
+
+$("viewer-close").onclick = closeViewer;
+$("viewer-prev").onclick = () => stepViewer(-1);
+$("viewer-next").onclick = () => stepViewer(1);
+$("viewer-copy").onclick = async () => {
+  const d = shownDrops.find((x) => x.id === viewerId);
+  try { await navigator.clipboard.writeText(d.text); flash($("viewer-copy"), "Copied"); } catch { showError("Couldn't copy"); }
+};
+$("viewer-save").onclick = () => {
+  const d = shownDrops.find((x) => x.id === viewerId);
+  if (d) saveDrop(d, $("viewer-save"));
+};
+$("viewer-delete").onclick = async () => {
+  const id = viewerId;
+  const i = shownDrops.findIndex((d) => d.id === id);
+  const r = await fetch(`/api/drops/${id}`, { method: "DELETE" });
+  if (!r.ok) return showError("Couldn't delete it");
+  // Move to the next one (or the previous, at the end) rather than closing.
+  const after = shownDrops[i + 1] || shownDrops[i - 1];
+  viewerId = after && after.id !== id ? after.id : null;
+  if (!viewerId) closeViewer();
+};
+document.addEventListener("keydown", (e) => {
+  if ($("viewer").hidden) return;
+  if (e.key === "Escape") closeViewer();
+  else if (e.key === "ArrowLeft") stepViewer(-1);
+  else if (e.key === "ArrowRight") stepViewer(1);
 });

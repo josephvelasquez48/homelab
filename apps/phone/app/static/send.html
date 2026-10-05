@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark light">
+  <meta name="robots" content="noindex, nofollow">
+  <title>Send to Joe</title>
+  <!-- A guest's page (app/guests.py): opened from a send link, public through
+       Tailscale Funnel. Self-contained - no scripts, styles or data of the
+       app behind it - and it posts back to its own address, so it works
+       whatever path the link arrives on. -->
+  <style>
+    :root { --bg: #0d0f13; --card: #16191f; --card-2: #1e222a; --text: #eef0f4; --muted: #8d95a3;
+      --line: rgba(255, 255, 255, .08); --accent: #4f8cff; --good: #30d158; --bad: #ff453a; }
+    @media (prefers-color-scheme: light) {
+      :root { --bg: #f2f3f7; --card: #fff; --card-2: #f0f2f6; --text: #14161b; --muted: #6a7180;
+        --line: rgba(0, 0, 0, .08); --accent: #2f6bff; --good: #1fb24a; --bad: #e5392e; }
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--bg); color: var(--text);
+      font: 16px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+    main { max-width: 480px; margin: 0 auto; padding: 28px 16px 48px; }
+    h1 { font-size: 24px; margin: 0 0 4px; }
+    p.lead { color: var(--muted); margin: 0 0 20px; }
+    .card { background: var(--card); border: 1px solid var(--line); border-radius: 18px; padding: 16px; }
+    label { display: block; font-size: 13px; color: var(--muted); margin: 0 0 6px; }
+    input[type=text], textarea { width: 100%; font: inherit; color: var(--text); background: var(--card-2);
+      border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; margin-bottom: 14px; }
+    textarea { min-height: 120px; resize: vertical; }
+    .files { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; }
+    .files span { color: var(--muted); font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .pick, button { font: inherit; font-weight: 600; border: 0; border-radius: 12px; padding: 10px 16px; cursor: pointer; }
+    .pick { background: var(--card-2); color: var(--text); flex: none; }
+    button { width: 100%; background: var(--accent); color: #fff; font-size: 17px; padding: 13px; }
+    button:disabled { opacity: .6; }
+    #msg { margin-top: 14px; min-height: 1.4em; text-align: center; }
+    #msg.ok { color: var(--good); } #msg.bad { color: var(--bad); }
+    .fine { color: var(--muted); font-size: 13px; margin-top: 18px; text-align: center; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Send to Joe</h1>
+    <p class="lead">Text, photos or files - they go straight to Joe.</p>
+    <form class="card" id="form">
+      <label for="name">Your name</label>
+      <input type="text" id="name" name="name" maxlength="40" autocomplete="name" placeholder="So Joe knows who it's from">
+      <label for="text">Message</label>
+      <textarea id="text" name="text" placeholder="Type or paste here"></textarea>
+      <div class="files">
+        <label class="pick" for="files">Photos &amp; files</label>
+        <input type="file" id="files" name="files" multiple hidden>
+        <span id="picked"></span>
+      </div>
+      <button type="submit" id="send">Send</button>
+      <div id="msg" role="status"></div>
+    </form>
+    <p class="fine">This link stops working after a day.</p>
+  </main>
+  <script>
+    const $ = (id) => document.getElementById(id);
+    try { $("name").value = localStorage.getItem("send-name") || ""; } catch {}
+    $("files").onchange = () => {
+      const f = $("files").files;
+      $("picked").textContent = f.length === 1 ? f[0].name : f.length ? `${f.length} files` : "";
+    };
+    $("form").onsubmit = async (e) => {
+      e.preventDefault();
+      const msg = $("msg");
+      if (!$("text").value.trim() && !$("files").files.length) {
+        msg.className = "bad"; msg.textContent = "Add a message or a file first."; return;
+      }
+      try { localStorage.setItem("send-name", $("name").value.trim()); } catch {}
+      $("send").disabled = true; $("send").textContent = "Sending…"; msg.textContent = "";
+      try {
+        const r = await fetch(location.pathname, { method: "POST", body: new FormData($("form")) });
+        const body = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(body.detail || `Something went wrong (${r.status})`);
+        msg.className = "ok"; msg.textContent = "Sent - thanks!";
+        $("text").value = ""; $("files").value = ""; $("picked").textContent = "";
+      } catch (err) {
+        msg.className = "bad"; msg.textContent = err.message === "Failed to fetch" ? "Couldn't reach Joe's server - try again." : err.message;
+      } finally {
+        $("send").disabled = false; $("send").textContent = "Send";
+      }
+    };
+  </script>
+</body>
+</html>
