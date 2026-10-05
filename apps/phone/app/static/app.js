@@ -523,7 +523,8 @@ function render(s) {
   document.body.classList.toggle("incoming", POPUP && !!call && (call.state === "incoming" || call.state === "waiting"));
   $("call-card").hidden = !call;
   $("dial-card").hidden = !!call || POPUP;
-  if (call && currentTab === "drop") setTab("phone"); // a call always brings the Phone tab back
+  if (call && currentTab !== "phone") setTab("phone"); // a call always brings the Phone tab back
+  renderLimits(s.settings);
   if (POPUP) {
     // Opened for a call that was already answered elsewhere, or one that
     // just ended: nothing to show, so get out of the way.
@@ -843,6 +844,11 @@ autoEnableAudio();
 // files by itself; the iPhone has Copy and Save here.
 
 const SOURCE = IOS ? "phone" : "pc";
+
+// Who sent a guest's drop: the name you gave the link it came through.
+function guestFrom(d) {
+  return `From ${d.via || d.sender || "a guest"}`;
+}
 $("drop-title").textContent = IOS ? "Drop to the PC" : "Drop to the iPhone";
 
 function sizeText(n) {
@@ -900,7 +906,7 @@ function renderDrops(drops) {
     };
     const body = document.createElement("div");
     body.className = "body";
-    const from = d.source === "guest" ? `From ${d.sender || "a guest"}` : d.source === "phone" ? "From iPhone" : "From PC";
+    const from = d.source === "guest" ? guestFrom(d) : d.source === "phone" ? "From iPhone" : "From PC";
     const acts = document.createElement("div");
     acts.className = "acts";
     if (d.kind === "text") {
@@ -986,8 +992,7 @@ function renderLinks(links) {
     const item = document.createElement("li");
     const body = document.createElement("div");
     body.className = "body";
-    const left = Math.max(0, Math.round((l.expires - Date.now() / 1000) / 3600));
-    body.append(div(l.label || "Send link", "text"), div(`${l.sends} sent · ${left} h left`, "meta"), div(l.url, "url"));
+    body.append(div(l.label, "text"), div(`${l.sends} sent · until you turn it off`, "meta"), div(l.url, "url"));
     const acts = document.createElement("div");
     acts.className = "acts";
     const share = actionButton(navigator.share ? "Share" : "Copy", async () => {
@@ -1007,6 +1012,10 @@ function renderLinks(links) {
 }
 
 $("link-make").onclick = async () => {
+  if (!$("link-label").value.trim()) {
+    $("link-label").focus();
+    return showError("Give the link a name - who it's for");
+  }
   const form = new FormData();
   form.append("label", $("link-label").value);
   const r = await fetch("/api/links", { method: "POST", body: form });
@@ -1022,9 +1031,11 @@ let currentTab = "phone";
 let shownDrops = [];
 const MINE = SOURCE; // drops this side sent itself don't need a dot
 
+const TABS = ["phone", "drop", "settings"];
+
 function setTab(tab) {
   currentTab = tab;
-  document.body.classList.toggle("tab-drop", tab === "drop");
+  document.body.dataset.tab = tab;
   for (const b of document.querySelectorAll("#tabs button")) b.setAttribute("aria-selected", String(b.dataset.tab === tab));
   if (tab === "drop") markDropsSeen();
   try { localStorage.setItem("phone-tab", tab); } catch {}
@@ -1047,7 +1058,7 @@ for (const b of document.querySelectorAll("#tabs button")) b.onclick = () => set
 if (!POPUP && !TOUCH) {
   let saved = "phone";
   try { saved = localStorage.getItem("phone-tab") || "phone"; } catch {}
-  setTab(saved === "drop" ? "drop" : "phone");
+  setTab(TABS.includes(saved) ? saved : "phone");
 }
 
 // ---- The viewer: a text or a photo, the whole window --------------------------
@@ -1073,7 +1084,7 @@ function refreshViewer() {
   const i = shownDrops.findIndex((d) => d.id === viewerId);
   if (i < 0) return closeViewer(); // deleted, here or elsewhere
   const d = shownDrops[i];
-  const from = d.source === "guest" ? `From ${d.sender || "a guest"}` : d.source === "phone" ? "From iPhone" : "From PC";
+  const from = d.source === "guest" ? guestFrom(d) : d.source === "phone" ? "From iPhone" : "From PC";
   $("viewer-title").textContent = d.kind === "text" ? (d.text.split("\n")[0] || "Text").slice(0, 80) : d.name;
   $("viewer-meta").textContent = `${from} · ${d.kind === "file" ? sizeText(d.size) + " · " : ""}${when(d.created)} · ${i + 1} of ${shownDrops.length}`;
   $("viewer-prev").disabled = i === 0;
@@ -1132,3 +1143,23 @@ document.addEventListener("keydown", (e) => {
   else if (e.key === "ArrowLeft") stepViewer(-1);
   else if (e.key === "ArrowRight") stepViewer(1);
 });
+
+// ---- Settings: the Drop and send-link limits ----------------------------------
+// Saved on the Pi with the other settings (hub.LIMITS keeps each in range);
+// a value is sent when you leave the box or press Enter.
+
+function renderLimits(settings) {
+  if (!settings) return;
+  for (const input of document.querySelectorAll("[data-limit]")) {
+    if (document.activeElement !== input) input.value = settings[input.id];
+  }
+}
+
+for (const input of document.querySelectorAll("[data-limit]")) {
+  const save = () => {
+    if (input.value === "" || Number(input.value) === (state && state.settings && state.settings[input.id])) return;
+    send({ action: "set-limit", key: input.id, value: Number(input.value) });
+  };
+  input.addEventListener("change", save);
+  input.addEventListener("keydown", (e) => { if (e.key === "Enter") input.blur(); });
+}

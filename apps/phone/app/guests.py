@@ -1,24 +1,27 @@
-"""Send links: let someone without Tailscale send you text, photos and files.
+"""Send links: let someone on the home Wi-Fi send you text, photos and files.
 
-You make a link from the Drop card; it lasts LINK_SECONDS (24 h, like the
-camera's invites) or until revoked. Whoever has it gets a bare page - a
-name, a text box, a file picker - at /send/<token>, published on its own
-through Tailscale Funnel (docs/phone.md, Send links); nothing else of this
-app is public. What they send lands in Drop marked as theirs. Each link has
-its own caps, so a leaked one can't fill the Pi: MAX_SENDS sends, MAX_BYTES
-in all, and one send every MIN_GAP_SECONDS.
+You make a link from the Drop card, named for who it's for; it works until
+you turn it off. Whoever has it gets a bare page - a text box and a file
+picker - at /send/<token>, on the guest listener (home network only, see
+main.py); nothing else of this app is reachable through it. What they send
+lands in Drop under the link's name.
+
+Each link has its own daily caps, so a forwarded one can't fill the Pi:
+max_sends sends and max_bytes in any DAY_SECONDS (counted from the first
+send of the day), and one send every MIN_GAP_SECONDS. The defaults are
+below; Settings changes them (hub.apply_limits).
 """
 import json
 import secrets
 import time
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, fields
 from pathlib import Path
 
-LINK_SECONDS = 24 * 3600
-MAX_SENDS = 30
-MAX_BYTES = 300 * 1024 * 1024
+DAY_SECONDS = 24 * 3600
+MAX_SENDS = 30  # a day
+MAX_BYTES = 300 * 1024 * 1024  # a day
 MIN_GAP_SECONDS = 2.0
-KEEP_SECONDS = 7 * 24 * 3600  # expired links stay listed a while, then go
+KEEP_REVOKED_SECONDS = 7 * 24 * 3600  # a turned-off link is forgotten after this
 
 
 class LinkError(ValueError):
@@ -29,24 +32,33 @@ class LinkError(ValueError):
 class Link:
     token: str
     created: float
-    expires: float
     label: str = ""  # who it's for, as you typed it
     revoked: bool = False
-    sends: int = 0
-    bytes: int = 0
+    revoked_at: float = 0.0
+    sends: int = 0  # all time, for the Drop card
+    day_start: float = 0.0  # the day's caps count from here
+    day_sends: int = 0
+    day_bytes: int = 0
     last_send: float = 0.0
 
-    def live(self, now: float) -> bool:
-        return not self.revoked and now < self.expires
+    def live(self) -> bool:
+        return not self.revoked
+
+
+FIELDS = {f.name for f in fields(Link)}
 
 
 class Links:
     def __init__(self, path: Path):
         self.path = path
+        self.max_sends = MAX_SENDS
+        self.max_bytes = MAX_BYTES
         self.items: list[Link] = []
         if path.exists():
             try:
-                self.items = [Link(**d) for d in json.loads(path.read_text())]
+                # Only known fields: links made before a change (the 24-hour
+                # ones had "expires") still load, and now last until revoked.
+                self.items = [Link(**{k: v for k, v in d.items() if k in FIELDS}) for d in json.loads(path.read_text())]
             except (ValueError, TypeError):
                 self.items = []
 
@@ -56,10 +68,10 @@ class Links:
         tmp.write_text(json.dumps([asdict(x) for x in self.items]))
         tmp.replace(self.path)
 
-    def create(self, label: str = "") -> Link:
+    def create(self, label: str) -> Link:
         now = time.time()
-        self.items = [x for x in self.items if now - x.expires < KEEP_SECONDS]
-        link = Link(token=secrets.token_urlsafe(18), created=now, expires=now + LINK_SECONDS, label=label.strip()[:60])
+        self.items = [x for x in self.items if not x.revoked or now - x.revoked_at < KEEP_REVOKED_SECONDS]
+        link = Link(token=secrets.token_urlsafe(18), created=now, label=label.strip()[:60])
         self.items.append(link)
         self._save()
         return link
@@ -69,35 +81,41 @@ class Links:
 
     def live(self, token: str) -> Link | None:
         link = self.get(token)
-        return link if link and link.live(time.time()) else None
+        return link if link and link.live() else None
 
     def revoke(self, token: str) -> bool:
         link = self.get(token)
         if not link:
             return False
         link.revoked = True
+        link.revoked_at = time.time()
         self._save()
         return True
 
     def check_send(self, link: Link, size: int, now: float | None = None) -> None:
         """Raise LinkError if this send would go over the link's caps."""
         now = time.time() if now is None else now
-        if not link.live(now):
-            raise LinkError("This link has expired. Ask for a new one.")
+        if not link.live():
+            raise LinkError("This link has been turned off.")
         if now - link.last_send < MIN_GAP_SECONDS:
             raise LinkError("Slow down a little and try again.")
-        if link.sends >= MAX_SENDS:
-            raise LinkError("This link has been used as much as it can be. Ask for a new one.")
-        if link.bytes + size > MAX_BYTES:
-            raise LinkError("That's more than this link can take. Ask for a new one.")
+        if now - link.day_start >= DAY_SECONDS:
+            return  # a new day: the caps start again on this send
+        if link.day_sends >= self.max_sends:
+            raise LinkError("That's as much as this link takes in a day. Try again tomorrow.")
+        if link.day_bytes + size > self.max_bytes:
+            raise LinkError("That's more than this link takes in a day. Try again tomorrow.")
 
-    def record_send(self, link: Link, size: int) -> None:
+    def record_send(self, link: Link, size: int, now: float | None = None) -> None:
+        now = time.time() if now is None else now
+        if now - link.day_start >= DAY_SECONDS:
+            link.day_start, link.day_sends, link.day_bytes = now, 0, 0
         link.sends += 1
-        link.bytes += size
-        link.last_send = time.time()
+        link.day_sends += 1
+        link.day_bytes += size
+        link.last_send = now
         self._save()
 
     def active(self) -> list[dict]:
         """For the Drop card: links that still work, newest first."""
-        now = time.time()
-        return [asdict(x) for x in reversed(self.items) if x.live(now)]
+        return [asdict(x) for x in reversed(self.items) if x.live()]

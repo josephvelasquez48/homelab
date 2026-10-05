@@ -6,8 +6,9 @@
   <meta name="color-scheme" content="dark light">
   <meta name="robots" content="noindex, nofollow">
   <title>Send to Joe</title>
-  <!-- A guest's page (app/guests.py): opened from a send link, public through
-       Tailscale Funnel. Self-contained - no scripts, styles or data of the
+  <!-- A guest's page (app/guests.py): opened from a send link, on the home
+       Wi-Fi only. No name to fill in - the link's own name says who it's
+       from. Self-contained - no scripts, styles or data of the
        app behind it - and it posts back to its own address, so it works
        whatever path the link arrives on. -->
   <style>
@@ -44,8 +45,6 @@
     <h1>Send to Joe</h1>
     <p class="lead">Text, photos or files - they go straight to Joe.</p>
     <form class="card" id="form">
-      <label for="name">Your name</label>
-      <input type="text" id="name" name="name" maxlength="40" autocomplete="name" placeholder="So Joe knows who it's from">
       <label for="text">Message</label>
       <textarea id="text" name="text" placeholder="Type or paste here"></textarea>
       <div class="files">
@@ -56,11 +55,9 @@
       <button type="submit" id="send">Send</button>
       <div id="msg" role="status"></div>
     </form>
-    <p class="fine">This link stops working after a day.</p>
   </main>
   <script>
     const $ = (id) => document.getElementById(id);
-    try { $("name").value = localStorage.getItem("send-name") || ""; } catch {}
     $("files").onchange = () => {
       const f = $("files").files;
       $("picked").textContent = f.length === 1 ? f[0].name : f.length ? `${f.length} files` : "";
@@ -71,7 +68,6 @@
       if (!$("text").value.trim() && !$("files").files.length) {
         msg.className = "bad"; msg.textContent = "Add a message or a file first."; return;
       }
-      try { localStorage.setItem("send-name", $("name").value.trim()); } catch {}
       $("send").disabled = true; $("send").textContent = "Sending…"; msg.textContent = "";
       try {
         const r = await fetch(location.pathname, { method: "POST", body: new FormData($("form")) });

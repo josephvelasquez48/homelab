@@ -20,7 +20,7 @@ from starlette.middleware.sessions import SessionMiddleware
 import uvicorn
 
 from app.contacts import Contacts
-from app.drops import MAX_FILE, MAX_TEXT, DropError, Drops
+from app.drops import MAX_TEXT, DropError, Drops
 from app.guests import LinkError, Links
 from app.history import CallLog
 from app.hub import Hub
@@ -54,8 +54,6 @@ DROP_TOKEN = os.environ.get("PHONE_DROP_TOKEN", "")
 GUEST_PORT = int(os.environ.get("PHONE_GUEST_PORT", "8081"))
 GUEST_URL = os.environ.get("PHONE_GUEST_URL", f"http://192.168.1.253:{GUEST_PORT}").rstrip("/")
 HOME_NETWORK = ipaddress.ip_network(os.environ.get("PHONE_HOME_NETWORK", "192.168.1.0/24"))
-# One guest send, whole request: a few photos, not a film.
-MAX_GUEST_REQUEST = 100 * 1024 * 1024
 
 DATA = Path(os.environ.get("PHONE_DATA", Path.home() / ".local/share/phone-bridge"))
 CONFIG = Path.home() / ".config/phone-bridge"
@@ -71,6 +69,7 @@ if os.environ.get("PHONE_EXTRAS", "1") == "1":
     hub.drops = Drops(DATA / "drops")
     hub.links = Links(DATA / "send-links.json")
     hub.links_base = GUEST_URL
+    hub.apply_limits()
 
 
 class _GuestServer(uvicorn.Server):
@@ -247,7 +246,7 @@ async def _add_drops(text: str, files: list[UploadFile], source: str, text_files
     drops, made = _drops(), []
     try:
         for f in files:
-            data = await f.read(MAX_FILE + 1)
+            data = await f.read(drops.max_file + 1)
             if text_files_are_text and (f.content_type or "").startswith("text/plain") and len(data) <= MAX_TEXT:
                 made.append(drops.add_text(data.decode("utf-8", "replace"), source))
                 continue
@@ -311,9 +310,12 @@ def _links() -> Links:
 
 @app.post("/api/links", dependencies=[Depends(require_page)])
 async def link_create(label: str = Form("")):
+    # Named, always: the name is how its guest's drops say who they're from.
+    if not label.strip():
+        raise HTTPException(status_code=400, detail="Give the link a name - who it's for")
     link = _links().create(label)
     await hub.broadcast_extras()
-    return {"url": f"{GUEST_URL}/send/{link.token}", "expires": link.expires}
+    return {"url": f"{GUEST_URL}/send/{link.token}"}
 
 
 @app.delete("/api/links/{token}", dependencies=[Depends(require_page)])
@@ -437,22 +439,24 @@ async def guest_send(token: str, request: Request):
     if not link:
         raise HTTPException(status_code=404, detail="This link has expired. Ask for a new one.")
     length = int(request.headers.get("content-length") or 0)
-    if not length or length > MAX_GUEST_REQUEST:
-        raise HTTPException(status_code=413, detail=f"That's too much at once - up to {MAX_GUEST_REQUEST // 1024 // 1024} MB a send.")
+    if not length or length > hub.guest_request_limit():
+        raise HTTPException(status_code=413, detail=f"That's too much at once - up to {hub.settings['linkMbPerSend']} MB a send.")
     try:
         hub.links.check_send(link, length)
     except LinkError as e:
         raise HTTPException(status_code=429, detail=str(e))
     form = await request.form(max_files=20, max_fields=10)
-    sender = " ".join(str(form.get("name") or "").split())[:40] or "Guest"
+    # Who it's from: the name you gave the link - the guest fills nothing in.
+    via = link.label or None
+    sender = via or "Guest"
     text = str(form.get("text") or "")
     files = [f for f in form.getlist("files") if hasattr(f, "read")]
     drops, made = _drops(), []
     try:
         for f in files:
-            made.append(drops.add_file(f.filename or "file", f.content_type, await f.read(MAX_FILE + 1), "guest", sender))
+            made.append(drops.add_file(f.filename or "file", f.content_type, await f.read(drops.max_file + 1), "guest", sender, via))
         if text.strip() or not files:
-            made.append(drops.add_text(text, "guest", sender))
+            made.append(drops.add_text(text, "guest", sender, via))
     except DropError as e:
         raise HTTPException(status_code=400, detail=str(e))
     finally:
