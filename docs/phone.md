@@ -113,9 +113,9 @@ fill in about themselves - and what they send shows in Drop as "From
 touches the clipboard: their text is saved as a `.txt` and their files go
 in `Downloads\Phone Drop\From <name>`, so you pick what to use.
 
-- A link lasts 24 hours, or until *Turn off*; each has its own caps (30
-  sends, 300 MB, one send every 2 s, 100 MB a send - checked before
-  anything is read), so a forwarded link can't fill the Pi.
+- A link works until you *Turn off*. Each has its own daily caps (30
+  sends and 300 MB in a day, one send every 2 s, 100 MB a send - checked
+  before anything is read), so a forwarded link can't fill the Pi.
 - **Home network only, on purpose:** its own plain-HTTP listener on 8081,
   serving `/send/...` and nothing else of the app; ufw allows it from
   `192.168.1.0/24` only (`ansible/roles/firewall`), and the app refuses

@@ -316,7 +316,7 @@ async def link_create(label: str = Form("")):
         raise HTTPException(status_code=400, detail="Give the link a name - who it's for")
     link = _links().create(label)
     await hub.broadcast_extras()
-    return {"url": f"{GUEST_URL}/send/{link.token}", "expires": link.expires}
+    return {"url": f"{GUEST_URL}/send/{link.token}"}
 
 
 @app.delete("/api/links/{token}", dependencies=[Depends(require_page)])

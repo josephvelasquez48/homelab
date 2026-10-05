@@ -991,8 +991,7 @@ function renderLinks(links) {
     const item = document.createElement("li");
     const body = document.createElement("div");
     body.className = "body";
-    const left = Math.max(0, Math.round((l.expires - Date.now() / 1000) / 3600));
-    body.append(div(l.label, "text"), div(`${l.sends} sent · ${left} h left`, "meta"), div(l.url, "url"));
+    body.append(div(l.label, "text"), div(`${l.sends} sent · until you turn it off`, "meta"), div(l.url, "url"));
     const acts = document.createElement("div");
     acts.className = "acts";
     const share = actionButton(navigator.share ? "Share" : "Copy", async () => {
