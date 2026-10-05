@@ -12,7 +12,7 @@ on the Pi and moved into K3s ([kubernetes.md](kubernetes.md)).
 | `kubernetes-pods` | Any pod annotated `prometheus.io/scrape` - the API, adguard-exporter, Traefik | Found through the Kubernetes API (RBAC lets Prometheus list pods) |
 | `node-mac` | The MacBook's CPU temperature, CPU and memory | `macmon` as a LaunchAgent (`apps/mac-stats/install.py`), on `:9101` |
 | `node-pc` | The Windows desktop's CPU temperature, CPU and memory (and every other sensor) | LibreHardwareMonitor's web server, on `:8085` - see below |
-| Textfile metrics | Backups ([backups.md](backups.md)) and the phone bridge ([phone.md](phone.md)) | Files in node_exporter's textfile directory, written by those services |
+| `node-pi-textfile` | Textfile metrics: backups ([backups.md](backups.md)), the phone bridge ([phone.md](phone.md)), RustDesk - every 5 s, so the display follows the iPhone and the Pi's Bluetooth quickly | The same node_exporter, `collect[]=textfile` only (~25 samples, 3 ms); `node-pi` drops these so they aren't collected twice |
 
 **Grafana** is provisioned from the repo (`kubernetes/monitoring/grafana.yaml`),
 so a fresh install comes up with its data source and the "Homelab

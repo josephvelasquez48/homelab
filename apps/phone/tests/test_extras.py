@@ -310,6 +310,27 @@ async def test_set_powered_sets_the_adapter_and_reconnects_straight_away():
     assert r.powered is True and r._next_attempt == 0.0
 
 
+def test_adapter_change_signal_is_noted_at_once():
+    from dbus_fast import Message, MessageType
+
+    from app import reconnect
+
+    r = reconnect.Reconnector(lambda: False)
+    r._next_attempt = 999
+
+    def signal(path, iface, changed):
+        return Message(message_type=MessageType.SIGNAL, path=path, interface="org.freedesktop.DBus.Properties",
+                       member="PropertiesChanged", signature="sa{sv}as", body=[iface, changed, []])
+
+    r.on_signal(signal(reconnect.ADAPTER_PATH, "org.bluez.Adapter1", {"Powered": Variant("b", False)}))
+    assert r.powered is False and r._next_attempt == 999
+    r.on_signal(signal(reconnect.ADAPTER_PATH, "org.bluez.Adapter1", {"Discovering": Variant("b", True)}))
+    r.on_signal(signal("/org/bluez/hci0/dev_X", "org.bluez.Device1", {"Powered": Variant("b", True)}))
+    assert r.powered is False  # other properties and other objects don't count
+    r.on_signal(signal(reconnect.ADAPTER_PATH, "org.bluez.Adapter1", {"Powered": Variant("b", True)}))
+    assert r.powered is True and r._next_attempt == 0.0  # back on: reconnect now
+
+
 @pytest.mark.asyncio
 async def test_connect_attempts_stay_30_s_apart():
     from app import reconnect

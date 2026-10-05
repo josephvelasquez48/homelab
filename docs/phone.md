@@ -50,7 +50,7 @@ the tray. From the top:
     come to the PC either way. The iPhone's volume buttons set the level.
   - *Pi's Bluetooth* - turns the Pi's Bluetooth adapter off (no question
     asked: the iPhone disconnects, and nothing reconnects it while it's off) or
-    back on. It shows the adapter itself, re-read every 5 s, so it follows
+    back on. It shows the adapter itself, as BlueZ announces each change, so it follows
     the display's Bluetooth button and the display's button follows it
     (docs/dashboard.md). A Pi restart turns it back on.
   - *Keep iPhone-answered calls on the iPhone* - calls you pick up on the
