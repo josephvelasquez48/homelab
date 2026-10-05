@@ -111,8 +111,8 @@ def test_guest_page_for_a_live_link_and_a_dead_one(guest, links):
 
 
 def test_guest_sends_text_and_photos_marked_as_theirs(guest, links, drops):
-    link = links.create()
-    r = guest.post(f"/send/{link.token}", data={"name": "  Sam   Lee ", "text": "hello"},
+    link = links.create("Sam Lee")
+    r = guest.post(f"/send/{link.token}", data={"text": "hello"},
                    files=[("files", ("a.jpg", b"jpg", "image/jpeg"))])
     assert r.status_code == 200 and r.json()["sent"] == 2
     made = drops.recent()
@@ -122,20 +122,19 @@ def test_guest_sends_text_and_photos_marked_as_theirs(guest, links, drops):
     assert len(drops.for_pc_since(0)) == 2
 
 
-def test_who_sent_it_comes_from_their_name_or_the_link(guest, links, drops):
+def test_who_sent_it_is_the_links_name(guest, links, drops):
     sam = links.create("Sam")
-    guest.post(f"/send/{sam.token}", data={"name": "Alex", "text": "hi"})
-    assert (drops.recent()[0]["sender"], drops.recent()[0]["via"]) == ("Alex", "Sam")
-    sam.last_send = 0  # past the 2 s gap
-    guest.post(f"/send/{sam.token}", data={"text": "no name given"})
-    assert drops.recent()[0]["sender"] == "Sam"  # the link's name stands in
-    guest.post(f"/send/{links.create().token}", data={"text": "unnamed link, no name"})
-    assert (drops.recent()[0]["sender"], drops.recent()[0]["via"]) == ("Guest", None)
+    guest.post(f"/send/{sam.token}", data={"name": "Someone Else", "text": "hi"})  # a name field is ignored
+    assert (drops.recent()[0]["sender"], drops.recent()[0]["via"]) == ("Sam", "Sam")
 
 
-def test_guest_page_asks_for_a_name(guest, links):
-    page = guest.get(f"/send/{links.create().token}").text
-    assert 'id="name" name="name"' in page and "required" in page
+def test_guest_page_asks_for_no_name(guest, links):
+    assert 'name="name"' not in guest.get(f"/send/{links.create('Sam').token}").text
+
+
+def test_a_link_needs_a_name(app_client, links):
+    r = app_client.post("/api/links", data={"label": "  "})
+    assert r.status_code == 400 and links.active() == []
 
 
 def test_guest_cant_use_a_dead_link_or_send_too_much(guest, links, monkeypatch):

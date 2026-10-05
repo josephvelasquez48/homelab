@@ -844,11 +844,9 @@ autoEnableAudio();
 
 const SOURCE = IOS ? "phone" : "pc";
 
-// Who sent a guest's drop: "From Sam". When the link it came through was
-// named something else, that too: "From Alex · link: Sam".
+// Who sent a guest's drop: the name you gave the link it came through.
 function guestFrom(d) {
-  const who = d.sender || "a guest";
-  return d.via && d.via !== d.sender ? `From ${who} · link: ${d.via}` : `From ${who}`;
+  return `From ${d.via || d.sender || "a guest"}`;
 }
 $("drop-title").textContent = IOS ? "Drop to the PC" : "Drop to the iPhone";
 
@@ -994,7 +992,7 @@ function renderLinks(links) {
     const body = document.createElement("div");
     body.className = "body";
     const left = Math.max(0, Math.round((l.expires - Date.now() / 1000) / 3600));
-    body.append(div(l.label || "Send link", "text"), div(`${l.sends} sent · ${left} h left`, "meta"), div(l.url, "url"));
+    body.append(div(l.label, "text"), div(`${l.sends} sent · ${left} h left`, "meta"), div(l.url, "url"));
     const acts = document.createElement("div");
     acts.className = "acts";
     const share = actionButton(navigator.share ? "Share" : "Copy", async () => {
@@ -1014,6 +1012,10 @@ function renderLinks(links) {
 }
 
 $("link-make").onclick = async () => {
+  if (!$("link-label").value.trim()) {
+    $("link-label").focus();
+    return showError("Give the link a name - who it's for");
+  }
   const form = new FormData();
   form.append("label", $("link-label").value);
   const r = await fetch("/api/links", { method: "POST", body: form });

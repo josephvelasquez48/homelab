@@ -107,8 +107,9 @@ back. Drop sends text, photos and files to the other side
 **Send links, for guests on the home Wi-Fi** (`app/guests.py`): *Make a
 link* under Send links gives a link like
 `http://192.168.1.253:8081/send/<token>` to share with someone on your
-Wi-Fi. It opens a bare page - their name, a message, photos and files -
-and what they send shows in Drop as "From <name>". On the PC it never
+Wi-Fi. It opens a bare page - a message, photos and files, nothing to
+fill in about themselves - and what they send shows in Drop as "From
+<the link's name>". So a link needs a name: who it's for. On the PC it never
 touches the clipboard: their text is saved as a `.txt` and their files go
 in `Downloads\Phone Drop\From <name>`, so you pick what to use.
 

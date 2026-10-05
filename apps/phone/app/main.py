@@ -311,6 +311,9 @@ def _links() -> Links:
 
 @app.post("/api/links", dependencies=[Depends(require_page)])
 async def link_create(label: str = Form("")):
+    # Named, always: the name is how its guest's drops say who they're from.
+    if not label.strip():
+        raise HTTPException(status_code=400, detail="Give the link a name - who it's for")
     link = _links().create(label)
     await hub.broadcast_extras()
     return {"url": f"{GUEST_URL}/send/{link.token}", "expires": link.expires}
@@ -444,10 +447,9 @@ async def guest_send(token: str, request: Request):
     except LinkError as e:
         raise HTTPException(status_code=429, detail=str(e))
     form = await request.form(max_files=20, max_fields=10)
-    # Their name; the page asks for it, and if it's missing anyway, the name
-    # you gave the link says who it was for.
+    # Who it's from: the name you gave the link - the guest fills nothing in.
     via = link.label or None
-    sender = " ".join(str(form.get("name") or "").split())[:40] or via or "Guest"
+    sender = via or "Guest"
     text = str(form.get("text") or "")
     files = [f for f in form.getlist("files") if hasattr(f, "read")]
     drops, made = _drops(), []
