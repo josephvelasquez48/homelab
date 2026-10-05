@@ -1077,6 +1077,7 @@ function openViewer(i) {
 function closeViewer() {
   $("viewer").hidden = true;
   $("viewer-body").replaceChildren();
+  delete $("viewer-body").dataset.id; // or reopening the same drop shows nothing
   viewerId = null;
 }
 
@@ -1163,3 +1164,58 @@ for (const input of document.querySelectorAll("[data-limit]")) {
   input.addEventListener("change", save);
   input.addEventListener("keydown", (e) => { if (e.key === "Enter") input.blur(); });
 }
+
+// Swipe down to close, on a touchscreen - like a photo in the iPhone's Photos.
+// The view follows the finger and fades; a flick, or a drag past a fifth of
+// the screen, closes it, anything less springs back. Only from the top, so
+// a long text or a full-size photo still scrolls.
+(() => {
+  const body = $("viewer-body");
+  let startY = 0, startX = 0, startT = 0, dy = 0, dragging = false, decided = false;
+  const reset = () => {
+    body.style.transition = "transform .2s ease, opacity .2s ease";
+    body.style.transform = "";
+    body.style.opacity = "";
+  };
+  body.addEventListener("touchstart", (e) => {
+    if (e.touches.length !== 1 || body.scrollTop > 0) return;
+    startY = e.touches[0].clientY;
+    startX = e.touches[0].clientX;
+    startT = performance.now();
+    dy = 0;
+    dragging = true;
+    decided = false;
+    body.style.transition = "none";
+  }, { passive: true });
+  body.addEventListener("touchmove", (e) => {
+    if (!dragging) return;
+    const y = e.touches[0].clientY - startY, x = e.touches[0].clientX - startX;
+    if (!decided) {
+      if (Math.abs(y) < 8 && Math.abs(x) < 8) return;
+      decided = true;
+      if (y <= 0 || Math.abs(x) > Math.abs(y)) { dragging = false; return; } // up or sideways: not ours
+    }
+    dy = Math.max(0, y);
+    e.preventDefault(); // the page mustn't scroll or bounce under the drag
+    body.style.transform = `translateY(${dy}px)`;
+    body.style.opacity = String(Math.max(0.3, 1 - dy / 600));
+  }, { passive: false });
+  const end = () => {
+    if (!dragging) return;
+    dragging = false;
+    const flick = dy > 40 && dy / (performance.now() - startT) > 0.6; // px per ms
+    if (decided && (flick || dy > window.innerHeight / 5)) {
+      body.style.transition = "transform .18s ease-in, opacity .18s ease-in";
+      body.style.transform = `translateY(${window.innerHeight}px)`;
+      body.style.opacity = "0";
+      setTimeout(() => {
+        closeViewer();
+        body.style.transition = body.style.transform = body.style.opacity = "";
+      }, 180);
+    } else {
+      reset();
+    }
+  };
+  body.addEventListener("touchend", end);
+  body.addEventListener("touchcancel", end);
+})();

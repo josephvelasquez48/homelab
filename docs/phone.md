@@ -106,7 +106,8 @@ Phone back. The call popup and the Pi's screen have no tabs. Drop sends text, ph
 - Kept on the Pi for 7 days, the newest 50; up to 50 MB a file.
 - **Viewer:** click a drop to open it in the whole window - a text you can
   select any part of (or *Copy all*), or a photo fitted to the window
-  (click for full size). ‹ › or the arrow keys step through, Esc closes.
+  (click for full size). ‹ › or the arrow keys step through, Esc closes;
+  on the iPhone, swipe down to close.
 
 **Send links, for guests on the home Wi-Fi** (`app/guests.py`): *Make a
 link* under Send links gives a link like
