@@ -34,9 +34,10 @@
     <nav class="tabs" id="tabs" role="tablist">
       <button type="button" role="tab" data-tab="phone" id="tab-phone" aria-selected="true">Phone</button>
       <button type="button" role="tab" data-tab="drop" id="tab-drop" aria-selected="false">Drop<span class="tab-dot" id="drop-dot" hidden></span></button>
+      <button type="button" role="tab" data-tab="settings" id="tab-settings" aria-selected="false">Settings</button>
     </nav>
 
-    <section class="card settings" id="settings-card">
+    <section class="card settings" id="settings-card" data-tab="settings">
       <button class="section-toggle" id="audio-toggle" type="button" aria-expanded="false" aria-controls="audio-body">
         <span class="section-title">Audio</span>
         <span class="section-summary" id="audio-summary"></span>
@@ -87,7 +88,7 @@
 
     <div class="card mic-warning" id="mic-warning" hidden></div>
 
-    <section class="card drop-card" id="drop-card">
+    <section class="card drop-card" id="drop-card" data-tab="drop">
       <h2 id="drop-title">Drop</h2>
       <textarea id="drop-text" rows="2" placeholder="Text to send"></textarea>
       <div class="drop-actions">
@@ -152,7 +153,17 @@
     </section>
 
 
-    <section class="card contacts" id="contacts-card">
+    <section class="card limits-card" id="limits-card" data-tab="settings">
+      <h2>Drop &amp; send links</h2>
+      <div class="limit-row"><label for="dropKeepDays">Keep drops for</label><input type="number" id="dropKeepDays" data-limit inputmode="numeric"><span>days</span></div>
+      <div class="limit-row"><label for="dropMaxFileMb">Largest file</label><input type="number" id="dropMaxFileMb" data-limit inputmode="numeric"><span>MB</span></div>
+      <div class="sub limit-head">Each send link, per day</div>
+      <div class="limit-row"><label for="linkSendsPerDay">Sends</label><input type="number" id="linkSendsPerDay" data-limit inputmode="numeric"><span>a day</span></div>
+      <div class="limit-row"><label for="linkMbPerDay">Data</label><input type="number" id="linkMbPerDay" data-limit inputmode="numeric"><span>MB a day</span></div>
+      <div class="limit-row"><label for="linkMbPerSend">One send</label><input type="number" id="linkMbPerSend" data-limit inputmode="numeric"><span>MB at most</span></div>
+    </section>
+
+    <section class="card contacts" id="contacts-card" data-tab="settings">
       <span class="sub" id="contacts-status"></span>
       <button class="ghost small" id="refresh-contacts">Refresh contacts</button>
     </section>

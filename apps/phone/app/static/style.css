@@ -274,8 +274,13 @@ body.ios #mic-warning { display: none !important; }
 .tabs button[aria-selected="true"] { background: var(--card-2); color: var(--text); }
 .tab-dot { display: inline-block; vertical-align: super; margin-left: 5px; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); }
 .tab-dot[hidden] { display: none; }
-body.tab-drop main > .card:not(#drop-card), body.tab-drop main > section.card:not(#drop-card) { display: none !important; }
-body:not(.tab-drop) #drop-card { display: none !important; }
+/* Cards say which tab they're on (data-tab); the rest are the Phone tab's.
+   No tab on body (the call popup, the Pi's screen): the old single page. */
+body[data-tab="phone"] main > .card[data-tab],
+body[data-tab="drop"] main > .card:not([data-tab="drop"]),
+body[data-tab="settings"] main > .card:not([data-tab="settings"]) { display: none !important; }
+body:not([data-tab]) #drop-card, body:not([data-tab]) #limits-card { display: none !important; }
+body.ios #mic-row, body.ios #filter-row, body.ios #vol-row { display: none !important; }
 body.popup .tabs, body.touch .tabs { display: none !important; }
 .drops li { cursor: pointer; }
 .drops li .acts { cursor: default; }
@@ -296,3 +301,11 @@ body.popup .tabs, body.touch .tabs { display: none !important; }
 .viewer-body .file { margin: auto; text-align: center; color: var(--muted); padding: 24px; }
 .viewer-bar { display: flex; align-items: center; gap: 8px; padding: 10px 14px; border-top: 1px solid var(--line); }
 .viewer-bar .spacer { flex: 1; }
+
+/* Settings: the Drop and send-link limits. */
+.limit-row { display: flex; align-items: center; gap: 10px; padding: 7px 0; }
+.limit-row label { flex: 1; }
+.limit-row input { width: 84px; font: inherit; color: var(--text); background: var(--card-2); border: 1px solid var(--line);
+  border-radius: 10px; padding: 6px 10px; text-align: right; }
+.limit-row span { width: 84px; color: var(--muted); font-size: 14px; }
+.limit-head { margin: 10px 0 2px; }

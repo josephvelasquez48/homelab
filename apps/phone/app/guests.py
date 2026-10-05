@@ -7,8 +7,9 @@ main.py); nothing else of this app is reachable through it. What they send
 lands in Drop under the link's name.
 
 Each link has its own daily caps, so a forwarded one can't fill the Pi:
-MAX_SENDS sends and MAX_BYTES in any DAY_SECONDS (counted from the first
-send of the day), and one send every MIN_GAP_SECONDS.
+max_sends sends and max_bytes in any DAY_SECONDS (counted from the first
+send of the day), and one send every MIN_GAP_SECONDS. The defaults are
+below; Settings changes them (hub.apply_limits).
 """
 import json
 import secrets
@@ -50,6 +51,8 @@ FIELDS = {f.name for f in fields(Link)}
 class Links:
     def __init__(self, path: Path):
         self.path = path
+        self.max_sends = MAX_SENDS
+        self.max_bytes = MAX_BYTES
         self.items: list[Link] = []
         if path.exists():
             try:
@@ -98,9 +101,9 @@ class Links:
             raise LinkError("Slow down a little and try again.")
         if now - link.day_start >= DAY_SECONDS:
             return  # a new day: the caps start again on this send
-        if link.day_sends >= MAX_SENDS:
+        if link.day_sends >= self.max_sends:
             raise LinkError("That's as much as this link takes in a day. Try again tomorrow.")
-        if link.day_bytes + size > MAX_BYTES:
+        if link.day_bytes + size > self.max_bytes:
             raise LinkError("That's more than this link takes in a day. Try again tomorrow.")
 
     def record_send(self, link: Link, size: int, now: float | None = None) -> None:

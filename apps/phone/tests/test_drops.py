@@ -53,7 +53,7 @@ def test_limits(drops, monkeypatch):
         drops.add_text("x" * (drops_module.MAX_TEXT + 1), "pc")
     with pytest.raises(DropError):
         drops.add_file("empty.txt", None, b"", "pc")
-    monkeypatch.setattr(drops_module, "MAX_FILE", 4)
+    drops.max_file = 4
     with pytest.raises(DropError):
         drops.add_file("big.bin", None, b"12345", "pc")
     with pytest.raises(DropError):
@@ -65,7 +65,7 @@ def test_old_and_extra_drops_are_pruned_with_their_files(drops, monkeypatch):
     old.created -= drops_module.KEEP_SECONDS + 1
     drops.prune()
     assert drops.get(old.id) is None and not drops.file_path(old).exists()
-    monkeypatch.setattr(drops_module, "KEEP_COUNT", 3)
+    drops.keep_count = 3
     for i in range(5):
         drops.add_text(f"t{i}", "pc")
     assert [d["text"] for d in drops.recent()] == ["t4", "t3", "t2"]

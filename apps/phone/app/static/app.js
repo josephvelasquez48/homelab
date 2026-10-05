@@ -523,7 +523,8 @@ function render(s) {
   document.body.classList.toggle("incoming", POPUP && !!call && (call.state === "incoming" || call.state === "waiting"));
   $("call-card").hidden = !call;
   $("dial-card").hidden = !!call || POPUP;
-  if (call && currentTab === "drop") setTab("phone"); // a call always brings the Phone tab back
+  if (call && currentTab !== "phone") setTab("phone"); // a call always brings the Phone tab back
+  renderLimits(s.settings);
   if (POPUP) {
     // Opened for a call that was already answered elsewhere, or one that
     // just ended: nothing to show, so get out of the way.
@@ -1030,9 +1031,11 @@ let currentTab = "phone";
 let shownDrops = [];
 const MINE = SOURCE; // drops this side sent itself don't need a dot
 
+const TABS = ["phone", "drop", "settings"];
+
 function setTab(tab) {
   currentTab = tab;
-  document.body.classList.toggle("tab-drop", tab === "drop");
+  document.body.dataset.tab = tab;
   for (const b of document.querySelectorAll("#tabs button")) b.setAttribute("aria-selected", String(b.dataset.tab === tab));
   if (tab === "drop") markDropsSeen();
   try { localStorage.setItem("phone-tab", tab); } catch {}
@@ -1055,7 +1058,7 @@ for (const b of document.querySelectorAll("#tabs button")) b.onclick = () => set
 if (!POPUP && !TOUCH) {
   let saved = "phone";
   try { saved = localStorage.getItem("phone-tab") || "phone"; } catch {}
-  setTab(saved === "drop" ? "drop" : "phone");
+  setTab(TABS.includes(saved) ? saved : "phone");
 }
 
 // ---- The viewer: a text or a photo, the whole window --------------------------
@@ -1140,3 +1143,23 @@ document.addEventListener("keydown", (e) => {
   else if (e.key === "ArrowLeft") stepViewer(-1);
   else if (e.key === "ArrowRight") stepViewer(1);
 });
+
+// ---- Settings: the Drop and send-link limits ----------------------------------
+// Saved on the Pi with the other settings (hub.LIMITS keeps each in range);
+// a value is sent when you leave the box or press Enter.
+
+function renderLimits(settings) {
+  if (!settings) return;
+  for (const input of document.querySelectorAll("[data-limit]")) {
+    if (document.activeElement !== input) input.value = settings[input.id];
+  }
+}
+
+for (const input of document.querySelectorAll("[data-limit]")) {
+  const save = () => {
+    if (input.value === "" || Number(input.value) === (state && state.settings && state.settings[input.id])) return;
+    send({ action: "set-limit", key: input.id, value: Number(input.value) });
+  };
+  input.addEventListener("change", save);
+  input.addEventListener("keydown", (e) => { if (e.key === "Enter") input.blur(); });
+}

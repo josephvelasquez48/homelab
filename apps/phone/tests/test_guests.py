@@ -152,8 +152,8 @@ def test_guest_cant_use_a_dead_link_or_send_too_much(guest, links, monkeypatch):
     link = links.create("Sam")
     links.revoke(link.token)
     assert guest.post(f"/send/{link.token}", data={"text": "hi"}).status_code == 404
-    monkeypatch.setattr(main, "MAX_GUEST_REQUEST", 10)
-    r = guest.post(f"/send/{links.create("Sam").token}", data={"text": "this is more than ten bytes"})
+    monkeypatch.setitem(main.hub.settings, "linkMbPerSend", 1)
+    r = guest.post(f"/send/{links.create("Sam").token}", files=[("files", ("big.bin", b"x" * (1024 * 1024 + 1), "application/octet-stream"))])
     assert r.status_code == 413
 
 
@@ -168,3 +168,41 @@ def test_guest_off_the_home_network_is_refused(monkeypatch, links):
 def test_guest_listener_serves_nothing_else(guest):
     for path in ("/", "/api/drops", "/static/app.js", "/login", "/ws", "/api/agent/ringing"):
         assert guest.get(path).status_code == 404, path
+
+
+# ---- Settings: the limits --------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_limits_are_set_in_range_and_applied(tmp_path):
+    from app.hub import Hub
+
+    hub = Hub(telephony=object(), bridge=object(), settings_path=tmp_path / "s.json")
+    hub.drops, hub.links = Drops(tmp_path / "drops"), Links(tmp_path / "links.json")
+    hub.apply_limits()
+
+    async def nothing(*a, **k):
+        pass
+
+    hub.broadcast_state = nothing
+    hub.tick = nothing
+    page = object()
+    assert await hub.command(page, {"action": "set-limit", "key": "linkSendsPerDay", "value": 5}) is None
+    assert hub.links.max_sends == 5
+    await hub.command(page, {"action": "set-limit", "key": "dropMaxFileMb", "value": 999999})
+    assert hub.settings["dropMaxFileMb"] == 500 and hub.drops.max_file == 500 * 1024 * 1024  # held to its top
+    await hub.command(page, {"action": "set-limit", "key": "dropKeepDays", "value": 0})
+    assert hub.settings["dropKeepDays"] == 1 and hub.drops.keep_seconds == 24 * 3600
+    assert await hub.command(page, {"action": "set-limit", "key": "micLabel", "value": 1}) == "unknown setting"
+    assert await hub.command(page, {"action": "set-limit", "key": "linkMbPerDay", "value": "lots"}) == "Not a number"
+    # Saved, and a reload keeps them.
+    assert Hub(telephony=object(), bridge=object(), settings_path=tmp_path / "s.json").settings["linkSendsPerDay"] == 5
+
+
+def test_a_hand_edited_settings_file_is_held_to_the_limits(tmp_path):
+    from app.hub import load_settings
+
+    path = tmp_path / "s.json"
+    path.write_text('{"linkMbPerDay": 1, "dropKeepDays": 1000}')
+    s = load_settings(path)
+    assert (s["linkMbPerDay"], s["dropKeepDays"]) == (10, 90)

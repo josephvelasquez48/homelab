@@ -20,7 +20,7 @@ from starlette.middleware.sessions import SessionMiddleware
 import uvicorn
 
 from app.contacts import Contacts
-from app.drops import MAX_FILE, MAX_TEXT, DropError, Drops
+from app.drops import MAX_TEXT, DropError, Drops
 from app.guests import LinkError, Links
 from app.history import CallLog
 from app.hub import Hub
@@ -54,8 +54,6 @@ DROP_TOKEN = os.environ.get("PHONE_DROP_TOKEN", "")
 GUEST_PORT = int(os.environ.get("PHONE_GUEST_PORT", "8081"))
 GUEST_URL = os.environ.get("PHONE_GUEST_URL", f"http://192.168.1.253:{GUEST_PORT}").rstrip("/")
 HOME_NETWORK = ipaddress.ip_network(os.environ.get("PHONE_HOME_NETWORK", "192.168.1.0/24"))
-# One guest send, whole request: a few photos, not a film.
-MAX_GUEST_REQUEST = 100 * 1024 * 1024
 
 DATA = Path(os.environ.get("PHONE_DATA", Path.home() / ".local/share/phone-bridge"))
 CONFIG = Path.home() / ".config/phone-bridge"
@@ -71,6 +69,7 @@ if os.environ.get("PHONE_EXTRAS", "1") == "1":
     hub.drops = Drops(DATA / "drops")
     hub.links = Links(DATA / "send-links.json")
     hub.links_base = GUEST_URL
+    hub.apply_limits()
 
 
 class _GuestServer(uvicorn.Server):
@@ -247,7 +246,7 @@ async def _add_drops(text: str, files: list[UploadFile], source: str, text_files
     drops, made = _drops(), []
     try:
         for f in files:
-            data = await f.read(MAX_FILE + 1)
+            data = await f.read(drops.max_file + 1)
             if text_files_are_text and (f.content_type or "").startswith("text/plain") and len(data) <= MAX_TEXT:
                 made.append(drops.add_text(data.decode("utf-8", "replace"), source))
                 continue
@@ -440,8 +439,8 @@ async def guest_send(token: str, request: Request):
     if not link:
         raise HTTPException(status_code=404, detail="This link has expired. Ask for a new one.")
     length = int(request.headers.get("content-length") or 0)
-    if not length or length > MAX_GUEST_REQUEST:
-        raise HTTPException(status_code=413, detail=f"That's too much at once - up to {MAX_GUEST_REQUEST // 1024 // 1024} MB a send.")
+    if not length or length > hub.guest_request_limit():
+        raise HTTPException(status_code=413, detail=f"That's too much at once - up to {hub.settings['linkMbPerSend']} MB a send.")
     try:
         hub.links.check_send(link, length)
     except LinkError as e:
@@ -455,7 +454,7 @@ async def guest_send(token: str, request: Request):
     drops, made = _drops(), []
     try:
         for f in files:
-            made.append(drops.add_file(f.filename or "file", f.content_type, await f.read(MAX_FILE + 1), "guest", sender, via))
+            made.append(drops.add_file(f.filename or "file", f.content_type, await f.read(drops.max_file + 1), "guest", sender, via))
         if text.strip() or not files:
             made.append(drops.add_text(text, "guest", sender, via))
     except DropError as e:

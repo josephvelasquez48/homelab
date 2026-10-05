@@ -86,9 +86,13 @@ Ctrl+Alt+M mutes. The X hides the window; *Quit* in the tray stops the app.
 
 ## Drop: text and photos between the iPhone and the PC
 
-The page has two tabs, **Phone** (calls) and **Drop**; a dot on Drop means
-something arrived while you were on Phone, and a call always brings Phone
-back. Drop sends text, photos and files to the other side
+The page has three tabs: **Phone** (calls), **Drop**, and **Settings** -
+the Audio section, contacts, and Drop's limits (how long drops are kept,
+the largest file, and each send link's sends and data a day and the most
+in one send). Limits are saved on the Pi with the other settings and held
+to a range (`hub.LIMITS`), so a slip can't fill the disk. A dot on Drop
+means something arrived while you were elsewhere, and a call always brings
+Phone back. The call popup and the Pi's screen have no tabs. Drop sends text, photos and files to the other side
 (`app/drops.py`):
 
 - **iPhone to PC:** what arrives is handled by the PC's agent by itself -
@@ -113,9 +117,10 @@ fill in about themselves - and what they send shows in Drop as "From
 touches the clipboard: their text is saved as a `.txt` and their files go
 in `Downloads\Phone Drop\From <name>`, so you pick what to use.
 
-- A link works until you *Turn off*. Each has its own daily caps (30
-  sends and 300 MB in a day, one send every 2 s, 100 MB a send - checked
-  before anything is read), so a forwarded link can't fill the Pi.
+- A link works until you *Turn off*. Each has its own daily caps -
+  by default 30 sends and 300 MB in a day, 100 MB a send (checked before
+  anything is read), changed in Settings - and one send every 2 s, so a
+  forwarded link can't fill the Pi.
 - **Home network only, on purpose:** its own plain-HTTP listener on 8081,
   serving `/send/...` and nothing else of the app; ufw allows it from
   `192.168.1.0/24` only (`ansible/roles/firewall`), and the app refuses

@@ -49,6 +49,21 @@ DEFAULT_SETTINGS = {
     # Music and videos play on the PC (the Pi is the phone's Bluetooth
     # speaker) - or, off, on the iPhone. Calls come to the PC either way.
     "mediaOnPc": True,
+    # Drop and send links (Settings tab): see LIMITS for what's allowed.
+    "dropKeepDays": 7,
+    "dropMaxFileMb": 50,
+    "linkSendsPerDay": 30,
+    "linkMbPerDay": 300,
+    "linkMbPerSend": 100,
+}
+# The limits the Settings tab can change, and how far: (lowest, highest).
+# Wide enough to be useful, narrow enough that a slip can't fill the Pi.
+LIMITS = {
+    "dropKeepDays": (1, 90),
+    "dropMaxFileMb": (1, 500),
+    "linkSendsPerDay": (1, 500),
+    "linkMbPerDay": (10, 5000),
+    "linkMbPerSend": (1, 500),
 }
 # Page actions that mean "this call belongs on the PC".
 PC_ACTIONS = ("answer", "dial", "audio-to-pc", "answer-on-pc")
@@ -65,7 +80,10 @@ def load_settings(path: Path) -> dict:
         saved = json.loads(path.read_text())
     except (OSError, ValueError):
         saved = {}
-    return {k: type(v)(saved.get(k, v)) for k, v in DEFAULT_SETTINGS.items()}
+    settings = {k: type(v)(saved.get(k, v)) for k, v in DEFAULT_SETTINGS.items()}
+    for key, (low, high) in LIMITS.items():  # a hand-edited file can't go past them either
+        settings[key] = min(max(settings[key], low), high)
+    return settings
 
 
 def save_settings(path: Path, settings: dict) -> None:
@@ -145,6 +163,21 @@ class Hub:
 
     def name_for(self, number: str) -> str:
         return self.contacts.lookup(number) if self.contacts else ""
+
+    def apply_limits(self) -> None:
+        """Hand the Settings tab's limits to Drop and the send links."""
+        mb, s = 1024 * 1024, self.settings
+        if self.drops:
+            self.drops.max_file = s["dropMaxFileMb"] * mb
+            self.drops.keep_seconds = s["dropKeepDays"] * 24 * 3600
+            self.drops.prune()
+        if self.links:
+            self.links.max_sends = s["linkSendsPerDay"]
+            self.links.max_bytes = s["linkMbPerDay"] * mb
+
+    def guest_request_limit(self) -> int:
+        """The most one guest send may be, in bytes."""
+        return self.settings["linkMbPerSend"] * 1024 * 1024
 
     def snapshot(self) -> dict:
         state = self.tel.state.to_json()
@@ -491,6 +524,19 @@ class Hub:
             if action == "set-keep-phone":
                 self.settings["keepPhoneAnswered"] = bool(msg.get("value"))
                 save_settings(self.settings_path, self.settings)
+            elif action == "set-limit":
+                key = msg.get("key")
+                if key not in LIMITS:
+                    return "unknown setting"
+                try:
+                    value = int(msg.get("value"))
+                except (TypeError, ValueError):
+                    return "Not a number"
+                low, high = LIMITS[key]
+                self.settings[key] = min(max(value, low), high)
+                save_settings(self.settings_path, self.settings)
+                self.apply_limits()
+                await self.broadcast_state(force=True)
             elif action == "set-media-on-pc":
                 self.settings["mediaOnPc"] = bool(msg.get("value"))
                 save_settings(self.settings_path, self.settings)
