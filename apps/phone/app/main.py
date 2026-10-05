@@ -444,15 +444,18 @@ async def guest_send(token: str, request: Request):
     except LinkError as e:
         raise HTTPException(status_code=429, detail=str(e))
     form = await request.form(max_files=20, max_fields=10)
-    sender = " ".join(str(form.get("name") or "").split())[:40] or "Guest"
+    # Their name; the page asks for it, and if it's missing anyway, the name
+    # you gave the link says who it was for.
+    via = link.label or None
+    sender = " ".join(str(form.get("name") or "").split())[:40] or via or "Guest"
     text = str(form.get("text") or "")
     files = [f for f in form.getlist("files") if hasattr(f, "read")]
     drops, made = _drops(), []
     try:
         for f in files:
-            made.append(drops.add_file(f.filename or "file", f.content_type, await f.read(MAX_FILE + 1), "guest", sender))
+            made.append(drops.add_file(f.filename or "file", f.content_type, await f.read(MAX_FILE + 1), "guest", sender, via))
         if text.strip() or not files:
-            made.append(drops.add_text(text, "guest", sender))
+            made.append(drops.add_text(text, "guest", sender, via))
     except DropError as e:
         raise HTTPException(status_code=400, detail=str(e))
     finally:

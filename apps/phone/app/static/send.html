@@ -44,8 +44,8 @@
     <h1>Send to Joe</h1>
     <p class="lead">Text, photos or files - they go straight to Joe.</p>
     <form class="card" id="form">
-      <label for="name">Your name</label>
-      <input type="text" id="name" name="name" maxlength="40" autocomplete="name" placeholder="So Joe knows who it's from">
+      <label for="name">Your name (required)</label>
+      <input type="text" id="name" name="name" maxlength="40" autocomplete="name" placeholder="So Joe knows who it's from" required>
       <label for="text">Message</label>
       <textarea id="text" name="text" placeholder="Type or paste here"></textarea>
       <div class="files">
@@ -68,6 +68,9 @@
     $("form").onsubmit = async (e) => {
       e.preventDefault();
       const msg = $("msg");
+      if (!$("name").value.trim()) {
+        msg.className = "bad"; msg.textContent = "Add your name first."; $("name").focus(); return;
+      }
       if (!$("text").value.trim() && !$("files").files.length) {
         msg.className = "bad"; msg.textContent = "Add a message or a file first."; return;
       }

@@ -843,6 +843,13 @@ autoEnableAudio();
 // files by itself; the iPhone has Copy and Save here.
 
 const SOURCE = IOS ? "phone" : "pc";
+
+// Who sent a guest's drop: "From Sam". When the link it came through was
+// named something else, that too: "From Alex · link: Sam".
+function guestFrom(d) {
+  const who = d.sender || "a guest";
+  return d.via && d.via !== d.sender ? `From ${who} · link: ${d.via}` : `From ${who}`;
+}
 $("drop-title").textContent = IOS ? "Drop to the PC" : "Drop to the iPhone";
 
 function sizeText(n) {
@@ -900,7 +907,7 @@ function renderDrops(drops) {
     };
     const body = document.createElement("div");
     body.className = "body";
-    const from = d.source === "guest" ? `From ${d.sender || "a guest"}` : d.source === "phone" ? "From iPhone" : "From PC";
+    const from = d.source === "guest" ? guestFrom(d) : d.source === "phone" ? "From iPhone" : "From PC";
     const acts = document.createElement("div");
     acts.className = "acts";
     if (d.kind === "text") {
@@ -1073,7 +1080,7 @@ function refreshViewer() {
   const i = shownDrops.findIndex((d) => d.id === viewerId);
   if (i < 0) return closeViewer(); // deleted, here or elsewhere
   const d = shownDrops[i];
-  const from = d.source === "guest" ? `From ${d.sender || "a guest"}` : d.source === "phone" ? "From iPhone" : "From PC";
+  const from = d.source === "guest" ? guestFrom(d) : d.source === "phone" ? "From iPhone" : "From PC";
   $("viewer-title").textContent = d.kind === "text" ? (d.text.split("\n")[0] || "Text").slice(0, 80) : d.name;
   $("viewer-meta").textContent = `${from} · ${d.kind === "file" ? sizeText(d.size) + " · " : ""}${when(d.created)} · ${i + 1} of ${shownDrops.length}`;
   $("viewer-prev").disabled = i === 0;

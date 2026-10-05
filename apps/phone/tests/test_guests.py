@@ -122,9 +122,20 @@ def test_guest_sends_text_and_photos_marked_as_theirs(guest, links, drops):
     assert len(drops.for_pc_since(0)) == 2
 
 
-def test_guest_name_is_optional(guest, links, drops):
-    guest.post(f"/send/{links.create().token}", data={"text": "hi"})
-    assert drops.recent()[0]["sender"] == "Guest"
+def test_who_sent_it_comes_from_their_name_or_the_link(guest, links, drops):
+    sam = links.create("Sam")
+    guest.post(f"/send/{sam.token}", data={"name": "Alex", "text": "hi"})
+    assert (drops.recent()[0]["sender"], drops.recent()[0]["via"]) == ("Alex", "Sam")
+    sam.last_send = 0  # past the 2 s gap
+    guest.post(f"/send/{sam.token}", data={"text": "no name given"})
+    assert drops.recent()[0]["sender"] == "Sam"  # the link's name stands in
+    guest.post(f"/send/{links.create().token}", data={"text": "unnamed link, no name"})
+    assert (drops.recent()[0]["sender"], drops.recent()[0]["via"]) == ("Guest", None)
+
+
+def test_guest_page_asks_for_a_name(guest, links):
+    page = guest.get(f"/send/{links.create().token}").text
+    assert 'id="name" name="name"' in page and "required" in page
 
 
 def test_guest_cant_use_a_dead_link_or_send_too_much(guest, links, monkeypatch):

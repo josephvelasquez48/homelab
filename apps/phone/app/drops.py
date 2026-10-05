@@ -37,6 +37,7 @@ class Drop:
     mime: str | None = None
     size: int = 0
     sender: str | None = None  # a guest's name, as they gave it
+    via: str | None = None  # the send link it came through, by the name you gave the link
 
 
 def safe_name(name: str) -> str:
@@ -87,14 +88,15 @@ class Drops:
         self.prune()
         return drop
 
-    def add_text(self, text: str, source: str, sender: str | None = None) -> Drop:
+    def add_text(self, text: str, source: str, sender: str | None = None, via: str | None = None) -> Drop:
         if not text.strip():
             raise DropError("Nothing to send")
         if len(text) > MAX_TEXT:
             raise DropError(f"Text is over {MAX_TEXT:,} characters")
-        return self._new(kind="text", source=source, text=text, size=len(text.encode()), sender=sender)
+        return self._new(kind="text", source=source, text=text, size=len(text.encode()), sender=sender, via=via)
 
-    def add_file(self, name: str, mime: str | None, data: bytes, source: str, sender: str | None = None) -> Drop:
+    def add_file(self, name: str, mime: str | None, data: bytes, source: str,
+                 sender: str | None = None, via: str | None = None) -> Drop:
         if source not in SOURCES:
             raise DropError("unknown source")
         if not data:
@@ -104,7 +106,7 @@ class Drops:
         name = safe_name(name)
         mime = mime or mimetypes.guess_type(name)[0] or "application/octet-stream"
         drop = Drop(id=secrets.token_hex(8), kind="file", source=source, created=time.time(),
-                    name=name, mime=mime, size=len(data), sender=sender)
+                    name=name, mime=mime, size=len(data), sender=sender, via=via)
         self.folder.mkdir(parents=True, exist_ok=True)
         self._path(drop).write_bytes(data)
         self.items.append(drop)
