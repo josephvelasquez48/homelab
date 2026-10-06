@@ -33,8 +33,10 @@ OLLAMA_HANDLERS = "/v1/chat|/v1/embed|/v1/rag/query|/v1/documents|/v1/conversati
 PROBE_HANDLERS = "/metrics|/ready|/health"
 
 RATE_QUERIES = {
-    "dns": "sum(clamp_min(rate(adguard_queries[5m]), 0))",
-    "dns_blocked": "sum(clamp_min(rate(adguard_queries_blocked[5m]), 0))",
+    # Real counters (adguard-exporter): AdGuard's own totals are a rolling
+    # 24-hour window that drops every hour, which rate() took for a reset.
+    "dns": "sum(rate(adguard_dns_queries_total[5m]))",
+    "dns_blocked": "sum(rate(adguard_dns_blocked_total[5m]))",
     # The display's own polling goes through Traefik too; leave it out, or
     # the screen would mostly show itself.
     "web": 'sum(rate(traefik_service_requests_total{service!~"dashboard-.*"}[5m])) or vector(0)',

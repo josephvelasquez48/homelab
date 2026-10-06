@@ -54,7 +54,7 @@ COMPONENTS: dict[str, dict] = {
         "title": "Home network",
         "about": "Every device on the LAN. Its DNS goes to the Pi (CoreDNS, then AdGuard); *.home pages go to Traefik.",
         "metrics": [
-            _m("DNS queries", "sum(rate(adguard_queries[5m])) * 60", "/min"),
+            _m("DNS queries", "sum(rate(adguard_dns_queries_total[5m])) * 60", "/min"),
             _m("Web requests (Traefik)", 'sum(rate(traefik_service_requests_total{service!~"dashboard-.*"}[5m]))', "req/s"),
         ],
         "commands": [
@@ -78,7 +78,7 @@ COMPONENTS: dict[str, dict] = {
         "title": "CoreDNS",
         "about": "The LAN's DNS server, in Docker on the Pi (docker/dns): answers *.home itself, hands everything else to AdGuard.",
         "metrics": [
-            _m("Queries", "sum(rate(adguard_queries[5m])) * 60", "/min"),
+            _m("Queries", "sum(rate(adguard_dns_queries_total[5m])) * 60", "/min"),
         ],
         "commands": [
             f"{PI} docker logs --tail 100 coredns",
@@ -94,8 +94,8 @@ COMPONENTS: dict[str, dict] = {
         "metrics": [
             _m("Answering", "min(adguard_up)", "", ok_if_1),
             _m("Protection on", "min(adguard_protection_enabled)", "", ok_if_1),
-            _m("Queries today", "sum(adguard_queries)"),
-            _m("Blocked today", "sum(adguard_queries_blocked)"),
+            _m("Queries, last 24 h", "sum(adguard_queries)"),
+            _m("Blocked, last 24 h", "sum(adguard_queries_blocked)"),
             _m("Average processing", "avg(adguard_avg_processing_time_seconds) * 1000", "ms"),
             _m("Exporter scrape errors (1h)", "sum(increase(adguard_scrape_errors_total[1h]))", "", ok_if_0),
         ],

@@ -86,6 +86,15 @@ the desktop slept. It's a metric now; Postgres and Redis still fail
 readiness, since those have somewhere else to route. An alert would fire
 every night the desktop sleeps and teach you to ignore alerts.
 
+**AdGuard's totals aren't counters.** `adguard_queries` and
+`adguard_queries_blocked` are AdGuard's rolling 24-hour window: every hour
+the oldest hour falls off and they drop, which `rate()` reads as a counter
+reset - it counted the whole day as new, and the display showed ~14,000 DNS
+queries a minute for five minutes after every hour (found 2026-10-05; the
+real rate was ~65). For rates use `adguard_dns_queries_total` and
+`adguard_dns_blocked_total`, real counters the exporter builds from
+AdGuard's hourly buckets.
+
 ## Known gaps
 
 - **Only the PC's sensors, not its OS.** LibreHardwareMonitor covers the
