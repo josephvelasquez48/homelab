@@ -41,7 +41,7 @@ spec:
         runAsGroup: 1000
       containers:
         - name: adguard-exporter
-          image: ghcr.io/josephvelasquez48/homelab-adguard-exporter:6f350a52deed
+          image: ghcr.io/josephvelasquez48/homelab-adguard-exporter:6e3d98973306
           env:
             - name: ADGUARD_URL
               value: http://192.168.1.253:3000
