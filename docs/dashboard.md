@@ -79,6 +79,24 @@ bottom ticker cycles alerts, down nodes, Argo CD, backups and AdGuard.
 
 No data shows as grey, never green.
 
+**Colours:** green, amber and red mean health and nothing else - a status
+light, a down box, a vital past its threshold. Everything else takes its
+zone's colour, saying where it runs: teal for the Pi's host, purple for the
+cluster, blue for the Windows PC, grey for what's outside. The stats row's
+labels are in their zone's colour and its numbers plain white, each part
+turning amber or red on its own past its threshold (`STAT_LIMITS` in
+`display.js`: e.g. the Pi's temperature at 70 and 80 °C, CPU at 80 and 95%,
+memory at 85 and 95%, pods when not all are ready).
+
+**The moving dots** are coloured by what flows: teal for DNS, lavender for
+web and API requests, pink for calls and music, soft white for RustDesk's
+screen, grey for housekeeping (metrics scrapes, backups, Argo CD's git
+pulls). A busy line streams them; a quiet one trickles them, faint. Red
+dots that stop short mean an end is down; grey dots stopping short on the
+way to the internet are blocked DNS lookups, turned back. All of it costs
+the Pi about 13% of one core (measured 2026-10-05, the whole display):
+static lines would save some of that, but lose the sense of traffic.
+
 **On the Pi:** `apps/pi-display/install.sh` adds the homelab CA to
 Chromium's certificate store (name-constrained to `.home`) and installs
 `pi-display.service`, a user unit that keeps Chromium in kiosk mode on

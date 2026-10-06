@@ -6,60 +6,72 @@
 
 const POLL_MS = 5000;
 const SVG_NS = "http://www.w3.org/2000/svg";
+// Green, amber and red mean health and nothing else. Everything else on
+// the map takes its zone's colour (ZONE): where a thing runs, not how it is.
 const COLOR = { ok: "#97C459", warn: "#EF9F27", bad: "#E24B4A", unknown: "#5F5E5A" };
+const ZONE = { pi: "#1D9E75", cluster: "#534AB7", pc: "#378ADD", outside: "#888780", internet: "#444441" };
+// Light versions of the zone colours, for text on the dark background.
+const ZONE_TEXT = { pi: "#5DCAA5", cluster: "#AFA9EC", pc: "#85B7EB", outside: "#B4B2A9" };
+// A moving dot's colour says what flows along the line (how often dots come
+// says how much). Red stays health: a line with an end down. A blocked DNS
+// lookup is grey and stops short - turned back, not a fault.
+const TRAFFIC = { dns: "#5DCAA5", web: "#AFA9EC", call: "#ED93B1", screen: "#D3D1C7", chores: "#888780" };
+const BLOCKED_DOT = "#888780";
 const STATUS_COLOR = { up: COLOR.ok, down: COLOR.bad, unknown: COLOR.unknown };
 
 // ---- Map layout (1280 x 720 viewBox, the Pi's screen) ----
 
 const ZONES = [
-  { x: 225, y: 110, w: 290, h: 520, label: "Raspberry Pi 5 - host", color: "#1D9E75" },
-  { x: 545, y: 212, w: 460, h: 418, label: "K3s cluster", color: "#534AB7", nodes: true },
-  { x: 1035, y: 212, w: 225, h: 418, label: "Windows PC", color: "#D85A30" },
+  { x: 225, y: 110, w: 290, h: 520, label: "Raspberry Pi 5 - host", color: ZONE.pi },
+  { x: 545, y: 212, w: 460, h: 418, label: "K3s cluster", color: ZONE.cluster, nodes: true },
+  // Blue, not the orange it was: orange read as a warning.
+  { x: 1035, y: 212, w: 225, h: 418, label: "Windows PC", color: ZONE.pc },
 ];
 
 // id: [x, y, title, subtitle, category color]
 const BOXES = {
-  lan: [120, 350, "Home network", "PCs, phones, TVs", "#888780"],
-  iphone: [120, 530, "iPhone", "Bluetooth", "#888780"],
-  mac: [120, 600, "Mac", "backups, m1-node", "#888780"],
-  coredns: [370, 170, "CoreDNS", "*.home", "#1D9E75"],
-  adguard: [370, 290, "AdGuard", "filtering", "#1D9E75"],
-  rustdesk: [370, 410, "RustDesk", "ID + relay", "#1D9E75"],
-  phone: [370, 530, "Phone bridge", "calls + music", "#1D9E75"],
-  backup: [370, 600, "Backup", "nightly, encrypted", "#1D9E75"],
-  internet: [650, 150, "Internet", "upstream DNS", "#444441"],
-  traefik: [650, 350, "Traefik", "HTTPS ingress", "#534AB7"],
-  apps: [650, 450, "Apps", "Grafana, Argo CD, chat", "#534AB7"],
-  api: [880, 300, "FastAPI", "api.home", "#534AB7"],
-  postgres: [880, 400, "Postgres", "pgvector", "#BA7517"],
-  redis: [880, 480, "Redis", "job queue", "#BA7517"],
-  prometheus: [880, 590, "Prometheus", "metrics", "#534AB7"],
-  ollama: [1145, 300, "Ollama", "GPU inference", "#D85A30"],
-  phone_pc: [1145, 530, "Phone app", "calls, music", "#D85A30"],
+  lan: [120, 350, "Home network", "PCs, phones, TVs", ZONE.outside],
+  iphone: [120, 530, "iPhone", "Bluetooth", ZONE.outside],
+  mac: [120, 600, "Mac", "backups, m1-node", ZONE.outside],
+  coredns: [370, 170, "CoreDNS", "*.home", ZONE.pi],
+  adguard: [370, 290, "AdGuard", "filtering", ZONE.pi],
+  rustdesk: [370, 410, "RustDesk", "ID + relay", ZONE.pi],
+  phone: [370, 530, "Phone bridge", "calls + music", ZONE.pi],
+  backup: [370, 600, "Backup", "nightly, encrypted", ZONE.pi],
+  internet: [650, 150, "Internet", "upstream DNS", ZONE.internet],
+  traefik: [650, 350, "Traefik", "HTTPS ingress", ZONE.cluster],
+  apps: [650, 450, "Apps", "Grafana, Argo CD, chat", ZONE.cluster],
+  api: [880, 300, "FastAPI", "api.home", ZONE.cluster],
+  postgres: [880, 400, "Postgres", "pgvector", ZONE.cluster],
+  redis: [880, 480, "Redis", "job queue", ZONE.cluster],
+  prometheus: [880, 590, "Prometheus", "metrics", ZONE.cluster],
+  ollama: [1145, 300, "Ollama", "GPU inference", ZONE.pc],
+  phone_pc: [1145, 530, "Phone app", "calls, music", ZONE.pc],
 };
 const BOX_W = 176, BOX_H = 56;
 
 // Lines: [from, to, custom path?]. Rates arrive keyed "from-to".
+// [from, to, what flows (TRAFFIC), optional path].
 const EDGES = [
-  ["lan", "coredns"], ["coredns", "adguard"], ["adguard", "internet"],
-  ["lan", "traefik"], ["traefik", "api"], ["traefik", "apps"],
-  ["api", "postgres"], ["api", "redis", "M968 300 C1012 300 1012 480 968 480"],
-  ["api", "ollama"], ["lan", "rustdesk"], ["rustdesk", "lan"], // input in, the Pi's screen out
-  ["iphone", "phone"], ["phone", "phone_pc"],
+  ["lan", "coredns", "dns"], ["coredns", "adguard", "dns"], ["adguard", "internet", "dns"],
+  ["lan", "traefik", "web"], ["traefik", "api", "web"], ["traefik", "apps", "web"],
+  ["api", "postgres", "web"], ["api", "redis", "web", "M968 300 C1012 300 1012 480 968 480"],
+  ["api", "ollama", "web"], ["lan", "rustdesk", "screen"], ["rustdesk", "lan", "screen"], // input in, the Pi's screen out
+  ["iphone", "phone", "call"], ["phone", "phone_pc", "call"],
   // The way back along the same lines: the PC's mic and its agent's
   // check-ins (to the bridge), and the mic on to the iPhone.
-  ["phone_pc", "phone"], ["phone", "iphone"],
+  ["phone_pc", "phone", "call"], ["phone", "iphone", "call"],
   // Chat (in Apps) to the api, and Argo CD (in Apps) checking GitHub.
-  ["apps", "api"], ["apps", "internet", "M738 438 C786 438 786 150 738 150"],
+  ["apps", "api", "web"], ["apps", "internet", "chores", "M738 438 C786 438 786 150 738 150"],
   // Prometheus scraping, the data flowing into it. The Pi's node_exporter
   // (with the phone bridge's, RustDesk's and backups' numbers) is drawn
   // from the phone bridge; two routes run down the gap beside the Pi.
-  ["traefik", "prometheus"],
-  ["api", "prometheus", "M968 316 C1026 316 1026 590 968 590"],
-  ["adguard", "prometheus", "M458 302 C530 302 530 302 530 340 L530 600 Q530 612 545 612 L792 612"],
-  ["phone", "prometheus", "M458 544 C520 544 520 544 520 560 L520 588 Q520 600 535 600 L792 600"],
+  ["traefik", "prometheus", "chores"],
+  ["api", "prometheus", "chores", "M968 316 C1026 316 1026 590 968 590"],
+  ["adguard", "prometheus", "chores", "M458 302 C530 302 530 302 530 340 L530 600 Q530 612 545 612 L792 612"],
+  ["phone", "prometheus", "chores", "M458 544 C520 544 520 544 520 560 L520 588 Q520 600 535 600 L792 600"],
   // The nightly backup from the Pi to the Mac.
-  ["backup", "mac"],
+  ["backup", "mac", "chores"],
 ];
 
 const APPS = ["grafana", "argocd", "chat", "kiwix"];
@@ -114,7 +126,7 @@ function buildMap() {
     if (z.nodes) nodeLabel = el("text", { x: z.x + z.w - 14, y: z.y + 24, "text-anchor": "end", "font-size": 14, fill: "#888780" });
   }
   const lines = el("g", { fill: "none", "stroke-width": 2.5, stroke: "#2C2C2A" });
-  for (const [from, to, custom] of EDGES) {
+  for (const [from, to, kind, custom] of EDGES) {
     let d = custom;
     if (!d) {
       const [x1, y1, x2, y2] = anchor(from, to);
@@ -128,7 +140,7 @@ function buildMap() {
       const p = path.getPointAtLength((len * k) / (n - 1));
       pts[k * 2] = p.x; pts[k * 2 + 1] = p.y;
     }
-    edges.push({ id: `${from}-${to}`, len, pts, n, color: BOXES[to][4], carry: 0 });
+    edges.push({ id: `${from}-${to}`, len, pts, n, color: TRAFFIC[kind], carry: 0 });
   }
   for (const [id, [x, y, title, sub, color]] of Object.entries(BOXES)) {
     const g = el("g", { "data-id": id });
@@ -145,20 +157,45 @@ function buildMap() {
 }
 
 const statEls = {};
+const STAT_TEXT = "#F1EFE8";
+// When a vital turns amber, then red: [warn, bad].
+const STAT_LIMITS = {
+  piTemp: [70, 80], // °C; the Pi 5 throttles at 85
+  macTemp: [85, 95],
+  pcCpuTemp: [80, 90],
+  pcGpuTemp: [80, 87],
+  cpu: [0.8, 0.95],
+  mem: [0.85, 0.95],
+};
+function level(v, limits) {
+  if (v === null || v === undefined || !limits) return null;
+  return v >= limits[1] ? "bad" : v >= limits[0] ? "warn" : null;
+}
+// A stat as parts, each coloured on its own: "59° · 18% · 46%" with only
+// the part that's too high in amber or red.
+function setParts(textEl, parts) {
+  textEl.replaceChildren();
+  parts.forEach(([text, lvl], i) => {
+    if (i) el("tspan", { fill: "#5F5E5A" }, textEl).textContent = "  ·  ";
+    el("tspan", { fill: lvl ? COLOR[lvl] : STAT_TEXT }, textEl).textContent = text;
+  });
+}
 function buildStats() {
   // Each machine is one cell (temp · CPU · memory): seven separate cells
   // per machine wouldn't fit across 1280.
-  const items = [["dns", "DNS", "#5DCAA5"], ["blocked", "Blocked today", "#F0997B"], ["pods", "Pods", "#AFA9EC"],
-    ["api", "API", "#AFA9EC"], ["pi", "Pi  temp · CPU · mem", "#EF9F27"], ["mac", "Mac  temp · CPU · mem", "#85B7EB"],
-    ["pc", "PC  CPU° · GPU° · CPU · mem", "#D85A30"]];
+  // The label says where (its zone's colour); the number is plain white
+  // unless it's past a threshold (STAT_LIMITS), then amber or red.
+  const items = [["dns", "DNS", ZONE_TEXT.pi], ["blocked", "Blocked today", ZONE_TEXT.pi], ["pods", "Pods", ZONE_TEXT.cluster],
+    ["api", "API", ZONE_TEXT.cluster], ["pi", "Pi  temp · CPU · mem", ZONE_TEXT.pi], ["mac", "Mac  temp · CPU · mem", ZONE_TEXT.outside],
+    ["pc", "PC  CPU° · GPU° · CPU · mem", ZONE_TEXT.pc]];
   // A machine's cell is ~150-200 wide in practice ("57° · 25% · 47%"; the PC's,
   // with its GPU, "55° · 44° · 4% · 38%"); the PC's ends well inside 1280.
   const xs = [30, 160, 300, 390, 520, 765, 1000];
   items.forEach(([id, label, color], i) => {
     const x = xs[i];
     // Right under the top bar, outside the map's group.
-    el("text", { x, y: 78, fill: "#888780", "font-size": 13 }, svg).textContent = label;
-    statEls[id] = el("text", { x, y: 101, fill: color, "font-size": 21, "font-weight": 600 }, svg);
+    el("text", { x, y: 78, fill: color, "font-size": 13 }, svg).textContent = label;
+    statEls[id] = el("text", { x, y: 101, fill: STAT_TEXT, "font-size": 21, "font-weight": 600 }, svg);
     statEls[id].textContent = "-";
   });
 }
@@ -185,13 +222,16 @@ function renderMap() {
   const fmt = (v, f) => (v === null || v === undefined ? "-" : f(v));
   statEls.dns.textContent = fmt(st.dns_per_min, (v) => `${Math.round(v)}/min`);
   statEls.blocked.textContent = fmt(st.blocked_pct, (v) => `${Math.round(v)}%`);
-  statEls.pods.textContent = `${st.pods_ready}/${st.pods_total}`;
+  setParts(statEls.pods, [[`${st.pods_ready}/${st.pods_total}`, st.pods_ready < st.pods_total ? "warn" : null]]);
   statEls.api.textContent = fmt(st.api_rps, (v) => `${v < 10 ? v.toFixed(1) : Math.round(v)} req/s`);
   const deg = (v) => fmt(v, (x) => `${Math.round(x)}°`), pct = (v) => fmt(v, (x) => `${Math.round(x * 100)}%`);
-  const host = (...parts) => parts.join("  ·  ");
-  statEls.pi.textContent = host(deg(st.pi_temp_c), pct(st.pi_cpu), pct(st.pi_mem));
-  statEls.mac.textContent = host(deg(st.mac_temp_c), pct(st.mac_cpu), pct(st.mac_mem));
-  statEls.pc.textContent = host(deg(st.pc_temp_c), deg(st.pc_gpu_temp_c), pct(st.pc_cpu), pct(st.pc_mem));
+  const L = STAT_LIMITS;
+  setParts(statEls.pi, [[deg(st.pi_temp_c), level(st.pi_temp_c, L.piTemp)], [pct(st.pi_cpu), level(st.pi_cpu, L.cpu)],
+    [pct(st.pi_mem), level(st.pi_mem, L.mem)]]);
+  setParts(statEls.mac, [[deg(st.mac_temp_c), level(st.mac_temp_c, L.macTemp)], [pct(st.mac_cpu), level(st.mac_cpu, L.cpu)],
+    [pct(st.mac_mem), level(st.mac_mem, L.mem)]]);
+  setParts(statEls.pc, [[deg(st.pc_temp_c), level(st.pc_temp_c, L.pcCpuTemp)], [deg(st.pc_gpu_temp_c), level(st.pc_gpu_temp_c, L.pcGpuTemp)],
+    [pct(st.pc_cpu), level(st.pc_cpu, L.cpu)], [pct(st.pc_mem), level(st.pc_mem, L.mem)]]);
   const podsUp = (ns, prefix) => state.pods.filter((p) => p.namespace === ns && p.name.startsWith(prefix));
   const api = podsUp("backend", "api-");
   boxEls.api.sub.textContent = api.length ? `api.home - ${api.filter((p) => p.ready).length}/${api.length} pods` : "api.home";
@@ -230,10 +270,14 @@ function stepDots(dt) {
     e.carry += PATTERN[how] * dt;
     while (e.carry >= 1) {
       e.carry -= 1;
-      // Down: red, and stopping short. Blocked DNS too: the blocked share
-      // of the stream to the internet, turned back before it gets there.
-      const red = how === "down" || (e.id === "adguard-internet" && Math.random() < state.blocked_share);
-      dots.push({ e, t: 0, stop: red ? 0.35 : 1, r: red ? 5 : 4, color: red ? COLOR.bad : e.color });
+      // Down: red, and stopping short. Blocked DNS stops short too - the
+      // blocked share of the stream to the internet, turned back before it
+      // gets there - but grey: that's filtering working, not a fault. A
+      // quiet line's slow trickle is faint, so a busy one stands out.
+      const down = how === "down";
+      const blocked = !down && e.id === "adguard-internet" && Math.random() < state.blocked_share;
+      dots.push({ e, t: 0, stop: down || blocked ? 0.35 : 1, r: down ? 5 : 4,
+        color: down ? COLOR.bad : blocked ? BLOCKED_DOT : e.color, alpha: how === "idle" ? 0.45 : 1 });
     }
   }
   if (!dots.length && !dotsDrawn) return; // nothing moving, nothing to clear
@@ -245,7 +289,7 @@ function stepDots(dt) {
     const f = d.t * (e.n - 1), k = Math.min(Math.floor(f), e.n - 2), w = f - k;
     const x = e.pts[k * 2] + (e.pts[k * 2 + 2] - e.pts[k * 2]) * w;
     const y = e.pts[k * 2 + 1] + (e.pts[k * 2 + 3] - e.pts[k * 2 + 1]) * w + MAP_TOP;
-    dctx.globalAlpha = d.stop < 1 ? Math.min(1, (d.stop - d.t) / 0.12) : 1;
+    dctx.globalAlpha = d.alpha * (d.stop < 1 ? Math.min(1, (d.stop - d.t) / 0.12) : 1);
     dctx.fillStyle = d.color;
     dctx.beginPath(); dctx.arc(dOx + x * dScale, dOy + y * dScale, d.r * dScale, 0, 7); dctx.fill();
   }
