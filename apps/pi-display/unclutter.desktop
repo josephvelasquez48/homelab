@@ -1,0 +1,13 @@
+# Hides the mouse pointer after 3 s without moving, on everything the Pi's
+# screen shows (the display, its debug pages, the call screen, the
+# desktop); it comes back as soon as the mouse moves. A page can't do this
+# itself: Chromium on X11 only redraws the pointer on the next mouse event,
+# so a page switching to cursor: none left it on screen until then.
+# --hide-on-touch: a tap on the touchscreen doesn't bring it back.
+# install.sh copies this to ~/.config/autostart.
+[Desktop Entry]
+Type=Application
+Name=Hide idle mouse pointer
+Exec=unclutter --timeout 3 --hide-on-touch --start-hidden
+NoDisplay=true
+X-GNOME-Autostart-enabled=true
