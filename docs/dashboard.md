@@ -79,6 +79,15 @@ bottom ticker cycles alerts, down nodes, Argo CD, backups and AdGuard.
 
 No data shows as grey, never green.
 
+**Colours:** green, amber and red mean health and nothing else - a status
+light, a down box, a vital past its threshold. Everything else takes its
+zone's colour, saying where it runs: teal for the Pi's host, purple for the
+cluster, blue for the Windows PC, grey for what's outside. The stats row's
+labels are in their zone's colour and its numbers plain white, each part
+turning amber or red on its own past its threshold (`STAT_LIMITS` in
+`display.js`: e.g. the Pi's temperature at 70 and 80 °C, CPU at 80 and 95%,
+memory at 85 and 95%, pods when not all are ready).
+
 **On the Pi:** `apps/pi-display/install.sh` adds the homelab CA to
 Chromium's certificate store (name-constrained to `.home`) and installs
 `pi-display.service`, a user unit that keeps Chromium in kiosk mode on

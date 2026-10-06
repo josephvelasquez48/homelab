@@ -6,36 +6,42 @@
 
 const POLL_MS = 5000;
 const SVG_NS = "http://www.w3.org/2000/svg";
+// Green, amber and red mean health and nothing else. Everything else on
+// the map takes its zone's colour (ZONE): where a thing runs, not how it is.
 const COLOR = { ok: "#97C459", warn: "#EF9F27", bad: "#E24B4A", unknown: "#5F5E5A" };
+const ZONE = { pi: "#1D9E75", cluster: "#534AB7", pc: "#378ADD", outside: "#888780", internet: "#444441" };
+// Light versions of the zone colours, for text on the dark background.
+const ZONE_TEXT = { pi: "#5DCAA5", cluster: "#AFA9EC", pc: "#85B7EB", outside: "#B4B2A9" };
 const STATUS_COLOR = { up: COLOR.ok, down: COLOR.bad, unknown: COLOR.unknown };
 
 // ---- Map layout (1280 x 720 viewBox, the Pi's screen) ----
 
 const ZONES = [
-  { x: 225, y: 110, w: 290, h: 520, label: "Raspberry Pi 5 - host", color: "#1D9E75" },
-  { x: 545, y: 212, w: 460, h: 418, label: "K3s cluster", color: "#534AB7", nodes: true },
-  { x: 1035, y: 212, w: 225, h: 418, label: "Windows PC", color: "#D85A30" },
+  { x: 225, y: 110, w: 290, h: 520, label: "Raspberry Pi 5 - host", color: ZONE.pi },
+  { x: 545, y: 212, w: 460, h: 418, label: "K3s cluster", color: ZONE.cluster, nodes: true },
+  // Blue, not the orange it was: orange read as a warning.
+  { x: 1035, y: 212, w: 225, h: 418, label: "Windows PC", color: ZONE.pc },
 ];
 
 // id: [x, y, title, subtitle, category color]
 const BOXES = {
-  lan: [120, 350, "Home network", "PCs, phones, TVs", "#888780"],
-  iphone: [120, 530, "iPhone", "Bluetooth", "#888780"],
-  mac: [120, 600, "Mac", "backups, m1-node", "#888780"],
-  coredns: [370, 170, "CoreDNS", "*.home", "#1D9E75"],
-  adguard: [370, 290, "AdGuard", "filtering", "#1D9E75"],
-  rustdesk: [370, 410, "RustDesk", "ID + relay", "#1D9E75"],
-  phone: [370, 530, "Phone bridge", "calls + music", "#1D9E75"],
-  backup: [370, 600, "Backup", "nightly, encrypted", "#1D9E75"],
-  internet: [650, 150, "Internet", "upstream DNS", "#444441"],
-  traefik: [650, 350, "Traefik", "HTTPS ingress", "#534AB7"],
-  apps: [650, 450, "Apps", "Grafana, Argo CD, chat", "#534AB7"],
-  api: [880, 300, "FastAPI", "api.home", "#534AB7"],
-  postgres: [880, 400, "Postgres", "pgvector", "#BA7517"],
-  redis: [880, 480, "Redis", "job queue", "#BA7517"],
-  prometheus: [880, 590, "Prometheus", "metrics", "#534AB7"],
-  ollama: [1145, 300, "Ollama", "GPU inference", "#D85A30"],
-  phone_pc: [1145, 530, "Phone app", "calls, music", "#D85A30"],
+  lan: [120, 350, "Home network", "PCs, phones, TVs", ZONE.outside],
+  iphone: [120, 530, "iPhone", "Bluetooth", ZONE.outside],
+  mac: [120, 600, "Mac", "backups, m1-node", ZONE.outside],
+  coredns: [370, 170, "CoreDNS", "*.home", ZONE.pi],
+  adguard: [370, 290, "AdGuard", "filtering", ZONE.pi],
+  rustdesk: [370, 410, "RustDesk", "ID + relay", ZONE.pi],
+  phone: [370, 530, "Phone bridge", "calls + music", ZONE.pi],
+  backup: [370, 600, "Backup", "nightly, encrypted", ZONE.pi],
+  internet: [650, 150, "Internet", "upstream DNS", ZONE.internet],
+  traefik: [650, 350, "Traefik", "HTTPS ingress", ZONE.cluster],
+  apps: [650, 450, "Apps", "Grafana, Argo CD, chat", ZONE.cluster],
+  api: [880, 300, "FastAPI", "api.home", ZONE.cluster],
+  postgres: [880, 400, "Postgres", "pgvector", ZONE.cluster],
+  redis: [880, 480, "Redis", "job queue", ZONE.cluster],
+  prometheus: [880, 590, "Prometheus", "metrics", ZONE.cluster],
+  ollama: [1145, 300, "Ollama", "GPU inference", ZONE.pc],
+  phone_pc: [1145, 530, "Phone app", "calls, music", ZONE.pc],
 };
 const BOX_W = 176, BOX_H = 56;
 
@@ -145,20 +151,45 @@ function buildMap() {
 }
 
 const statEls = {};
+const STAT_TEXT = "#F1EFE8";
+// When a vital turns amber, then red: [warn, bad].
+const STAT_LIMITS = {
+  piTemp: [70, 80], // °C; the Pi 5 throttles at 85
+  macTemp: [85, 95],
+  pcCpuTemp: [80, 90],
+  pcGpuTemp: [80, 87],
+  cpu: [0.8, 0.95],
+  mem: [0.85, 0.95],
+};
+function level(v, limits) {
+  if (v === null || v === undefined || !limits) return null;
+  return v >= limits[1] ? "bad" : v >= limits[0] ? "warn" : null;
+}
+// A stat as parts, each coloured on its own: "59° · 18% · 46%" with only
+// the part that's too high in amber or red.
+function setParts(textEl, parts) {
+  textEl.replaceChildren();
+  parts.forEach(([text, lvl], i) => {
+    if (i) el("tspan", { fill: "#5F5E5A" }, textEl).textContent = "  ·  ";
+    el("tspan", { fill: lvl ? COLOR[lvl] : STAT_TEXT }, textEl).textContent = text;
+  });
+}
 function buildStats() {
   // Each machine is one cell (temp · CPU · memory): seven separate cells
   // per machine wouldn't fit across 1280.
-  const items = [["dns", "DNS", "#5DCAA5"], ["blocked", "Blocked today", "#F0997B"], ["pods", "Pods", "#AFA9EC"],
-    ["api", "API", "#AFA9EC"], ["pi", "Pi  temp · CPU · mem", "#EF9F27"], ["mac", "Mac  temp · CPU · mem", "#85B7EB"],
-    ["pc", "PC  CPU° · GPU° · CPU · mem", "#D85A30"]];
+  // The label says where (its zone's colour); the number is plain white
+  // unless it's past a threshold (STAT_LIMITS), then amber or red.
+  const items = [["dns", "DNS", ZONE_TEXT.pi], ["blocked", "Blocked today", ZONE_TEXT.pi], ["pods", "Pods", ZONE_TEXT.cluster],
+    ["api", "API", ZONE_TEXT.cluster], ["pi", "Pi  temp · CPU · mem", ZONE_TEXT.pi], ["mac", "Mac  temp · CPU · mem", ZONE_TEXT.outside],
+    ["pc", "PC  CPU° · GPU° · CPU · mem", ZONE_TEXT.pc]];
   // A machine's cell is ~150-200 wide in practice ("57° · 25% · 47%"; the PC's,
   // with its GPU, "55° · 44° · 4% · 38%"); the PC's ends well inside 1280.
   const xs = [30, 160, 300, 390, 520, 765, 1000];
   items.forEach(([id, label, color], i) => {
     const x = xs[i];
     // Right under the top bar, outside the map's group.
-    el("text", { x, y: 78, fill: "#888780", "font-size": 13 }, svg).textContent = label;
-    statEls[id] = el("text", { x, y: 101, fill: color, "font-size": 21, "font-weight": 600 }, svg);
+    el("text", { x, y: 78, fill: color, "font-size": 13 }, svg).textContent = label;
+    statEls[id] = el("text", { x, y: 101, fill: STAT_TEXT, "font-size": 21, "font-weight": 600 }, svg);
     statEls[id].textContent = "-";
   });
 }
@@ -185,13 +216,16 @@ function renderMap() {
   const fmt = (v, f) => (v === null || v === undefined ? "-" : f(v));
   statEls.dns.textContent = fmt(st.dns_per_min, (v) => `${Math.round(v)}/min`);
   statEls.blocked.textContent = fmt(st.blocked_pct, (v) => `${Math.round(v)}%`);
-  statEls.pods.textContent = `${st.pods_ready}/${st.pods_total}`;
+  setParts(statEls.pods, [[`${st.pods_ready}/${st.pods_total}`, st.pods_ready < st.pods_total ? "warn" : null]]);
   statEls.api.textContent = fmt(st.api_rps, (v) => `${v < 10 ? v.toFixed(1) : Math.round(v)} req/s`);
   const deg = (v) => fmt(v, (x) => `${Math.round(x)}°`), pct = (v) => fmt(v, (x) => `${Math.round(x * 100)}%`);
-  const host = (...parts) => parts.join("  ·  ");
-  statEls.pi.textContent = host(deg(st.pi_temp_c), pct(st.pi_cpu), pct(st.pi_mem));
-  statEls.mac.textContent = host(deg(st.mac_temp_c), pct(st.mac_cpu), pct(st.mac_mem));
-  statEls.pc.textContent = host(deg(st.pc_temp_c), deg(st.pc_gpu_temp_c), pct(st.pc_cpu), pct(st.pc_mem));
+  const L = STAT_LIMITS;
+  setParts(statEls.pi, [[deg(st.pi_temp_c), level(st.pi_temp_c, L.piTemp)], [pct(st.pi_cpu), level(st.pi_cpu, L.cpu)],
+    [pct(st.pi_mem), level(st.pi_mem, L.mem)]]);
+  setParts(statEls.mac, [[deg(st.mac_temp_c), level(st.mac_temp_c, L.macTemp)], [pct(st.mac_cpu), level(st.mac_cpu, L.cpu)],
+    [pct(st.mac_mem), level(st.mac_mem, L.mem)]]);
+  setParts(statEls.pc, [[deg(st.pc_temp_c), level(st.pc_temp_c, L.pcCpuTemp)], [deg(st.pc_gpu_temp_c), level(st.pc_gpu_temp_c, L.pcGpuTemp)],
+    [pct(st.pc_cpu), level(st.pc_cpu, L.cpu)], [pct(st.pc_mem), level(st.pc_mem, L.mem)]]);
   const podsUp = (ns, prefix) => state.pods.filter((p) => p.namespace === ns && p.name.startsWith(prefix));
   const api = podsUp("backend", "api-");
   boxEls.api.sub.textContent = api.length ? `api.home - ${api.filter((p) => p.ready).length}/${api.length} pods` : "api.home";
