@@ -24,6 +24,14 @@ certutil -d "sql:$HOME/.pki/nssdb" -A -t "C,," -n "homelab-ca" -i "$CA"
 mkdir -p "$HOME/.config/systemd/user" "$HOME/.config/autostart"
 cp "$APP_DIR/pi-display.service" "$HOME/.config/systemd/user/"
 cp "$APP_DIR/pi-display.desktop" "$HOME/.config/autostart/"
+# Hide the mouse pointer after 3 s idle, everywhere on the Pi's screen
+# (unclutter.desktop says why the page can't). Started now too if the
+# desktop is up and it isn't running yet.
+dpkg -s unclutter-xfixes >/dev/null 2>&1 || sudo apt-get install -y unclutter-xfixes
+cp "$APP_DIR/unclutter.desktop" "$HOME/.config/autostart/"
+if [[ -S /tmp/.X11-unix/X0 ]] && ! pgrep -u "$USER" -x unclutter >/dev/null; then
+  DISPLAY=:0 XAUTHORITY="$HOME/.Xauthority" setsid unclutter --timeout 3 --hide-on-touch --start-hidden >/dev/null 2>&1 < /dev/null &
+fi
 systemctl --user daemon-reload
 
 # The display's Desktop button follows a homelab-desktop:// link. Make

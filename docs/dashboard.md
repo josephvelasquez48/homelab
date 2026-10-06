@@ -103,6 +103,13 @@ Chromium's certificate store (name-constrained to `.home`) and installs
 the page. An autostart entry starts it at desktop login. A call's screen
 (`apps/phone/screen`) opens on top and closes back to it.
 
+**The mouse pointer** hides after 3 s without moving, on everything the
+Pi's screen shows: `unclutter-xfixes`, autostarted by `install.sh`
+(`apps/pi-display/unclutter.desktop`). The page used to hide it itself, but
+Chromium on X11 only redraws the pointer on the next mouse event, so it
+stayed on screen. To take it out: `sudo apt-get remove unclutter-xfixes` and
+delete `~/.config/autostart/unclutter.desktop`.
+
 **Getting to the desktop:** the **Desktop** button in the bottom bar asks
 first, then closes the display so the Pi's desktop shows; **Homelab
 display** on the desktop (or in the menu) brings it back. A page can't stop
