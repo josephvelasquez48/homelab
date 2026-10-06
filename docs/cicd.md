@@ -60,6 +60,7 @@ app PR.
 | `permission_denied: write_package` on the first push | The ghcr.io package was first pushed by hand, so it wasn't linked to this repo | Gave the repo write access in the package settings |
 | `kubectl` failed on the self-hosted runner | Its service doesn't read the user's `.zshenv`, so `KUBECONFIG` was unset | Set explicitly in the job (the runner is no longer used for deploys) |
 | One of two deploy jobs failed with `rejected (fetch first)` | Two workflows triggered by one push both committed to `main`; the second push was behind | A shared `concurrency: git-deploy-main` group, plus `git pull --rebase` before pushing. Both are needed: concurrency orders the jobs, the rebase refreshes a checkout pinned to an older commit |
+| The second of two merges of the same app never deployed (`could not apply ... Deploy`) | Both runs built in parallel; the second rebased its image-tag line onto the first's change to the same line and conflicted (cam, 2026-10-03; dashboard, 2026-10-05) | Every deploy job checks out `main` as it is now (`ref: main`), not the triggering commit, and skips itself when a newer commit for the same app is already on `main` - that one's run deploys the newer image, and pushing the older one after it would roll back |
 
 **`gh run rerun --failed` doesn't fix the race:** a rerun checks out the
 original commit again, so it fails the same way.

@@ -83,10 +83,26 @@ jobs:
       # The deploy key, not GITHUB_TOKEN: it's the bypass on main's
       # ruleset (terraform/github/ruleset.tf), which a personal repo
       # can't grant to GitHub Actions itself. See docs/cicd.md.
+      #
+      # Main as it is now, not the commit that triggered this run: two
+      # merges close together build in parallel, and the second deploy
+      # rebased its image line onto the first's and conflicted (the cam's
+      # 2026-10-03, then the dashboard's 2026-10-05, #153 and #154).
       - uses: actions/checkout@v6
         with:
           ssh-key: ${{ secrets.DEPLOY_KEY }}
-      - run: |
+          ref: main
+          fetch-depth: 0
+      # A newer commit for this app on main has its own run, which deploys
+      # a newer image; pushing this one after it would roll the app back.
+      - id: newer
+        run: |
+          newer=$(git log --format=%h --invert-grep --grep='\[skip ci\]' "$GITHUB_SHA..HEAD" -- \
+            apps/dashboard kubernetes/dashboard .github/workflows/ci-dashboard.yml)
+          if [ -n "$newer" ]; then echo "newer commits on main ($newer) - their run deploys"; fi
+          echo "skip=$([ -n "$newer" ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+      - if: steps.newer.outputs.skip == 'false'
+        run: |
           sed -i "s#image: ${{ env.IMAGE }}:.*#image: ${{ env.IMAGE }}:${{ needs.build-and-push.outputs.tag }}#" \
             kubernetes/dashboard/dashboard.yaml
           git config user.name "github-actions[bot]"
