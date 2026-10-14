@@ -28,7 +28,10 @@
   <main>
     <header class="top">
       <div class="brand"><span class="brand-icon"><svg><use href="#i-phone"/></svg></span><span id="brand-name">Phone</span></div>
-      <form method="post" action="/logout"><button class="ghost small" type="submit">Log out</button></form>
+      <div class="top-actions">
+        <button class="ghost small" type="button" id="signin-code" title="Show a 6-digit code another device can sign in with">Sign in a device</button>
+        <form method="post" action="/logout"><button class="ghost small" type="submit">Log out</button></form>
+      </div>
     </header>
 
     <nav class="tabs" id="tabs" role="tablist">

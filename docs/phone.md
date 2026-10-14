@@ -90,6 +90,13 @@ to `/api/agent/screen-show` on loopback with the agent token.
 call) or grey. Ctrl+Alt+A answers, Ctrl+Alt+H declines or hangs up,
 Ctrl+Alt+M mutes. The X hides the window; *Quit* in the tray stops the app.
 
+**Signing in another device without the password:** *Sign in a device*
+(next to *Log out*) shows a 6-digit code; type it into *Or a 6-digit code*
+on the other device's login page. A code works once, for 2 minutes, and a
+new one replaces the old; 5 wrong guesses burn it. Made for the Quest's
+call panel (Quest Mirror, a separate project), where the password is a
+chore to type; the sign-in then lasts like any other (30 days, renewed on use).
+
 ## Drop: text and photos between the iPhone and the PC
 
 **On the iPhone it's a different app:** **Status** and **Drop** only, as

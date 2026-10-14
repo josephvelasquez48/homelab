@@ -20,9 +20,20 @@
       <div class="error" id="error"></div>
       <div class="row"><button class="primary" type="submit">Log in</button></div>
     </form>
+    <!-- For devices where the password is a chore to type: a signed-in page's
+         "Sign in a device" shows a 6-digit code that works once, for 2 minutes. -->
+    <form class="card" method="post" action="/login/code">
+      <input type="text" name="code" placeholder="Or a 6-digit code" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" autocomplete="one-time-code" required>
+      <div class="hint">Get one from "Sign in a device" on a page that's signed in.</div>
+      <div class="error" id="code-error"></div>
+      <div class="row"><button class="primary" type="submit">Use code</button></div>
+    </form>
   </main>
   <script>
-    if (new URLSearchParams(location.search).has("failed")) {
+    const failed = new URLSearchParams(location.search).get("failed");
+    if (failed === "code") {
+      document.getElementById("code-error").textContent = "That code didn't work. Codes last 2 minutes and work once.";
+    } else if (failed !== null) {
       document.getElementById("error").textContent = "Wrong password.";
     }
   </script>
