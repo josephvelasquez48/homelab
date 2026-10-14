@@ -11,6 +11,7 @@ import json
 import logging
 import os
 import secrets
+import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -385,6 +386,44 @@ async def login(request: Request, password: str = Form("")):
     if not check_password(password):
         await asyncio.sleep(1)  # blunt brute-forcing from the LAN
         return RedirectResponse("/?failed=1", status_code=303)
+    request.session["authenticated"] = True
+    return RedirectResponse("/", status_code=303)
+
+
+# Sign-in codes: a signed-in page asks for a short code, and a device where the
+# password is a chore to type (the Quest's call panel) signs in with it instead.
+# One code at a time, single use, 2 minutes, and burnt after 5 wrong guesses,
+# so guessing a 6-digit code isn't practical even with the 1 s delay alone.
+SIGNIN_CODE_TTL = 120
+SIGNIN_CODE_MAX_FAILURES = 5
+_signin_code: dict | None = None  # {"code": str, "expires": float, "failures": int}
+
+
+@app.post("/api/signin-code", dependencies=[Depends(require_page)])
+async def new_signin_code():
+    global _signin_code
+    code = f"{secrets.randbelow(10**6):06d}"
+    _signin_code = {"code": code, "expires": time.monotonic() + SIGNIN_CODE_TTL, "failures": 0}
+    return {"code": code, "expires_in": SIGNIN_CODE_TTL}
+
+
+@app.post("/login/code")
+async def login_with_code(request: Request, code: str = Form("")):
+    global _signin_code
+    current = _signin_code
+    valid = (
+        current is not None
+        and time.monotonic() < current["expires"]
+        and secrets.compare_digest(code.strip().encode(), current["code"].encode())
+    )
+    if not valid:
+        if current is not None:
+            current["failures"] += 1
+            if current["failures"] >= SIGNIN_CODE_MAX_FAILURES or time.monotonic() >= current["expires"]:
+                _signin_code = None
+        await asyncio.sleep(1)  # blunt guessing from the LAN
+        return RedirectResponse("/?failed=code", status_code=303)
+    _signin_code = None  # single use
     request.session["authenticated"] = True
     return RedirectResponse("/", status_code=303)
 

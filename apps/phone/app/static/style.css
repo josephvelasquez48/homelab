@@ -329,3 +329,10 @@ body.popup .tabs, body.touch .tabs { display: none !important; }
 
 /* The PC's call popup: its way to the full app. */
 .to-app-row { justify-content: center; margin: -2px 0 8px; } /* right under the call card, above the audio settings (order 1) */
+
+/* Header: Sign in a device + Log out */
+.top-actions { display: flex; align-items: center; gap: 8px; }
+.top-actions form { margin: 0; }
+#signin-code.showing { color: var(--text); font-variant-numeric: tabular-nums; letter-spacing: 0.04em; }
+/* Login page: the code form's explanation */
+.card > .hint { font-size: 12.5px; color: var(--muted); margin: 6px 2px 0; }

@@ -1369,3 +1369,40 @@ $("st-display").onchange = async (e) => {
   }
 };
 if (currentTab === "status") loadStatus();
+
+// "Sign in a device": shows a 6-digit code another device (the Quest's call
+// panel, a new phone) can sign in with on the login page. The code works
+// once, for 2 minutes; asking again replaces it.
+{
+  const button = $("signin-code");
+  let timer = null;
+  const reset = () => {
+    clearInterval(timer);
+    timer = null;
+    button.textContent = "Sign in a device";
+    button.classList.remove("showing");
+  };
+  button.addEventListener("click", async () => {
+    let data;
+    try {
+      const r = await fetch("/api/signin-code", { method: "POST" });
+      if (!r.ok) throw new Error(r.status);
+      data = await r.json();
+    } catch {
+      button.textContent = "No code - try again";
+      setTimeout(reset, 3000);
+      return;
+    }
+    const code = `${data.code.slice(0, 3)} ${data.code.slice(3)}`;
+    const ends = Date.now() + data.expires_in * 1000;
+    const tick = () => {
+      const left = Math.round((ends - Date.now()) / 1000);
+      if (left <= 0) return reset();
+      button.textContent = `Code ${code} · ${Math.floor(left / 60)}:${String(left % 60).padStart(2, "0")}`;
+    };
+    clearInterval(timer);
+    button.classList.add("showing");
+    tick();
+    timer = setInterval(tick, 1000);
+  });
+}
