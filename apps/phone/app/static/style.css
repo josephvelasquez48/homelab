@@ -326,3 +326,6 @@ body.popup .tabs, body.touch .tabs { display: none !important; }
 .st-services div { display: flex; align-items: center; gap: 8px; font-size: 14px; }
 .st-alerts li, .st-events li { display: flex; gap: 10px; align-items: baseline; font-size: 14px; }
 .st-alerts li { color: var(--bad); }
+
+/* The PC's call popup: its way to the full app. */
+.to-app-row { justify-content: center; margin: -2px 0 8px; } /* right under the call card, above the audio settings (order 1) */

@@ -177,6 +177,21 @@ def corner(width: int = WIDTH, height: int = HEIGHT) -> tuple[int, int]:
         return 100, 100
 
 
+class PageApi:
+    """What the page in the agent's window may ask of the agent, as
+    window.pywebview.api (pywebview's js_api). Only the Pi's pages load in
+    that window. The agent is held privately: pywebview hands a page every
+    public attribute too, and the page needs expand(), not the agent."""
+
+    def __init__(self):
+        self._agent: "Agent | None" = None  # set once the agent exists
+
+    def expand(self) -> bool:
+        if self._agent:
+            self._agent.expand_to_app()
+        return bool(self._agent)
+
+
 class Agent:
     def __init__(self, pi: Pi, window: webview.Window):
         self.pi = pi
@@ -198,6 +213,7 @@ class Agent:
         # None until the first poll, so a call missed before the agent
         # started isn't announced.
         self._seen_missed: int | None = None
+        self._call_path: str | None = None  # the call the last poll saw
         # Drop (drop.py): on its own thread, so saving a big file never
         # holds up the call check.
         self.drops = DropReceiver(pi, self.tray.notify)
@@ -334,6 +350,16 @@ class Agent:
         self.window.show()
         self.window.restore()
 
+    def expand_to_app(self) -> None:
+        """The call popup's Full app button: the same page grows into the app
+        window. Nothing reloads, so a call's audio in this window carries on
+        (open_app would have to reload it)."""
+        self.showing, self.mode = True, "app"
+        self.call_seen = self._call_path  # this call needn't bring it forward again
+        self.window.on_top = False
+        self.window.resize(APP_WIDTH, APP_HEIGHT)
+        self.window.move(*corner(APP_WIDTH, APP_HEIGHT))
+
     def hide(self) -> None:
         self.set_ringing(False)
         self.showing = False
@@ -422,6 +448,7 @@ class Agent:
         self._drop_thread.start()
 
     def apply(self, status: dict) -> None:
+        self._call_path = (status.get("call") or {}).get("path")
         self.update_tray(status)
         self.notify_new(status)
         self.check_drops(status)
@@ -632,6 +659,7 @@ def main() -> None:
     taskbar.set_process_app_id()
     pi = Pi(config)
     x, y = corner()
+    page_api = PageApi()
     window = webview.create_window(
         "Phone",
         url="about:blank",
@@ -642,8 +670,10 @@ def main() -> None:
         on_top=True,
         hidden=True,
         background_color="#111317",
+        js_api=page_api,
     )
     agent = Agent(pi, window)
+    page_api._agent = agent
     agent.listen_for_show(server)
     agent.open_on_start = "--show" in sys.argv
     agent.tray.start()
