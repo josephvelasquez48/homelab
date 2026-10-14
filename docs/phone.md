@@ -65,6 +65,12 @@ the tray. From the top:
 and Answer / Decline, nothing else. Once answered, the volume slider
 appears underneath.
 
+The pop-up has no tabs, so it has a **Full app - Settings, Drop** button
+under the call card: it turns the same page into the full app and the
+agent grows the window (`PageApi.expand` in `agent/phone_agent.pyw`).
+Nothing reloads, so the call and its audio carry on - opening the full app
+from the tray mid-call can't do that and only brings the pop-up forward.
+
 **During a call:** Mute, Keypad, End. *Move call audio to this PC* and
 *Send call audio to iPhone* move the audio either way.
 

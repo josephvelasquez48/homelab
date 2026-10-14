@@ -4,7 +4,8 @@ const $ = (id) => document.getElementById(id);
 // /popup is the compact view the desktop ring agent opens for a call:
 // just the call card. It tries to close itself once the call is over;
 // Firefox only honours that for windows a script opened.
-const POPUP = location.pathname === "/popup";
+// Not a const: the PC's popup can grow into the full app in place (expandToApp).
+let POPUP = location.pathname === "/popup";
 // ?agent=1: embedded in the desktop agent's own window - as the compact
 // call popup (/popup) or the full app (/) - which shows and hides itself,
 // so no self-closing and no browser notifications.
@@ -1065,6 +1066,24 @@ if (!POPUP && !TOUCH) {
   try { saved = localStorage.getItem("phone-tab") || "phone"; } catch {}
   setTab(TABS.includes(saved) ? saved : TABS[0]);
 }
+
+// The PC's call popup has no tabs. Its Full app button turns this same page
+// into the full app - the agent grows the window (window.pywebview.api,
+// agent/phone_agent.pyw) - without a reload, which would cut the call's
+// audio running in this page.
+$("to-app-row").hidden = !(POPUP && AGENT);
+$("to-app").onclick = async () => {
+  try {
+    if (window.pywebview && window.pywebview.api && window.pywebview.api.expand) await window.pywebview.api.expand();
+  } catch {}
+  POPUP = false;
+  document.body.classList.remove("popup", "incoming");
+  $("popup-idle").hidden = true;
+  $("to-app-row").hidden = true;
+  history.replaceState(null, "", "/?agent=1");
+  setTab("phone");
+  if (state) render(state);
+};
 
 // ---- The viewer: a text or a photo, the whole window --------------------------
 // Text you can select any part of (or Copy all); a photo fitted to the
