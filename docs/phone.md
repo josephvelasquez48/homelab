@@ -267,6 +267,7 @@ Each made a working call look broken. Found by measuring, not guessing.
 | Wouldn't reopen after *Quit* | The quit process lingered, holding that mutex | Force the exit |
 | Window froze with music playing | Not pinned down; only while media played in the agent's process | Media player moved to its own process; a watchdog restarts a frozen window and logs every thread's stack |
 | Noise filter seemed not to work | RNNoise filters one channel; the Samson can be stereo | Mix the mic to mono first |
+| Turning the PC on mid-call silenced the call | The PC coming back reconnects the iPhone, and iOS moves a call in progress to the hands-free unit that just connected - the Pi, with nothing playing it | For 10 s after the iPhone connects, a call already going (or its audio arriving) is kept on the iPhone: RejectSCO on, the audio sent back if it came. *Move call audio to this PC* still takes it |
 
 ## Setup
 

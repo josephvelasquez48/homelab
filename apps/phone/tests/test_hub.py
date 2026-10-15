@@ -491,3 +491,60 @@ async def test_metrics_written_when_the_phone_or_bluetooth_changes(monkeypatch):
     tel.state.connected = False
     await hub.tick()
     assert len(written) == 3
+
+
+@pytest.mark.asyncio
+async def test_a_call_already_going_when_the_phone_connects_stays_on_the_phone(monkeypatch):
+    import asyncio
+
+    hub, tel = make(calls=[Call("/ag1/call1", "active", "+1555", "")])
+    hub.audio_clients.append(FakeSocket())  # the PC's popup opened for it
+    sent_back = []
+
+    async def release_audio():
+        sent_back.append(True)
+        hub._phone_held = True
+
+    hub.release_audio = release_audio
+    tel.state.connected = False
+    await hub.tick()  # the PC was off: no phone
+    tel.state.connected = True
+    tel.state.transport = "pending"  # iOS moved the call's audio to the Pi as it connected
+    await hub.tick()
+    await asyncio.sleep(0)
+    assert sent_back == [True] and tel.reject_sco[-1] is True
+    # Move call audio to this PC still works.
+    await hub.command(FakeSocket(), {"action": "audio-to-pc"})
+    assert hub._phone_held is False and tel.reject_sco[-1] is False
+
+
+@pytest.mark.asyncio
+async def test_a_service_restart_mid_call_doesnt_send_the_audio_back():
+    import asyncio
+
+    hub, tel = make(transport="pending", calls=[Call("/ag1/call1", "active", "+1555", "")])
+    hub.audio_clients.append(FakeSocket())
+    hub.release_audio = None  # would fail if called
+    await hub.tick()  # first look: connected already, not "just connected"
+    await asyncio.sleep(0)
+    assert hub._phone_held is False
+
+
+@pytest.mark.asyncio
+async def test_a_call_that_rings_after_connecting_is_not_held(monkeypatch):
+    import app.hub as hub_module
+
+    hub, tel = make()
+    hub.audio_clients.append(FakeSocket())
+    tel.state.connected = False
+    await hub.tick()
+    tel.state.connected = True
+    await hub.tick()  # connected, no call
+    tel.state.calls = [Call("/ag1/call1", "incoming", "+1555", "")]
+    await hub.tick()
+    assert hub._phone_held is False  # a new call, ringing: the PC may take it
+    # And past the grace period nothing is held either.
+    hub._connected_at -= hub_module.MID_CALL_GRACE_SECONDS
+    tel.state.calls = [Call("/ag1/call1", "active", "+1555", "")]
+    await hub.tick()
+    assert hub._phone_held is False
