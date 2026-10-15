@@ -1072,9 +1072,11 @@ if (!POPUP && !TOUCH) {
 // agent/phone_agent.pyw) - without a reload, which would cut the call's
 // audio running in this page.
 $("to-app-row").hidden = !(POPUP && AGENT);
-$("to-app").onclick = async () => {
+$("to-app").onclick = () => {
+  // Not awaited: the agent grows the window on its next poll (within a
+  // second); the page doesn't wait for that to switch.
   try {
-    if (window.pywebview && window.pywebview.api && window.pywebview.api.expand) await window.pywebview.api.expand();
+    if (window.pywebview && window.pywebview.api && window.pywebview.api.expand) window.pywebview.api.expand().catch(() => {});
   } catch {}
   POPUP = false;
   document.body.classList.remove("popup", "incoming");

@@ -187,8 +187,11 @@ class PageApi:
         self._agent: "Agent | None" = None  # set once the agent exists
 
     def expand(self) -> bool:
+        # Only a note for the agent's loop. pywebview runs this on a thread
+        # of its own, and resizing the window from there hung it - laggy,
+        # and the page, waiting on this, never switched (2026-10-15).
         if self._agent:
-            self._agent.expand_to_app()
+            self._agent.expand_requested = True
         return bool(self._agent)
 
 
@@ -214,6 +217,7 @@ class Agent:
         # started isn't announced.
         self._seen_missed: int | None = None
         self._call_path: str | None = None  # the call the last poll saw
+        self.expand_requested = False  # the popup's Full app button (PageApi)
         # Drop (drop.py): on its own thread, so saving a big file never
         # holds up the call check.
         self.drops = DropReceiver(pi, self.tray.notify)
@@ -449,6 +453,9 @@ class Agent:
 
     def apply(self, status: dict) -> None:
         self._call_path = (status.get("call") or {}).get("path")
+        if self.expand_requested:  # here, where showing and hiding the window always happen
+            self.expand_requested = False
+            self.expand_to_app()
         self.update_tray(status)
         self.notify_new(status)
         self.check_drops(status)
