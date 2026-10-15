@@ -70,6 +70,9 @@ PC_ACTIONS = ("answer", "dial", "audio-to-pc", "answer-on-pc")
 # How long "answer on the PC" (from the Pi's touchscreen) waits for the PC's
 # window to take the audio before answering anyway, audio then on the iPhone.
 HANDOFF_WAIT_SECONDS = 4
+# How long after the iPhone connects a call already in progress, or its
+# audio arriving, counts as "already going" - kept on the iPhone (_tick).
+MID_CALL_GRACE_SECONDS = 10
 # How long the phone's audio link may sit on the Pi with no call before the
 # hands-free link is reset to make the phone announce its calls again.
 ORPHAN_AUDIO_SECONDS = 8
@@ -115,6 +118,11 @@ class Hub:
         self.write_metrics = write_metrics
         self._was_connected = False
         self._link_written = None  # (iPhone connected, Bluetooth on) as last written to the metrics
+        # The iPhone's link as the last tick saw it (None: not looked yet -
+        # a service start mid-call isn't the phone connecting), and when it
+        # last came up.
+        self._link_seen: bool | None = None
+        self._connected_at: float | None = None
         # Set by "send audio to the iPhone": keep refusing the audio link
         # until the call ends or the PC asks for it back.
         self._phone_held = False
@@ -266,6 +274,7 @@ class Hub:
             self._phone_held = False
             self.muted = False  # the next call starts unmuted
         self._had_calls = bool(state.calls)
+        self._keep_call_on_phone(state)
         self._check_orphan_audio(state)
 
         if self.history:
@@ -335,6 +344,38 @@ class Hub:
         with the PC off."""
         remote = any(ws not in self.local_clients for ws in self.clients)
         return remote or time.monotonic() - self._pc_seen < PC_GONE_SECONDS
+
+    def _keep_call_on_phone(self, state) -> None:
+        """A call already going when the iPhone connects stays on the iPhone.
+
+        Turning the PC on mid-call unblocks and reconnects the phone, and
+        iOS then moves the call's audio to the newly connected hands-free
+        unit - the Pi, where nothing was playing it: the call went silent
+        (2026-10-15). So for MID_CALL_GRACE_SECONDS after the phone connects,
+        an active or held call, or the call audio arriving, means a call
+        that was already going: refuse its audio, and send it back if it
+        came. Move call audio to this PC still takes it over (it clears
+        _phone_held), and calls that ring after this aren't affected.
+        """
+        now = time.monotonic()
+        if state.connected and self._link_seen is False:
+            self._connected_at = now
+        self._link_seen = state.connected
+        if (self._connected_at is None or now - self._connected_at >= MID_CALL_GRACE_SECONDS
+                or self._pc_claimed or self._phone_held):
+            return
+        if not (state.audio_on_pi or any(c.state in ("active", "held") for c in state.calls)):
+            return
+        log.info("a call was already going when the iPhone connected: keeping it on the iPhone")
+        self._phone_held = True  # RejectSCO on, from this tick
+        if state.audio_on_pi:
+            asyncio.create_task(self._send_audio_back())
+
+    async def _send_audio_back(self) -> None:
+        try:
+            await self.release_audio()
+        except TelephonyError as e:
+            log.warning("couldn't send the call's audio back to the iPhone: %s", e)
 
     def _check_orphan_audio(self, state) -> None:
         """Recover a call the Pi never heard about.
