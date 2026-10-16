@@ -67,8 +67,6 @@ jobs:
   deploy:
     needs: build-and-push
     runs-on: ubuntu-latest
-    concurrency:
-      group: git-deploy-main
     steps:
       # The deploy key, not GITHUB_TOKEN: it's the bypass on main's
       # ruleset (terraform/github/ruleset.tf), which a personal repo
@@ -99,5 +97,17 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add kubernetes/monitoring/adguard-exporter.yaml
           git diff --staged --quiet && echo "no image change" || git commit -m "Deploy adguard-exporter ${{ needs.build-and-push.outputs.tag }} [skip ci]"
-          git pull --rebase origin main
-          git push
+          # Other deploys push to main too (each workflow has one). Retry
+          # rather than queue: GitHub's concurrency group keeps only one
+          # waiting run and cancels the rest - with five deploys at once
+          # the dashboard's was cancelled and never happened (2026-10-15).
+          # Different apps change different files, so a rebase only
+          # conflicts on the same app's, and the newer-commit check above
+          # already skips an older run of the same app.
+          for attempt in 1 2 3 4 5; do
+            if git pull --rebase origin main && git push; then exit 0; fi
+            git rebase --abort 2>/dev/null || true
+            echo "push rejected (attempt $attempt) - retrying"
+            sleep $((attempt * 5))
+          done
+          exit 1
