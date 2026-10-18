@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>iPhone notifications</title>
+  <!-- The iPhone's notifications for the Pi's own screen: the third view of
+       the display (apps/dashboard, display.js) embeds this. Served only to
+       the Pi itself (main.py, is_local) - the display's Chromium maps
+       phone.home to 127.0.0.1 - so nothing on the network can read it.
+       Self-contained; it asks /api/notifications every 3 s. -->
+  <style>
+    :root { --text: #F1EFE8; --muted: #888780; --faint: #5F5E5A; --line: #2C2C2A; --accent: #ED93B1; }
+    html, body { margin: 0; height: 100%; background: transparent; color: var(--text); overflow: hidden;
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; cursor: none; }
+    main { height: 100%; box-sizing: border-box; padding: 6px 48px; display: flex; flex-direction: column; }
+    .item { display: grid; grid-template-columns: 210px 1fr; gap: 6px 26px; padding: 16px 0; border-bottom: 1px solid var(--line); }
+    .item:last-child { border-bottom: 0; }
+    .app { color: var(--accent); font-size: 19px; font-weight: 600; }
+    .when { color: var(--muted); font-size: 15px; margin-top: 4px; }
+    .title { font-size: 23px; font-weight: 650; }
+    .message { font-size: 21px; color: #D3D1C7; line-height: 1.35; white-space: pre-wrap; word-break: break-word;
+      display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+    .empty { margin: auto; text-align: center; color: var(--muted); font-size: 24px; line-height: 1.5; }
+    .empty small { display: block; font-size: 17px; color: var(--faint); }
+  </style>
+</head>
+<body>
+  <main id="list"><div class="empty">Loading…</div></main>
+  <script>
+    const SHOWN = 6;
+    const list = document.getElementById("list");
+    function el(tag, cls, text) {
+      const e = document.createElement(tag);
+      if (cls) e.className = cls;
+      if (text != null) e.textContent = text;
+      return e;
+    }
+    function ago(t) {
+      const s = Date.now() / 1000 - t;
+      if (s < 60) return "just now";
+      if (s < 3600) return `${Math.floor(s / 60)} min ago`;
+      if (s < 86400) return `${Math.floor(s / 3600)} h ago`;
+      return new Date(t * 1000).toLocaleDateString([], { month: "short", day: "numeric" });
+    }
+    function render(d) {
+      const items = (d.notifications || []).slice(0, SHOWN);
+      if (!items.length) {
+        const box = el("div", "empty", "No iPhone notifications yet");
+        box.append(el("small", null, d.active ? "Linked to the iPhone over Bluetooth" : "Waiting for the iPhone to link"));
+        list.replaceChildren(box);
+        return;
+      }
+      list.replaceChildren(...items.map((n) => {
+        const row = el("div", "item");
+        const left = el("div");
+        left.append(el("div", "app", n.app), el("div", "when", ago(n.time)));
+        const right = el("div");
+        if (n.title) right.append(el("div", "title", n.title));
+        if (n.message) right.append(el("div", "message", n.message));
+        row.append(left, right);
+        return row;
+      }));
+    }
+    async function load() {
+      try {
+        const r = await fetch("/api/notifications", { cache: "no-store" });
+        if (r.ok) render(await r.json());
+      } catch {}
+      setTimeout(load, 3000);
+    }
+    load();
+  </script>
+</body>
+</html>

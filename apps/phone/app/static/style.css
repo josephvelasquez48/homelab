@@ -279,7 +279,8 @@ body.ios #mic-warning { display: none !important; }
 body[data-tab="phone"] main > .card[data-tab],
 body[data-tab="drop"] main > .card:not([data-tab="drop"]),
 body[data-tab="settings"] main > .card:not([data-tab="settings"]),
-body[data-tab="status"] main > .card:not([data-tab="status"]) { display: none !important; }
+body[data-tab="status"] main > .card:not([data-tab="status"]),
+body[data-tab="notifications"] main > .card:not([data-tab="notifications"]) { display: none !important; }
 body:not([data-tab]) main > .card[data-tab="status"] { display: none !important; }
 body:not([data-tab]) #drop-card, body:not([data-tab]) #limits-card { display: none !important; }
 body.ios #mic-row, body.ios #filter-row, body.ios #vol-row { display: none !important; }

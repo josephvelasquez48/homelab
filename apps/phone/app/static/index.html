@@ -38,6 +38,7 @@
       <button type="button" role="tab" data-tab="status" id="tab-status" aria-selected="false" hidden>Status</button>
       <button type="button" role="tab" data-tab="phone" id="tab-phone" aria-selected="true">Phone</button>
       <button type="button" role="tab" data-tab="drop" id="tab-drop" aria-selected="false">Drop<span class="tab-dot" id="drop-dot" hidden></span></button>
+      <button type="button" role="tab" data-tab="notifications" id="tab-notifications" aria-selected="false">Notifications<span class="tab-dot" id="notify-dot" hidden></span></button>
       <button type="button" role="tab" data-tab="settings" id="tab-settings" aria-selected="false">Settings</button>
     </nav>
 
@@ -183,7 +184,7 @@
     </section>
 
     <!-- The iPhone's notifications (ancs.py), on the PC only. -->
-    <section class="card" id="notify-card">
+    <section class="card" id="notify-card" data-tab="notifications">
       <h2>iPhone notifications</h2>
       <ul class="list notify-list" id="notify-list"></ul>
       <div class="sub" id="notify-empty">None yet.</div>

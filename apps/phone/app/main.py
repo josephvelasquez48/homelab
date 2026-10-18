@@ -356,6 +356,23 @@ async def link_revoke(token: str):
     return {"ok": True}
 
 
+@app.get("/api/notifications", dependencies=[Depends(require_page)])
+async def notifications():
+    """The iPhone's latest notifications: for the Pi's screen (below), or a
+    signed-in page."""
+    return {"notifications": list(reversed(hub.notifications)), "active": bool(hub.ancs and hub.ancs.service)}
+
+
+@app.get("/screen/notifications")
+async def notifications_screen(request: Request):
+    """The Pi's display's third view embeds this. Only the Pi itself gets it:
+    its Chromium maps phone.home to 127.0.0.1 (apps/pi-display); to anything
+    else it doesn't exist."""
+    if not is_local(request.client):
+        raise HTTPException(status_code=404)
+    return FileResponse(STATIC / "notifications-screen.html", headers={"Cache-Control": "no-store"})
+
+
 @app.get("/api/agent/notifications", dependencies=[Depends(require_agent)])
 async def agent_notifications(since: float = 0):
     """The iPhone's notifications newer than the last the PC's agent showed."""

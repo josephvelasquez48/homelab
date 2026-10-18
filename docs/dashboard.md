@@ -63,6 +63,10 @@ to switch between two views:
   snow, storm; dawn, day, dusk, night) to the address to preview any of
   them.
 
+- **iPhone notifications:** the latest few, full text - a page of the
+  phone bridge, embedded, which it serves only to the Pi itself
+  (docs/phone.md); this dashboard never holds their text. Nothing animates.
+
 Tap a box or a fish for its debug page (below). The top bar has the time, weather (if
 `WEATHER_LAT`/`WEATHER_LON` are set), overall health and the iPhone; the
 bottom ticker cycles alerts, down nodes, Argo CD, backups and AdGuard.

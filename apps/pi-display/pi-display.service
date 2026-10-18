@@ -12,7 +12,11 @@ ExecStart=/usr/bin/chromium --kiosk \
     --disable-session-crashed-bubble --check-for-update-interval=31536000 \
     --overscroll-history-navigation=0 --disable-pinch \
     --disable-features=Translate,TouchpadOverscrollHistoryNavigation \
+    "--host-resolver-rules=MAP phone.home 127.0.0.1" \
     https://dashboard.home/display
+# phone.home is mapped to 127.0.0.1, as the call screen's is: the display's
+# third view embeds the phone bridge's notifications page, which it serves
+# only to the Pi itself (apps/phone, main.py).
 # A call opens its own Chromium on top (apps/phone/screen), and closing it
 # shows this again. If this one exits, bring it back.
 Restart=always

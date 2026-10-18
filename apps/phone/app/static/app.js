@@ -1036,7 +1036,7 @@ let shownDrops = [];
 const MINE = SOURCE; // drops this side sent itself don't need a dot
 
 // The iPhone has Status and Drop; the PC has Phone, Drop and Settings.
-const TABS = IOS ? ["status", "drop"] : ["phone", "drop", "settings"];
+const TABS = IOS ? ["status", "drop"] : ["phone", "drop", "notifications", "settings"];
 for (const b of document.querySelectorAll("#tabs button")) b.hidden = !TABS.includes(b.dataset.tab);
 if (IOS) $("brand-name").textContent = "Homelab"; // no calls here: it's the homelab's app
 
@@ -1045,6 +1045,7 @@ function setTab(tab) {
   document.body.dataset.tab = tab;
   for (const b of document.querySelectorAll("#tabs button")) b.setAttribute("aria-selected", String(b.dataset.tab === tab));
   if (tab === "drop") markDropsSeen();
+  if (tab === "notifications" && lastExtras) renderNotifications(lastExtras);
   if (tab === "status") loadStatus();
   try { localStorage.setItem("phone-tab", tab); } catch {}
 }
@@ -1416,10 +1417,16 @@ if (currentTab === "status") loadStatus();
 // shows each as a Windows notification. Settings switches them off, or any
 // app's.
 
-const NOTIFY_SHOWN = 8;
+const NOTIFY_SHOWN = 20;
 
 function renderNotifications(x) {
   const list = x.notifications || [];
+  // A dot on the tab for ones that came while it wasn't open.
+  const newest = list.length ? list[0].time : 0;
+  let seen = 0;
+  try { seen = Number(localStorage.getItem("notify-seen") || 0); } catch {}
+  if (currentTab === "notifications") { try { localStorage.setItem("notify-seen", String(newest)); } catch {} }
+  $("notify-dot").hidden = currentTab === "notifications" || newest <= seen;
   $("notify-empty").hidden = list.length > 0;
   $("notify-empty").textContent = x.notifyActive ? "None yet." : "Not linked to the iPhone's notifications right now.";
   $("notify-list").replaceChildren(...list.slice(0, NOTIFY_SHOWN).map((n) => {

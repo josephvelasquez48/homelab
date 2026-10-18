@@ -165,3 +165,15 @@ def test_the_pc_app_gets_new_ones_by_time(client, monkeypatch):
     got = client.get("/api/agent/notifications?since=10", headers=agent).json()["notifications"]
     assert [n["uid"] for n in got] == [2]
     assert client.get("/api/agent/notifications?since=0").status_code == 401
+
+
+def test_the_pis_notifications_screen_is_for_the_pi_only(client, monkeypatch):
+    import collections
+
+    monkeypatch.setattr(main.hub, "notifications", collections.deque([note(uid=1)], maxlen=50))
+    assert client.get("/screen/notifications").status_code == 404  # anything but the Pi itself
+    assert client.get("/api/notifications").status_code == 401
+    monkeypatch.setattr(main, "is_local", lambda c: True)  # the display's Chromium, on 127.0.0.1
+    page = client.get("/screen/notifications")
+    assert page.status_code == 200 and "/api/notifications" in page.text and page.headers["cache-control"] == "no-store"
+    assert client.get("/api/notifications").json()["notifications"][0]["title"] == "Sam"

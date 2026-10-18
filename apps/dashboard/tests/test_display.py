@@ -1,3 +1,4 @@
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -312,3 +313,10 @@ def test_prometheus_nan_reads_as_no_data():
     assert asyncio.run(display._query(answer("NaN"), "q")) is None
     assert asyncio.run(display._query(answer("+Inf"), "q")) is None
     assert asyncio.run(display._query(answer("2.5"), "q")) == 2.5
+
+
+def test_display_has_a_notifications_view_that_holds_none_of_their_text(client):
+    page = client.get("/display").text
+    assert 'id="notify-view"' in page and 'id="notify-frame"' in page
+    js = (Path(__file__).parents[1] / "app" / "static" / "display.js").read_text()
+    assert "https://phone.home:8443/screen/notifications" in js  # served by the phone bridge, to the Pi only

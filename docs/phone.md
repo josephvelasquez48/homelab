@@ -192,8 +192,13 @@ makes it). Shared text arrives as text on the PC's clipboard.
 
 The bridge reads the iPhone's notifications over Bluetooth LE through ANCS
 (Apple Notification Center Service - how a watch gets them), and the PC app
-shows each new one as a Windows notification; the Phone tab lists the latest
-(`app/ancs.py`). Settings has the on/off switch and every app seen, each
+shows each new one as a Windows notification; its **Notifications** tab lists the latest
+(`app/ancs.py`). The Pi's display shows them too, as its third view (tap
+through map, aquarium, notifications), full text: the view embeds
+`/screen/notifications`, a page of this service that only the Pi itself gets
+(the display's Chromium maps phone.home to 127.0.0.1, as the call screen's
+does), so dashboard.home - no login, open to the LAN - never holds their
+text. Settings has the on/off switch and every app seen, each
 switchable off. Calls are left out (the bridge handles those), and so is
 the backlog the iPhone resends on every reconnect. They're kept in memory
 only - their text is never written to disk, and the PC app's log records
