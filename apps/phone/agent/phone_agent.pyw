@@ -60,6 +60,7 @@ import webview
 
 import hotkeys
 import taskbar
+import toast
 from drop import DropReceiver
 from tray import AMBER, GREEN, GREY, Tray
 
@@ -225,6 +226,10 @@ class Agent:
         # notifications. None until the first poll, so the ones already
         # there when the agent starts aren't shown again.
         self._notify_since: float | None = None
+        try:
+            toast.register()  # the notifications' name and icon (toast.py)
+        except OSError as e:
+            log.warning("notifications: couldn't register with Windows: %s", e)
         self._drop_thread: threading.Thread | None = None
         window.events.loaded += self.hook_permissions
         window.events.loaded += self.sign_in
@@ -476,8 +481,9 @@ class Agent:
                 log.warning("notifications: %s", e)
                 return
             for n in shown[-3:]:  # a burst shows its latest few, not a stack of toasts
-                title = f"{n['app']}: {n['title']}" if n.get("title") else n["app"]
-                self.tray.notify(title, n.get("message") or "")
+                if not toast.show(n):  # native, with the app's icon; else the tray's plain one
+                    title = f"{n['app']}: {n['title']}" if n.get("title") else n["app"]
+                    self.tray.notify(title, n.get("message") or "")
             log.info("notifications: showed %d from the iPhone", min(len(shown), 3))
 
         threading.Thread(target=run, name="notify", daemon=True).start()
