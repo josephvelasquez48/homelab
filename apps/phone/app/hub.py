@@ -59,6 +59,8 @@ DEFAULT_SETTINGS = {
     # The iPhone's notifications on the PC (ancs.py), and apps kept off it.
     "phoneNotifications": True,
     "mutedApps": [],
+    # Clearing one on the PC clears it on the iPhone too.
+    "clearOnPhone": True,
 }
 # The limits the Settings tab can change, and how far: (lowest, highest).
 # Wide enough to be useful, narrow enough that a slip can't fill the Pi.
@@ -203,6 +205,15 @@ class Hub:
         if len(kept) != len(self.notifications):
             self.notifications = collections.deque(kept, maxlen=NOTIFICATIONS_KEPT)
             asyncio.get_running_loop().create_task(self.broadcast_extras())
+
+    async def _clear_on_phone(self, listed: list[dict]) -> None:
+        """Clear these on the iPhone too, if Settings says so and the iPhone
+        said they can be (most can; ancs.py)."""
+        if not (self.ancs and self.settings["clearOnPhone"]):
+            return
+        for n in listed:
+            if n.get("canClear"):
+                await self.ancs.clear(n["uid"])
 
     def notify_latest(self) -> float:
         return self.notifications[-1]["time"] if self.notifications else 0.0
@@ -623,11 +634,17 @@ class Hub:
                 self.apply_limits()
                 await self.broadcast_state(force=True)
             elif action == "clear-notifications":
-                # Off the PC's list and the Pi's display; the iPhone keeps its own.
+                # Off the PC's list and the Pi's display - and the iPhone's, if set.
+                await self._clear_on_phone(list(self.notifications))
                 self.notifications.clear()
                 await self.broadcast_extras()
             elif action == "dismiss-notification":
-                self.remove_notification(int(msg.get("uid", -1)))
+                uid = int(msg.get("uid", -1))
+                await self._clear_on_phone([n for n in self.notifications if n["uid"] == uid])
+                self.remove_notification(uid)
+            elif action == "set-clear-on-phone":
+                self.settings["clearOnPhone"] = bool(msg.get("value"))
+                save_settings(self.settings_path, self.settings)
             elif action == "set-phone-notifications":
                 self.settings["phoneNotifications"] = bool(msg.get("value"))
                 save_settings(self.settings_path, self.settings)
