@@ -110,11 +110,23 @@ def test_reconnect_candidates():
     objects = {
         "/org/bluez/hci0": {"org.bluez.Adapter1": {}},
         "/org/bluez/hci0/dev_phone": dev(),
-        "/org/bluez/hci0/dev_connected": dev(connected=True),
+        # Connected over Bluetooth LE only (its notifications), calls down:
+        # still a candidate - Connected doesn't say which link is up.
+        "/org/bluez/hci0/dev_le_only": dev(connected=True),
         "/org/bluez/hci0/dev_untrusted": dev(trusted=False),
         "/org/bluez/hci0/dev_headphones": dev(uuids=["0000110b-0000-1000-8000-00805f9b34fb"]),
     }
-    assert reconnect_candidates(objects) == ["/org/bluez/hci0/dev_phone"]
+    assert reconnect_candidates(objects) == ["/org/bluez/hci0/dev_le_only", "/org/bluez/hci0/dev_phone"]
+
+
+@pytest.mark.asyncio
+async def test_calls_come_back_while_only_the_le_link_is_up():
+    from app import reconnect
+
+    r = reconnect.Reconnector(lambda: False, lambda: True)  # telephony: no hands-free link
+    r._call = FakeBluezObjects(phone=dev(connected=True))  # but Device1.Connected, from the LE link
+    await r.check(now=100)
+    assert [c[1] for c in r._call.calls] == ["ConnectProfile"]
 
 
 # -- metrics ------------------------------------------------------------------------

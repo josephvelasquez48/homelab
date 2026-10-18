@@ -52,14 +52,23 @@ PC_GONE_SECONDS = 120
 
 
 def reconnect_candidates(objects: dict) -> list[str]:
-    """Paired, trusted, disconnected devices that can be our phone."""
+    """Paired, trusted devices that can be our phone.
+
+    Not filtered on the device's Connected: that's true while *any* link is
+    up, and the iPhone keeps a Bluetooth LE link to the Pi too (its
+    notifications, ancs.py). With only that one up, Connected said yes and
+    calls and music never came back (2026-10-17, ~30 min after Bluetooth went
+    off and on). Whether the hands-free link is up is the telephony state's
+    to say - check() only gets here when it's down - and asking a phone
+    that's already connected just fails harmlessly.
+    """
     found = []
     for path, ifaces in sorted(objects.items()):
         dev = ifaces.get(DEVICE_IFACE)
         if not dev:
             continue
         value = lambda k, d=None: getattr(dev.get(k), "value", d)  # noqa: E731
-        if value("Paired") and value("Trusted") and not value("Connected") and HFP_AG_UUID in (value("UUIDs") or []):
+        if value("Paired") and value("Trusted") and HFP_AG_UUID in (value("UUIDs") or []):
             found.append(path)
     return found
 
