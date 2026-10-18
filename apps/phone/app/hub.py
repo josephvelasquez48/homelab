@@ -16,6 +16,7 @@ never holds up call state. Contacts, history and the
 reconnector are optional, so tests build a Hub without any of them.
 """
 import asyncio
+import collections
 import json
 import logging
 import os
@@ -55,6 +56,9 @@ DEFAULT_SETTINGS = {
     "linkSendsPerDay": 30,
     "linkMbPerDay": 300,
     "linkMbPerSend": 100,
+    # The iPhone's notifications on the PC (ancs.py), and apps kept off it.
+    "phoneNotifications": True,
+    "mutedApps": [],
 }
 # The limits the Settings tab can change, and how far: (lowest, highest).
 # Wide enough to be useful, narrow enough that a slip can't fill the Pi.
@@ -70,6 +74,8 @@ PC_ACTIONS = ("answer", "dial", "audio-to-pc", "answer-on-pc")
 # How long "answer on the PC" (from the Pi's touchscreen) waits for the PC's
 # window to take the audio before answering anyway, audio then on the iPhone.
 HANDOFF_WAIT_SECONDS = 4
+# The iPhone's notifications kept for the pages and the PC app.
+NOTIFICATIONS_KEPT = 50
 # How long after the iPhone connects a call already in progress, or its
 # audio arriving, counts as "already going" - kept on the iPhone (_tick).
 MID_CALL_GRACE_SECONDS = 10
@@ -115,6 +121,11 @@ class Hub:
         self.drops = None  # app.drops.Drops, set in main.py with the extras
         self.links = None  # app.guests.Links (send links), likewise
         self.links_base = ""  # their public address, from main.py
+        self.ancs = None  # app.ancs.Ancs, set in main.py with the extras
+        # The iPhone's notifications (ancs.py): the latest few, in memory
+        # only - their text is private and never written to disk.
+        self.notifications: collections.deque = collections.deque(maxlen=NOTIFICATIONS_KEPT)
+        self.notify_apps: dict[str, str] = {}  # app id -> name, every app seen: Settings' mute list
         self.write_metrics = write_metrics
         self._was_connected = False
         self._link_written = None  # (iPhone connected, Bluetooth on) as last written to the metrics
@@ -172,6 +183,33 @@ class Hub:
     def name_for(self, number: str) -> str:
         return self.contacts.lookup(number) if self.contacts else ""
 
+    # ---- the iPhone's notifications (ancs.py) ----------------------------------
+
+    def add_notification(self, n: dict) -> None:
+        """A new one from the iPhone: kept (unless switched off or its app
+        muted) for the pages and the PC app, which shows it as a Windows
+        notification."""
+        self.notify_apps[n["appId"]] = n["app"]
+        if not self.settings["phoneNotifications"] or n["appId"] in self.settings["mutedApps"]:
+            asyncio.get_running_loop().create_task(self.broadcast_extras())  # a new app for the mute list
+            return
+        n = {**n, "time": max(n["time"], self.notify_latest() + 1e-6)}  # strictly increasing: the PC app goes by it
+        self.notifications.append(n)
+        asyncio.get_running_loop().create_task(self.broadcast_extras())
+
+    def remove_notification(self, uid: int) -> None:
+        """Dismissed or read on the iPhone: off the list too."""
+        kept = [n for n in self.notifications if n["uid"] != uid]
+        if len(kept) != len(self.notifications):
+            self.notifications = collections.deque(kept, maxlen=NOTIFICATIONS_KEPT)
+            asyncio.get_running_loop().create_task(self.broadcast_extras())
+
+    def notify_latest(self) -> float:
+        return self.notifications[-1]["time"] if self.notifications else 0.0
+
+    def notifications_since(self, since: float) -> list[dict]:
+        return [n for n in self.notifications if n["time"] > since]
+
     def apply_limits(self) -> None:
         """Hand the Settings tab's limits to Drop and the send links."""
         mb, s = 1024 * 1024, self.settings
@@ -214,6 +252,10 @@ class Hub:
             "contactsError": self.contacts.error if self.contacts else None,
             "drops": self.drops.recent() if self.drops else [],
             "links": [{**x, "url": f"{self.links_base}/send/{x['token']}"} for x in self.links.active()] if self.links else [],
+            "notifications": list(reversed(self.notifications)),  # newest first
+            "notifyApps": sorted(({"id": k, "name": v, "muted": k in self.settings["mutedApps"]}
+                                  for k, v in self.notify_apps.items()), key=lambda a: a["name"].lower()),
+            "notifyActive": bool(self.ancs and self.ancs.service),
         }
 
     async def broadcast_extras(self, only: WebSocket | None = None) -> None:
@@ -255,6 +297,8 @@ class Hub:
         asyncio.create_task(self.extras_loop())
         if self.reconnector:
             asyncio.create_task(self.reconnector.run())
+        if self.ancs:
+            asyncio.create_task(self.ancs.run())
         while True:
             try:
                 await self.tick()
@@ -578,6 +622,21 @@ class Hub:
                 save_settings(self.settings_path, self.settings)
                 self.apply_limits()
                 await self.broadcast_state(force=True)
+            elif action == "set-phone-notifications":
+                self.settings["phoneNotifications"] = bool(msg.get("value"))
+                save_settings(self.settings_path, self.settings)
+                await self.broadcast_extras()
+            elif action == "set-app-muted":
+                app = str(msg.get("app", ""))[:200]
+                muted = [a for a in self.settings["mutedApps"] if a != app]
+                if msg.get("value") and app:
+                    muted.append(app)
+                    # Off the list too: muting is for not seeing it.
+                    self.notifications = collections.deque(
+                        (n for n in self.notifications if n["appId"] != app), maxlen=NOTIFICATIONS_KEPT)
+                self.settings["mutedApps"] = muted
+                save_settings(self.settings_path, self.settings)
+                await self.broadcast_extras()
             elif action == "set-media-on-pc":
                 self.settings["mediaOnPc"] = bool(msg.get("value"))
                 save_settings(self.settings_path, self.settings)

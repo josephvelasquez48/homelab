@@ -188,6 +188,33 @@ The drop token can only make drops - it opens nothing else. Read it on the
 Pi with `grep PHONE_DROP_TOKEN ~/.config/phone-bridge/env` (install.sh
 makes it). Shared text arrives as text on the PC's clipboard.
 
+## The iPhone's notifications on the PC
+
+The bridge reads the iPhone's notifications over Bluetooth LE through ANCS
+(Apple Notification Center Service - how a watch gets them), and the PC app
+shows each new one as a Windows notification; its **Notifications** tab lists the latest
+(`app/ancs.py`). The Pi's display shows them too, as its third view (tap
+through map, aquarium, notifications), full text: the view embeds
+`/screen/notifications`, a page of this service that only the Pi itself gets
+(the display's Chromium maps phone.home to 127.0.0.1, as the call screen's
+does), so dashboard.home - no login, open to the LAN - never holds their
+text. Settings has the on/off switch and every app seen, each
+switchable off. Calls are left out (the bridge handles those), and so is
+the backlog the iPhone resends on every reconnect. They're kept in memory
+only - their text is never written to disk, and the PC app's log records
+only how many it showed.
+
+**How it links:** the same pairing as calls - the iPhone links to the Pi
+over LE as well and offers ANCS there. The bridge keeps an LE advertisement
+up asking for ANCS, so the iPhone links back by itself after Bluetooth drops
+(proved 2026-10-17: off and on, it resubscribed in 2 s).
+
+**Pairing it the first time (or again, if the LE pairing is ever lost):**
+iOS doesn't list this kind of LE accessory under Settings > Bluetooth, so the
+first link is made from a scanner app: install **nRF Connect** (Nordic
+Semiconductor, free), scan, tap **Connect** on **Homelab**, accept the
+pairing request. After that the app isn't needed.
+
 ## Design choices
 
 - **A host service, not K3s.** It needs the Pi's Bluetooth radio and the

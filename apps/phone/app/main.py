@@ -20,6 +20,7 @@ from fastapi.responses import FileResponse, RedirectResponse, Response, Streamin
 from starlette.middleware.sessions import SessionMiddleware
 import uvicorn
 
+from app.ancs import Ancs
 from app.contacts import Contacts
 from app.drops import MAX_TEXT, DropError, Drops
 from app.guests import LinkError, Links
@@ -72,6 +73,7 @@ if os.environ.get("PHONE_EXTRAS", "1") == "1":
     hub.links = Links(DATA / "send-links.json")
     hub.links_base = GUEST_URL
     hub.apply_limits()
+    hub.ancs = Ancs(hub.add_notification, hub.remove_notification, lambda: hub.settings["phoneNotifications"])
 
 
 class _GuestServer(uvicorn.Server):
@@ -198,6 +200,8 @@ async def agent_ringing(screen: bool = False):
         "missed": hub.history.last_missed() if hub.history else None,
         # Newest drop: the agent fetches /api/agent/drops when it moves.
         "dropLatest": hub.drops.latest_created() if hub.drops else 0,
+        # Newest iPhone notification: likewise /api/agent/notifications.
+        "notifyLatest": hub.notify_latest(),
     }
 
 
@@ -350,6 +354,29 @@ async def link_revoke(token: str):
         raise HTTPException(status_code=404)
     await hub.broadcast_extras()
     return {"ok": True}
+
+
+@app.get("/api/notifications", dependencies=[Depends(require_page)])
+async def notifications():
+    """The iPhone's latest notifications: for the Pi's screen (below), or a
+    signed-in page."""
+    return {"notifications": list(reversed(hub.notifications)), "active": bool(hub.ancs and hub.ancs.service)}
+
+
+@app.get("/screen/notifications")
+async def notifications_screen(request: Request):
+    """The Pi's display's third view embeds this. Only the Pi itself gets it:
+    its Chromium maps phone.home to 127.0.0.1 (apps/pi-display); to anything
+    else it doesn't exist."""
+    if not is_local(request.client):
+        raise HTTPException(status_code=404)
+    return FileResponse(STATIC / "notifications-screen.html", headers={"Cache-Control": "no-store"})
+
+
+@app.get("/api/agent/notifications", dependencies=[Depends(require_agent)])
+async def agent_notifications(since: float = 0):
+    """The iPhone's notifications newer than the last the PC's agent showed."""
+    return {"notifications": hub.notifications_since(since)}
 
 
 @app.get("/api/agent/drops", dependencies=[Depends(require_agent)])

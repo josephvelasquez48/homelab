@@ -380,23 +380,28 @@ async function poll() {
 // ---- Interaction: tap to switch views; tap a box or fish for its page ----
 
 document.addEventListener("contextmenu", (e) => e.preventDefault());
+// The views a tap steps through: the map, the aquarium, and the iPhone's
+// notifications - a page of the phone bridge on this Pi, served only to the
+// Pi itself (apps/phone, main.py; pi-display.service maps phone.home to
+// 127.0.0.1), so this page holds none of their text. It doesn't animate.
+const VIEWS = [["arch-view", "Homelab"], ["tank-view", "Cluster aquarium"], ["notify-view", "iPhone notifications"]];
+const NOTIFY_PAGE = "https://phone.home:8443/screen/notifications";
 $("screen").addEventListener("click", (e) => {
   // A box or a fish opens its page: connections, numbers, pods, events and
   // recent logs (static/component.js). It comes back here by itself.
   if (view === 0) {
     const g = e.target.closest && e.target.closest("g[data-id]");
     if (g) return (location.href = `/component/${g.dataset.id}?from=display`);
-  } else {
+  } else if (view === 1) {
     const pod = Tank.podAt(e.clientX, e.clientY);
     if (pod) return (location.href = `/component/pod/${encodeURIComponent(pod.namespace)}/${encodeURIComponent(pod.name)}?from=display`);
   }
-  view = 1 - view;
-  $("arch-view").classList.toggle("hidden", view !== 0);
-  $("tank-view").classList.toggle("hidden", view !== 1);
-  $("title").textContent = view ? "Cluster aquarium" : "Homelab";
-  $("pager").children[0].classList.toggle("on", view === 0);
-  $("pager").children[1].classList.toggle("on", view === 1);
+  view = (view + 1) % VIEWS.length;
+  VIEWS.forEach(([id], i) => $(id).classList.toggle("hidden", view !== i));
+  $("title").textContent = VIEWS[view][1];
+  [...$("pager").children].forEach((dot, i) => dot.classList.toggle("on", view === i));
   if (view === 1) Tank.resize();
+  if (view === 2 && !$("notify-frame").src) $("notify-frame").src = NOTIFY_PAGE;
 });
 
 // ---- Asking first ----
@@ -493,7 +498,8 @@ function frame(t) {
   const dt = Math.min((t - prev) / 1000, 0.1);
   prev = t;
   if (view === 0) stepDots(dt);
-  else Tank.draw(t, dt);
+  else if (view === 1) Tank.draw(t, dt);
+  // The notifications view: nothing to draw.
 }
 
 buildMap();
