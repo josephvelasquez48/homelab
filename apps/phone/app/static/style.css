@@ -336,3 +336,11 @@ body.popup .tabs, body.touch .tabs { display: none !important; }
 #signin-code.showing { color: var(--text); font-variant-numeric: tabular-nums; letter-spacing: 0.04em; }
 /* Login page: the code form's explanation */
 .card > .hint { font-size: 12.5px; color: var(--muted); margin: 6px 2px 0; }
+
+/* The iPhone's notifications (PC only). */
+body.ios #notify-card, body.ios #notify-settings-card, body.popup #notify-card, body.touch #notify-card,
+body:not([data-tab]) #notify-settings-card { display: none !important; }
+.notify-list li { display: block; }
+.notify-list .app { font-size: 12px; color: var(--muted); }
+.notify-list .text { white-space: pre-wrap; word-break: break-word; }
+#notify-apps .switch-row { padding: 6px 0; }

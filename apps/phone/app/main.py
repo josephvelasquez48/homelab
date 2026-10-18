@@ -20,6 +20,7 @@ from fastapi.responses import FileResponse, RedirectResponse, Response, Streamin
 from starlette.middleware.sessions import SessionMiddleware
 import uvicorn
 
+from app.ancs import Ancs
 from app.contacts import Contacts
 from app.drops import MAX_TEXT, DropError, Drops
 from app.guests import LinkError, Links
@@ -72,6 +73,7 @@ if os.environ.get("PHONE_EXTRAS", "1") == "1":
     hub.links = Links(DATA / "send-links.json")
     hub.links_base = GUEST_URL
     hub.apply_limits()
+    hub.ancs = Ancs(hub.add_notification, hub.remove_notification, lambda: hub.settings["phoneNotifications"])
 
 
 class _GuestServer(uvicorn.Server):
@@ -198,6 +200,8 @@ async def agent_ringing(screen: bool = False):
         "missed": hub.history.last_missed() if hub.history else None,
         # Newest drop: the agent fetches /api/agent/drops when it moves.
         "dropLatest": hub.drops.latest_created() if hub.drops else 0,
+        # Newest iPhone notification: likewise /api/agent/notifications.
+        "notifyLatest": hub.notify_latest(),
     }
 
 
@@ -350,6 +354,12 @@ async def link_revoke(token: str):
         raise HTTPException(status_code=404)
     await hub.broadcast_extras()
     return {"ok": True}
+
+
+@app.get("/api/agent/notifications", dependencies=[Depends(require_agent)])
+async def agent_notifications(since: float = 0):
+    """The iPhone's notifications newer than the last the PC's agent showed."""
+    return {"notifications": hub.notifications_since(since)}
 
 
 @app.get("/api/agent/drops", dependencies=[Depends(require_agent)])

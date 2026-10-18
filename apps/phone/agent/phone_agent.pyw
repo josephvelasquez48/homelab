@@ -221,6 +221,10 @@ class Agent:
         # Drop (drop.py): on its own thread, so saving a big file never
         # holds up the call check.
         self.drops = DropReceiver(pi, self.tray.notify)
+        # The iPhone's notifications (the Pi's ancs.py): shown as Windows
+        # notifications. None until the first poll, so the ones already
+        # there when the agent starts aren't shown again.
+        self._notify_since: float | None = None
         self._drop_thread: threading.Thread | None = None
         window.events.loaded += self.hook_permissions
         window.events.loaded += self.sign_in
@@ -451,6 +455,33 @@ class Agent:
         self._drop_thread = threading.Thread(target=run, name="drop", daemon=True)
         self._drop_thread.start()
 
+    def check_notifications(self, status: dict) -> None:
+        latest = status.get("notifyLatest")
+        if latest is None:
+            return
+        if self._notify_since is None or latest < self._notify_since:  # first poll, or the bridge restarted
+            self._notify_since = latest
+            return
+        if latest == self._notify_since:
+            return
+        since, self._notify_since = self._notify_since, latest
+
+        def run() -> None:
+            try:
+                req = urllib.request.Request(f"{self.pi.url}/api/agent/notifications?since={since!r}",
+                                             headers={"Authorization": f"Bearer {self.pi.token}"})
+                with urllib.request.urlopen(req, context=self.pi.context, timeout=10) as r:
+                    shown = json.load(r)["notifications"]
+            except (urllib.error.URLError, OSError, ValueError) as e:
+                log.warning("notifications: %s", e)
+                return
+            for n in shown[-3:]:  # a burst shows its latest few, not a stack of toasts
+                title = f"{n['app']}: {n['title']}" if n.get("title") else n["app"]
+                self.tray.notify(title, n.get("message") or "")
+            log.info("notifications: showed %d from the iPhone", min(len(shown), 3))
+
+        threading.Thread(target=run, name="notify", daemon=True).start()
+
     def apply(self, status: dict) -> None:
         self._call_path = (status.get("call") or {}).get("path")
         if self.expand_requested:  # here, where showing and hiding the window always happen
@@ -459,6 +490,7 @@ class Agent:
         self.update_tray(status)
         self.notify_new(status)
         self.check_drops(status)
+        self.check_notifications(status)
         # Shown for every call - ringing, answered on the iPhone, or dialed
         # from it - so its audio can be moved to the PC at any point, until
         # the call ends or the window is closed for that call.

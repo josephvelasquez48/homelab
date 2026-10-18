@@ -182,6 +182,13 @@
       </div>
     </section>
 
+    <!-- The iPhone's notifications (ancs.py), on the PC only. -->
+    <section class="card" id="notify-card">
+      <h2>iPhone notifications</h2>
+      <ul class="list notify-list" id="notify-list"></ul>
+      <div class="sub" id="notify-empty">None yet.</div>
+    </section>
+
     <section class="card" id="recent-card">
       <h2>Recent</h2>
       <ul class="list" id="recent"></ul>
@@ -198,6 +205,16 @@
       <div class="limit-row"><label for="linkSendsPerDay">Sends</label><input type="number" id="linkSendsPerDay" data-limit inputmode="numeric"><span>a day</span></div>
       <div class="limit-row"><label for="linkMbPerDay">Data</label><input type="number" id="linkMbPerDay" data-limit inputmode="numeric"><span>MB a day</span></div>
       <div class="limit-row"><label for="linkMbPerSend">One send</label><input type="number" id="linkMbPerSend" data-limit inputmode="numeric"><span>MB at most</span></div>
+    </section>
+
+    <section class="card" id="notify-settings-card" data-tab="settings">
+      <h2>iPhone notifications</h2>
+      <label class="switch-row">
+        <span><span class="title">Show them on this PC</span><span class="hint" id="notify-state">Over Bluetooth, through the Pi</span></span>
+        <input type="checkbox" class="switch" id="notify-on">
+      </label>
+      <div class="sub limit-head" id="notify-apps-head">Apps - switch off any you don't want here</div>
+      <div id="notify-apps"></div>
     </section>
 
     <section class="card contacts" id="contacts-card" data-tab="settings">

@@ -527,6 +527,7 @@ function render(s) {
   if (call && TABS.includes("phone") && currentTab !== "phone") setTab("phone"); // a call always brings the Phone tab back
   renderStatusBluetooth(s);
   renderLimits(s.settings);
+  if (s.settings) $("notify-on").checked = !!s.settings.phoneNotifications;
   if (POPUP) {
     // Opened for a call that was already answered elsewhere, or one that
     // just ended: nothing to show, so get out of the way.
@@ -632,6 +633,7 @@ function renderExtras(x) {
   lastExtras = x;
   renderDrops(x.drops || []);
   renderLinks(x.links || []);
+  renderNotifications(x);
   const arrows = { in: "↙", out: "↗", unknown: "•" };
   const shown = recentExpanded ? x.history : x.history.slice(0, RECENT_SHOWN);
   const more = $("recent-more");
@@ -1408,3 +1410,38 @@ if (currentTab === "status") loadStatus();
     timer = setInterval(tick, 1000);
   });
 }
+
+// ---- The iPhone's notifications (ancs.py) -------------------------------------
+// Read by the Pi over Bluetooth and kept in memory only; the PC app also
+// shows each as a Windows notification. Settings switches them off, or any
+// app's.
+
+const NOTIFY_SHOWN = 8;
+
+function renderNotifications(x) {
+  const list = x.notifications || [];
+  $("notify-empty").hidden = list.length > 0;
+  $("notify-empty").textContent = x.notifyActive ? "None yet." : "Not linked to the iPhone's notifications right now.";
+  $("notify-list").replaceChildren(...list.slice(0, NOTIFY_SHOWN).map((n) => {
+    const item = document.createElement("li");
+    item.append(div(`${n.app} · ${when(n.time)}`, "app"));
+    if (n.title) item.append(div(n.title, "who"));
+    if (n.message) item.append(div(n.message, "text"));
+    return item;
+  }));
+  $("notify-state").textContent = x.notifyActive ? "Linked to the iPhone over Bluetooth" : "Waiting for the iPhone to link";
+  const apps = x.notifyApps || [];
+  $("notify-apps-head").hidden = !apps.length;
+  $("notify-apps").replaceChildren(...apps.map((a) => {
+    const row = document.createElement("label");
+    row.className = "switch-row";
+    const name = document.createElement("span");
+    name.append(Object.assign(document.createElement("span"), { className: "title", textContent: a.name }));
+    const sw = Object.assign(document.createElement("input"), { type: "checkbox", className: "switch", checked: !a.muted });
+    sw.onchange = () => send({ action: "set-app-muted", app: a.id, value: !sw.checked });
+    row.append(name, sw);
+    return row;
+  }));
+}
+
+$("notify-on").onchange = (e) => send({ action: "set-phone-notifications", value: e.target.checked });
