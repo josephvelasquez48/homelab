@@ -177,3 +177,24 @@ def test_the_pis_notifications_screen_is_for_the_pi_only(client, monkeypatch):
     page = client.get("/screen/notifications")
     assert page.status_code == 200 and "/api/notifications" in page.text and page.headers["cache-control"] == "no-store"
     assert client.get("/api/notifications").json()["notifications"][0]["title"] == "Sam"
+
+
+@pytest.mark.asyncio
+async def test_clearing_one_or_all(tmp_path):
+    from app.hub import Hub
+
+    hub = Hub(telephony=object(), bridge=object(), settings_path=tmp_path / "s.json")
+
+    async def nothing(*a, **k):
+        pass
+
+    hub.broadcast_extras = nothing
+    hub.tick = nothing
+    for uid in (1, 2, 3):
+        hub.add_notification(note(uid=uid, t=float(uid)))
+    await hub.command(object(), {"action": "dismiss-notification", "uid": 2})
+    assert [n["uid"] for n in hub.notifications] == [1, 3]
+    await hub.command(object(), {"action": "clear-notifications"})
+    assert list(hub.notifications) == [] and hub.notify_latest() == 0.0
+    hub.add_notification(note(uid=4, t=10.0))  # new ones still come through afterwards
+    assert hub.notifications_since(0)[0]["uid"] == 4

@@ -622,6 +622,12 @@ class Hub:
                 save_settings(self.settings_path, self.settings)
                 self.apply_limits()
                 await self.broadcast_state(force=True)
+            elif action == "clear-notifications":
+                # Off the PC's list and the Pi's display; the iPhone keeps its own.
+                self.notifications.clear()
+                await self.broadcast_extras()
+            elif action == "dismiss-notification":
+                self.remove_notification(int(msg.get("uid", -1)))
             elif action == "set-phone-notifications":
                 self.settings["phoneNotifications"] = bool(msg.get("value"))
                 save_settings(self.settings_path, self.settings)
