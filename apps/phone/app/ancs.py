@@ -44,6 +44,8 @@ DATA_SOURCE = "22eac6e9-24d6-4bb5-be44-b36ace7c7bfb"
 
 EVENT_ADDED, EVENT_MODIFIED, EVENT_REMOVED = 0, 1, 2
 FLAG_SILENT, FLAG_IMPORTANT, FLAG_PRE_EXISTING = 1 << 0, 1 << 1, 1 << 2
+FLAG_NEGATIVE_ACTION = 1 << 4  # it has a negative action - for nearly all, "Clear"
+CMD_PERFORM_ACTION, ACTION_NEGATIVE = 2, 1
 CATEGORIES = ["other", "incoming call", "missed call", "voicemail", "social", "schedule", "email",
               "news", "health", "finance", "location", "entertainment"]
 SKIPPED_CATEGORIES = {1, 2}  # incoming and missed calls: the bridge and the PC app handle calls
@@ -78,6 +80,10 @@ def notification_request(uid: int) -> bytes:
     for attr, maxlen in NOTIFICATION_ATTRS:
         cmd += bytes([attr]) + (struct.pack("<H", maxlen) if maxlen else b"")
     return cmd
+
+
+def clear_request(uid: int) -> bytes:
+    return bytes([CMD_PERFORM_ACTION]) + struct.pack("<I", uid) + bytes([ACTION_NEGATIVE])
 
 
 def app_request(app_id: str) -> bytes:
@@ -280,6 +286,7 @@ class Ancs:
         app_id = attrs.get(ATTR_APP_ID, "")
         n = {
             "uid": event.uid,
+            "canClear": bool(event.flags & FLAG_NEGATIVE_ACTION),
             "appId": app_id,
             "title": attrs.get(ATTR_TITLE, ""),
             "message": attrs.get(ATTR_MESSAGE, ""),
@@ -293,6 +300,20 @@ class Ancs:
                 self.queue.insert(0, ("app", app_id))
             return
         self.deliver(n)
+
+    async def clear(self, uid: int) -> bool:
+        """Clear one on the iPhone: its negative action (PerformNotificationAction).
+        The iPhone then reports it removed, as when cleared there. No reply on
+        Data Source, so it doesn't wait in the request queue."""
+        if not self.chars:
+            return False
+        try:
+            await self._call(self.chars[CONTROL_POINT], CHAR, "WriteValue", "aya{sv}",
+                             [clear_request(uid), {"type": Variant("s", "request")}])
+            return True
+        except RuntimeError as e:
+            log.info("clearing on the iPhone failed: %s", e)  # gone already, or the link dropped
+            return False
 
     def deliver(self, n: dict) -> None:
         n["app"] = self.app_names.get(n["appId"]) or n["appId"]

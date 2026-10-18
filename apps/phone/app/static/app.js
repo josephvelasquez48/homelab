@@ -528,6 +528,7 @@ function render(s) {
   renderStatusBluetooth(s);
   renderLimits(s.settings);
   if (s.settings) $("notify-on").checked = !!s.settings.phoneNotifications;
+  if (s.settings) $("notify-clear-phone").checked = !!s.settings.clearOnPhone;
   if (POPUP) {
     // Opened for a call that was already answered elsewhere, or one that
     // just ended: nothing to show, so get out of the way.
@@ -1456,5 +1457,6 @@ function renderNotifications(x) {
 }
 
 $("notify-on").onchange = (e) => send({ action: "set-phone-notifications", value: e.target.checked });
-// Off this list and the Pi's display; the iPhone keeps its own.
+// Off this list and the Pi's display - and the iPhone's, unless Settings says not.
 $("notify-clear").onclick = () => send({ action: "clear-notifications" });
+$("notify-clear-phone").onchange = (e) => send({ action: "set-clear-on-phone", value: e.target.checked });

@@ -198,3 +198,53 @@ async def test_clearing_one_or_all(tmp_path):
     assert list(hub.notifications) == [] and hub.notify_latest() == 0.0
     hub.add_notification(note(uid=4, t=10.0))  # new ones still come through afterwards
     assert hub.notifications_since(0)[0]["uid"] == 4
+
+
+def test_clear_request_is_ancs_negative_action():
+    assert ancs.clear_request(7) == bytes([2, 7, 0, 0, 0, 1])
+
+
+@pytest.mark.asyncio
+async def test_a_notification_says_whether_the_iphone_can_clear_it():
+    a, got, written = make_ancs()
+    a.app_names["com.apple.MobileSMS"] = "Messages"
+    a.on_event(parse_event(event_bytes(uid=9, flags=ancs.FLAG_NEGATIVE_ACTION)))
+    await asyncio.sleep(0)
+    a.on_data(notification_reply(9, "com.apple.MobileSMS", "Sam", "hi"))
+    await asyncio.sleep(0)
+    assert got[0]["canClear"] is True
+    assert await a.clear(9) is True and written[-1] == ancs.clear_request(9)
+
+
+@pytest.mark.asyncio
+async def test_clearing_on_the_pc_clears_on_the_iphone_too(tmp_path):
+    from app.hub import Hub
+
+    hub = Hub(telephony=object(), bridge=object(), settings_path=tmp_path / "s.json")
+
+    async def nothing(*a, **k):
+        pass
+
+    hub.broadcast_extras = nothing
+    hub.tick = nothing
+    cleared = []
+
+    class FakeAncs:
+        service = "/svc"
+
+        async def clear(self, uid):
+            cleared.append(uid)
+            return True
+
+    hub.ancs = FakeAncs()
+    hub.add_notification({**note(uid=1, t=1.0), "canClear": True})
+    hub.add_notification({**note(uid=2, t=2.0), "canClear": False})  # no Clear action: left on the iPhone
+    hub.add_notification({**note(uid=3, t=3.0), "canClear": True})
+    await hub.command(object(), {"action": "dismiss-notification", "uid": 1})
+    assert cleared == [1]
+    await hub.command(object(), {"action": "clear-notifications"})
+    assert cleared == [1, 3] and list(hub.notifications) == []
+    await hub.command(object(), {"action": "set-clear-on-phone", "value": False})
+    hub.add_notification({**note(uid=4, t=4.0), "canClear": True})
+    await hub.command(object(), {"action": "clear-notifications"})
+    assert cleared == [1, 3]  # switched off: the iPhone keeps them

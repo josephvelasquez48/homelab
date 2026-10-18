@@ -196,7 +196,10 @@ shows each new one as a native Windows notification - sent as "iPhone", with the
 iPhone app's own icon (looked up once per app from the App Store's public
 lookup and cached in `%LOCALAPPDATA%\phone-bridge\app-icons`; `agent/toast.py`); its **Notifications** tab lists the latest
 (`app/ancs.py`), with **Clear all** and a ✕ on each - off this list and the
-Pi's display; the iPhone keeps its own. The Pi's display shows them too, as its third view (tap
+Pi's display, and off the iPhone too: the bridge performs the notification's
+negative action, which for nearly all is Clear (ANCS PerformNotificationAction;
+ones without one stay on the iPhone). Settings > *Clearing here clears the
+iPhone's too* switches that part off. The Pi's display shows them too, as its third view (tap
 through map, aquarium, notifications), full text: the view embeds
 `/screen/notifications`, a page of this service that only the Pi itself gets
 (the display's Chromium maps phone.home to 127.0.0.1, as the call screen's
