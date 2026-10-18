@@ -1429,11 +1429,15 @@ function renderNotifications(x) {
   $("notify-dot").hidden = currentTab === "notifications" || newest <= seen;
   $("notify-empty").hidden = list.length > 0;
   $("notify-empty").textContent = x.notifyActive ? "None yet." : "Not linked to the iPhone's notifications right now.";
+  $("notify-clear").hidden = !list.length;
   $("notify-list").replaceChildren(...list.slice(0, NOTIFY_SHOWN).map((n) => {
     const item = document.createElement("li");
-    item.append(div(`${n.app} · ${when(n.time)}`, "app"));
-    if (n.title) item.append(div(n.title, "who"));
-    if (n.message) item.append(div(n.message, "text"));
+    const body = document.createElement("div");
+    body.className = "body";
+    body.append(div(`${n.app} · ${when(n.time)}`, "app"));
+    if (n.title) body.append(div(n.title, "who"));
+    if (n.message) body.append(div(n.message, "text"));
+    item.append(body, actionButton("✕", () => send({ action: "dismiss-notification", uid: n.uid }), "small ghost"));
     return item;
   }));
   $("notify-state").textContent = x.notifyActive ? "Linked to the iPhone over Bluetooth" : "Waiting for the iPhone to link";
@@ -1452,3 +1456,5 @@ function renderNotifications(x) {
 }
 
 $("notify-on").onchange = (e) => send({ action: "set-phone-notifications", value: e.target.checked });
+// Off this list and the Pi's display; the iPhone keeps its own.
+$("notify-clear").onclick = () => send({ action: "clear-notifications" });
