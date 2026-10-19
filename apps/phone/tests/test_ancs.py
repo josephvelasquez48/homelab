@@ -283,3 +283,46 @@ async def test_follows_the_le_link_and_resubscribes_afresh(monkeypatch):
     calls.clear()
     await a.check()
     assert a.active and calls.count("StartNotify") == 2  # back: subscribed again, same service path
+
+
+@pytest.mark.asyncio
+async def test_the_advertisement_is_registered_again_after_bluetoothd_restarts():
+    from types import SimpleNamespace
+
+    from dbus_fast import MessageType
+
+    owner = {"name": ":1.10"}
+    registered = []
+    a = Ancs(lambda n: None)
+
+    class Bus:
+        async def call(self, msg):
+            return SimpleNamespace(message_type=MessageType.METHOD_RETURN, body=[owner["name"]])
+
+    async def call(path, iface, member, signature="", body=()):
+        registered.append(member)
+        return []
+
+    a.bus, a._call = Bus(), call
+    await a.keep_advertising()
+    await a.keep_advertising()
+    assert registered == ["RegisterAdvertisement"]  # once while bluetoothd stays
+    owner["name"] = ":1.99"  # bluetoothd restarted: it has forgotten it
+    await a.keep_advertising()
+    a.forget_advertisement()  # or BlueZ released it
+    await a.keep_advertising()
+    assert registered == ["RegisterAdvertisement"] * 3
+
+
+@pytest.mark.asyncio
+async def test_a_bluez_call_that_never_answers_gives_up(monkeypatch):
+    monkeypatch.setattr(ancs, "CALL_SECONDS", 0.05)
+    a = Ancs(lambda n: None)
+
+    class Bus:
+        async def call(self, msg):
+            await asyncio.sleep(3600)  # bluetoothd stalled
+
+    a.bus = Bus()
+    with pytest.raises(RuntimeError, match="no reply from BlueZ"):
+        await a._call("/", "org.freedesktop.DBus.ObjectManager", "GetManagedObjects")
