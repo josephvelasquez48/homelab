@@ -225,11 +225,18 @@ it back. The bridge follows the link from the kernel's own connection list
 20 hours with no link; when it drops the pages say "iPhone not linked", and
 when it returns the bridge subscribes afresh.
 
-**Pairing it the first time (or again, if the LE pairing is ever lost):**
-iOS doesn't list this kind of LE accessory under Settings > Bluetooth, so the
-first link is made from a scanner app: install **nRF Connect** (Nordic
-Semiconductor, free), scan, tap **Connect** on **Homelab**, accept the
-pairing request. After that the app isn't needed.
+**Pairing it (the order matters):** with Bluetooth LE privacy on
+(`Privacy = device` in `/etc/bluetooth/main.conf`, set by install.sh), the
+Pi's LE identity is its own, and pairing notifications **first** makes iOS
+register the Pi as a notification accessory - its entry gets a **Share
+System Notifications** switch, as a watch's does (2026-10-19; paired the
+other way round, the switch never appeared). From scratch: on the iPhone,
+Settings > Bluetooth > the Pi's ⓘ > Forget This Device; on the Pi,
+`bluetoothctl remove <iPhone>` and `python3 pair.py 300` (a pairing window
+with an agent that accepts). iOS doesn't list LE accessories under
+Settings > Bluetooth, so connect from **nRF Connect** (Nordic, free): scan,
+**Connect** on **Homelab**, accept the pairing; then pair the Pi for calls
+from Settings > Bluetooth and turn **Sync Contacts** back on.
 
 ## Design choices
 

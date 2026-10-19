@@ -76,6 +76,17 @@ if ! cmp -s "$APP_DIR/pipewire/60-realtime.conf" "$pw_conf"; then
   systemctl --user restart pipewire pipewire-pulse wireplumber
 fi
 
+# Bluetooth LE privacy: the Pi's LE identity is its own, so the iPhone pairs
+# it as a notification accessory (Share System Notifications) and reconnects
+# it - docs/phone.md, The iPhone's notifications. Restarting bluetoothd
+# drops calls and music for ~10 s - only when the setting changes.
+if ! grep -q '^Privacy = device$' /etc/bluetooth/main.conf; then
+  sudo sed -i 's/^#\?Privacy = .*/Privacy = device/' /etc/bluetooth/main.conf
+  # No Privacy line at all: it belongs in [General], not at the end.
+  grep -q '^Privacy = device$' /etc/bluetooth/main.conf || sudo sed -i '/^\[General\]/a Privacy = device' /etc/bluetooth/main.conf
+  sudo systemctl restart bluetooth
+fi
+
 # obexd as a client only - see obex-override.conf.
 mkdir -p "$HOME/.config/systemd/user/obex.service.d"
 if ! cmp -s "$APP_DIR/obex-override.conf" "$HOME/.config/systemd/user/obex.service.d/phone-bridge.conf"; then

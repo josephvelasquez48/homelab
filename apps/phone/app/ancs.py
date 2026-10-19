@@ -79,6 +79,9 @@ def le_linked() -> bool:
     except OSError:
         return False
 REPLY_SECONDS = 5  # an unanswered request gives up after this
+# Any one D-Bus call. bluetoothd stalled once and every call waited on it
+# for good - this loop and the reconnect's both went silent (2026-10-19).
+CALL_SECONDS = 15
 
 
 @dataclass
@@ -141,9 +144,6 @@ def parse_reply(buf: bytes, attrs: int) -> tuple[dict[int, str], int] | None:
 class Advertisement(ServiceInterface):
     """Asks for ANCS over LE: how the iPhone finds the Pi again after a drop."""
 
-    def __init__(self):
-        super().__init__("org.bluez.LEAdvertisement1")
-
     @dbus_property(access=PropertyAccess.READ)
     def Type(self) -> "s":  # noqa: F821 - dbus-fast reads the annotation as a D-Bus signature
         return "peripheral"
@@ -156,9 +156,14 @@ class Advertisement(ServiceInterface):
     def LocalName(self) -> "s":  # noqa: F821
         return "Homelab"
 
+    def __init__(self, on_release=lambda: None):
+        super().__init__("org.bluez.LEAdvertisement1")
+        self.on_release = on_release
+
     @method()
     def Release(self) -> None:
         log.info("LE advertisement released by BlueZ")
+        self.on_release()
 
 
 class Ancs:
@@ -177,37 +182,64 @@ class Ancs:
         self.buffer = b""
         self.received = 0
         self.linked = False  # the LE link, as le_linked() last saw it
+        # bluetoothd's bus name when the advertisement was registered: a
+        # restarted bluetoothd has a new one and has forgotten it.
+        self.adv_owner: str | None = None
 
     async def _call(self, path, iface, member, signature="", body=()):
-        reply = await self.bus.call(Message(destination=BLUEZ, path=path, interface=iface, member=member,
-                                            signature=signature, body=list(body)))
+        try:
+            reply = await asyncio.wait_for(self.bus.call(Message(
+                destination=BLUEZ, path=path, interface=iface, member=member,
+                signature=signature, body=list(body))), CALL_SECONDS)
+        except asyncio.TimeoutError:
+            raise RuntimeError(f"no reply from BlueZ to {member} in {CALL_SECONDS} s")
         if reply.message_type == MessageType.ERROR:
             raise RuntimeError(f"{reply.error_name}: {reply.body[0] if reply.body else ''}")
         return reply.body
 
     async def _add_match(self, rule: str) -> None:
         """Ask the bus daemon (not BlueZ) to send us these signals."""
-        reply = await self.bus.call(Message(destination="org.freedesktop.DBus", path="/org/freedesktop/DBus",
-                                            interface="org.freedesktop.DBus", member="AddMatch",
-                                            signature="s", body=[rule]))
+        reply = await asyncio.wait_for(self.bus.call(Message(
+            destination="org.freedesktop.DBus", path="/org/freedesktop/DBus", interface="org.freedesktop.DBus",
+            member="AddMatch", signature="s", body=[rule])), CALL_SECONDS)
         if reply.message_type == MessageType.ERROR:
             raise RuntimeError(f"{reply.error_name}: {reply.body[0] if reply.body else ''}")
 
     async def run(self) -> None:
         self.bus = await MessageBus(bus_type=BusType.SYSTEM).connect()
-        self.bus.export(ADV_PATH, Advertisement())
-        try:
-            await self._call(ADAPTER, "org.bluez.LEAdvertisingManager1", "RegisterAdvertisement",
-                             "oa{sv}", [ADV_PATH, {}])
-        except RuntimeError as e:
-            log.warning("no LE advertisement (the iPhone may not link back after a drop): %s", e)
+        self.bus.export(ADV_PATH, Advertisement(on_release=self.forget_advertisement))
         self.bus.add_message_handler(self.on_signal)  # the GATT values, matched per path in subscribe()
         while True:
             try:
+                await self.keep_advertising()
                 await self.check()
             except Exception:
                 log.exception("ANCS check failed")
             await asyncio.sleep(CHECK_SECONDS)
+
+    def forget_advertisement(self) -> None:
+        self.adv_owner = None
+
+    async def keep_advertising(self) -> None:
+        """Register the advertisement, and again whenever bluetoothd has
+        restarted (a new bus name) or released it: it dropped it twice on
+        2026-10-18, and the iPhone needs it to link over LE."""
+        reply = await asyncio.wait_for(self.bus.call(Message(
+            destination="org.freedesktop.DBus", path="/org/freedesktop/DBus", interface="org.freedesktop.DBus",
+            member="GetNameOwner", signature="s", body=[BLUEZ])), CALL_SECONDS)
+        owner = reply.body[0] if reply.message_type != MessageType.ERROR and reply.body else None
+        if not owner or owner == self.adv_owner:
+            return
+        try:
+            await self._call(ADAPTER, "org.bluez.LEAdvertisingManager1", "RegisterAdvertisement",
+                             "oa{sv}", [ADV_PATH, {}])
+            self.adv_owner = owner
+            log.info("LE advertisement registered")
+        except RuntimeError as e:
+            if "AlreadyExists" in str(e):
+                self.adv_owner = owner
+            else:
+                log.warning("no LE advertisement (the iPhone can't link over LE): %s", e)
 
     @property
     def active(self) -> bool:
