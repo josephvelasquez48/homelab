@@ -215,6 +215,16 @@ over LE as well and offers ANCS there. The bridge keeps an LE advertisement
 up asking for ANCS, so the iPhone links back by itself after Bluetooth drops
 (proved 2026-10-17: off and on, it resubscribed in 2 s).
 
+**The LE link only comes back from the iPhone's side.** After it goes out of
+range and back (2026-10-18, overnight), calls and music reconnected - the Pi
+does that - but the LE link didn't: the Pi sees the iPhone's LE broadcasts
+(resolved to it, -54 dBm) but they aren't connectable, and a kernel
+auto-connect got nowhere. Turning the iPhone's Bluetooth off and on brings
+it back. The bridge follows the link from the kernel's own connection list
+(`le_linked()`), since BlueZ kept the GATT objects and their Notifying for
+20 hours with no link; when it drops the pages say "iPhone not linked", and
+when it returns the bridge subscribes afresh.
+
 **Pairing it the first time (or again, if the LE pairing is ever lost):**
 iOS doesn't list this kind of LE accessory under Settings > Bluetooth, so the
 first link is made from a scanner app: install **nRF Connect** (Nordic

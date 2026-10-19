@@ -47,7 +47,7 @@
       const items = (d.notifications || []).slice(0, SHOWN);
       if (!items.length) {
         const box = el("div", "empty", "No iPhone notifications yet");
-        box.append(el("small", null, d.active ? "Linked to the iPhone over Bluetooth" : "Waiting for the iPhone to link"));
+        box.append(el("small", null, d.active ? "Linked to the iPhone over Bluetooth" : "iPhone not linked - turn its Bluetooth off and on"));
         list.replaceChildren(box);
         return;
       }
