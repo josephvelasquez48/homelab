@@ -266,7 +266,7 @@ class Hub:
             "notifications": list(reversed(self.notifications)),  # newest first
             "notifyApps": sorted(({"id": k, "name": v, "muted": k in self.settings["mutedApps"]}
                                   for k, v in self.notify_apps.items()), key=lambda a: a["name"].lower()),
-            "notifyActive": bool(self.ancs and self.ancs.service),
+            "notifyActive": bool(self.ancs and self.ancs.active),
         }
 
     async def broadcast_extras(self, only: WebSocket | None = None) -> None:

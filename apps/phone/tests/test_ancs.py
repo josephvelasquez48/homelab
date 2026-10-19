@@ -248,3 +248,38 @@ async def test_clearing_on_the_pc_clears_on_the_iphone_too(tmp_path):
     hub.add_notification({**note(uid=4, t=4.0), "canClear": True})
     await hub.command(object(), {"action": "clear-notifications"})
     assert cleared == [1, 3]  # switched off: the iPhone keeps them
+
+
+@pytest.mark.asyncio
+async def test_follows_the_le_link_and_resubscribes_afresh(monkeypatch):
+    from dbus_fast import Variant
+
+    link = {"up": True}
+    monkeypatch.setattr(ancs, "le_linked", lambda: link["up"])
+    svc = "/org/bluez/hci0/dev_X/service0023"
+    objects = {svc: {"org.bluez.GattService1": {"UUID": Variant("s", ancs.ANCS)}}}
+    for i, uuid in enumerate((ancs.NOTIFICATION_SOURCE, ancs.CONTROL_POINT, ancs.DATA_SOURCE)):
+        objects[f"{svc}/char{i}"] = {ancs.CHAR: {"UUID": Variant("s", uuid), "Service": Variant("o", svc)}}
+    calls = []
+    a = Ancs(lambda n: None)
+
+    async def call(path, iface, member, signature="", body=()):
+        calls.append(member)
+        return [objects] if member == "GetManagedObjects" else []
+
+    async def add_match(rule):
+        pass
+
+    a._call, a._add_match = call, add_match
+    await a.check()
+    assert a.active and calls.count("StartNotify") == 2 and calls.index("StopNotify") < calls.index("StartNotify")
+    calls.clear()
+    await a.check()
+    assert "StartNotify" not in calls  # still linked: nothing to redo
+    link["up"] = False
+    await a.check()
+    assert not a.active and a.service is None  # dropped, though BlueZ still lists the service
+    link["up"] = True
+    calls.clear()
+    await a.check()
+    assert a.active and calls.count("StartNotify") == 2  # back: subscribed again, same service path

@@ -19,8 +19,11 @@ asks for its details, and the reply comes on the Data Source - possibly in
 several packets, so it's buffered until complete. App display names come the
 same way (GetAppAttributes) and are cached.
 """
+import array
 import asyncio
+import fcntl
 import logging
+import socket
 import struct
 import time
 from dataclasses import dataclass
@@ -55,7 +58,26 @@ ATTR_APP_ID, ATTR_TITLE, ATTR_MESSAGE = 0, 1, 3
 NOTIFICATION_ATTRS = [(ATTR_APP_ID, None), (ATTR_TITLE, 64), (ATTR_MESSAGE, 256)]
 APP_DISPLAY_NAME = 0
 
-CHECK_SECONDS = 5  # looking for the iPhone's ANCS service
+CHECK_SECONDS = 5  # looking for the iPhone's ANCS service, and at the LE link
+HCIGETCONNLIST = 0x800448D4
+LE_LINK = 0x80  # hci_conn_info.type for an LE connection
+
+
+def le_linked() -> bool:
+    """Is there a Bluetooth LE connection? The kernel's own list - not BlueZ,
+    whose GATT objects and their Notifying stay put after the link drops
+    (2026-10-18: "subscribed" for 20 hours with no link at all), nor
+    Device1.Connected, which the calls link keeps true. A read-only ioctl,
+    no root needed. The iPhone is the Pi's only LE peer."""
+    try:
+        with socket.socket(socket.AF_BLUETOOTH, socket.SOCK_RAW, socket.BTPROTO_HCI) as s:
+            buf = array.array("B", struct.pack("<HH", 0, 10) + bytes(10 * 16))
+            fcntl.ioctl(s.fileno(), HCIGETCONNLIST, buf, True)
+            count = struct.unpack_from("<HH", buf, 0)[1]
+            # hci_conn_info: handle, bdaddr, type, out, state, link_mode
+            return any(struct.unpack_from("<H6sB", buf, 4 + i * 16)[2] == LE_LINK for i in range(count))
+    except OSError:
+        return False
 REPLY_SECONDS = 5  # an unanswered request gives up after this
 
 
@@ -154,6 +176,7 @@ class Ancs:
         self.waiting_for: list[dict] = []  # notifications held until their app's name arrives
         self.buffer = b""
         self.received = 0
+        self.linked = False  # the LE link, as le_linked() last saw it
 
     async def _call(self, path, iface, member, signature="", body=()):
         reply = await self.bus.call(Message(destination=BLUEZ, path=path, interface=iface, member=member,
@@ -186,13 +209,27 @@ class Ancs:
                 log.exception("ANCS check failed")
             await asyncio.sleep(CHECK_SECONDS)
 
+    @property
+    def active(self) -> bool:
+        """Linked and subscribed: notifications are coming in."""
+        return self.linked and bool(self.service)
+
     async def check(self) -> None:
-        """Subscribe when the iPhone's ANCS service is there and we aren't."""
+        """Follow the LE link; subscribe afresh whenever it's up and we aren't."""
         if self.waiting and time.monotonic() - self.waiting_since > REPLY_SECONDS:
             log.info("no reply to an ANCS request; moving on")
             self.waiting, self.buffer = None, b""
             await self.next_request()
         if not self.enabled():
+            return
+        linked = le_linked()
+        if linked != self.linked:
+            log.info("iPhone LE link %s", "up" if linked else "down - only the iPhone can bring it back")
+            self.linked = linked
+        if not linked:
+            # Gone: its GATT objects linger, so forget them, or a returning
+            # link would look already subscribed.
+            self.service, self.chars, self.queue, self.waiting = None, {}, [], None
             return
         [objects] = await self._call("/", "org.freedesktop.DBus.ObjectManager", "GetManagedObjects")
         service = next((p for p, i in objects.items()
@@ -215,6 +252,14 @@ class Ancs:
         for uuid in (NOTIFICATION_SOURCE, DATA_SOURCE):
             await self._add_match(
                 f"type='signal',sender='{BLUEZ}',path='{chars[uuid]}',interface='{PROPS}',member='PropertiesChanged'")
+        # Afresh: BlueZ may still say Notifying from before the link dropped,
+        # with the iPhone's side long gone - stop first (no matter if it
+        # wasn't), then start.
+        for uuid in (NOTIFICATION_SOURCE, DATA_SOURCE):
+            try:
+                await self._call(chars[uuid], CHAR, "StopNotify")
+            except RuntimeError:
+                pass
         # Data first: the backlog of events comes as soon as Notification
         # Source is subscribed, and their replies arrive on Data Source.
         await self._call(chars[DATA_SOURCE], CHAR, "StartNotify")

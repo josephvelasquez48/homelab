@@ -360,7 +360,7 @@ async def link_revoke(token: str):
 async def notifications():
     """The iPhone's latest notifications: for the Pi's screen (below), or a
     signed-in page."""
-    return {"notifications": list(reversed(hub.notifications)), "active": bool(hub.ancs and hub.ancs.service)}
+    return {"notifications": list(reversed(hub.notifications)), "active": bool(hub.ancs and hub.ancs.active)}
 
 
 @app.get("/screen/notifications")
