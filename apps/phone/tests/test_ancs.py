@@ -318,6 +318,34 @@ async def test_the_advertisement_is_registered_again_after_bluetoothd_restarts()
 
 
 @pytest.mark.asyncio
+async def test_no_advertising_while_linked_and_a_failure_is_logged_once(caplog):
+    from types import SimpleNamespace
+
+    from dbus_fast import MessageType
+
+    tries = []
+    a = Ancs(lambda n: None)
+
+    class Bus:
+        async def call(self, msg):
+            return SimpleNamespace(message_type=MessageType.METHOD_RETURN, body=[":1.10"])
+
+    async def call(path, iface, member, signature="", body=()):
+        tries.append(member)
+        raise RuntimeError("org.bluez.Error.Failed: Failed to register advertisement")
+
+    a.bus, a._call = Bus(), call
+    a.linked = True
+    await a.keep_advertising()
+    assert tries == []  # the radio refuses while an LE link is open
+    a.linked = False
+    with caplog.at_level("WARNING", logger="phone.ancs"):
+        for _ in range(3):
+            await a.keep_advertising()
+    assert len(tries) == 3 and len([r for r in caplog.records if "no LE advertisement" in r.message]) == 1
+
+
+@pytest.mark.asyncio
 async def test_a_bluez_call_that_never_answers_gives_up(monkeypatch):
     monkeypatch.setattr(ancs, "CALL_SECONDS", 0.05)
     a = Ancs(lambda n: None)
