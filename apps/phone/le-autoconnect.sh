@@ -23,7 +23,10 @@ for info in /var/lib/bluetooth/*/*/info; do
         public) type=1 ;;
         *) type=2 ;;
     esac
-    out=$(timeout 5 btmgmt add-device -a 2 -t "$type" "$addr" 2>&1) || true
+    # btmgmt reads commands from a stdin that isn't a terminal: from the
+    # bridge's (/dev/null) it hung and did nothing (2026-10-27). A pipe
+    # held open 2 s lets it run the one command, then it exits.
+    out=$(sleep 2 | timeout 5 btmgmt add-device -a 2 -t "$type" "$addr" 2>&1) || true
     case "$out" in
         *failed*|*Failed*|"") echo "couldn't add $addr: $out" >&2; exit 1 ;;
     esac
