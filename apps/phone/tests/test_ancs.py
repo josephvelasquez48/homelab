@@ -270,7 +270,10 @@ async def test_follows_the_le_link_and_resubscribes_afresh(monkeypatch):
     async def add_match(rule):
         pass
 
-    a._call, a._add_match = call, add_match
+    async def scan():
+        pass  # while it's down: no real scan (that runs the sudo helper)
+
+    a._call, a._add_match, a.scan = call, add_match, scan
     await a.check()
     assert a.active and calls.count("StartNotify") == 2 and calls.index("StopNotify") < calls.index("StartNotify")
     calls.clear()

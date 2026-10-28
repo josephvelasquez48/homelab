@@ -214,6 +214,7 @@ A healthy start logs
 | 5 real frames a second at "1080p30" (324 of 384 frames were duplicates) | ffmpeg's avfoundation input applies the *last* format matching the size, with a frame rate from whichever format matched *first*. On the C922 the last is uncompressed and tops out at 5-10 fps over USB 2; setting 30 fps on it throws, logged as "Configuration of video device failed, falling back to default" | `cam-capture` (Swift) picks a format that really runs at the rate and pipes raw frames to ffmpeg. 30.0 fps measured |
 | Every later start also "fell back to default" | The frozen ffmpeg above still held the camera, so the device couldn't be configured | Same fix - nothing is left holding the camera |
 | Thousands of "Non-monotonic DTS" warnings; 14 s of video labelled as 0.01 s | The encoder's timestamps came out in the wrong units | ffmpeg stamps frames on arrival and evens them to `-fps_mode cfr -r 30` before encoding |
+| The page timed out on the iPhone from 2026-10-05 (no request ever reached the app; other people were fine) | With Tailscale on, the iPhone resolves `cam.taile847cc.ts.net` via MagicDNS to the Pi's tailnet address and connects over the tailnet, bypassing Funnel. The policy then allowed only tcp:8443 to the Pi, so tailscaled dropped port 443 silently (`Drop: TCP{100.109.104.67:... > 100.77.161.83:443} no rules matched` in `journalctl -u tailscaled`) | 2026-10-10: the grant allows `tcp:443` too. Turning Tailscale off on the phone also works |
 | A config edit to the login list didn't take effect | MediaMTX's live reload doesn't apply auth changes | Restart (`launchctl kickstart -k`); the installer always does a full restart |
 
 ## Sharing by link (Tailscale Funnel)
@@ -282,13 +283,17 @@ could reach:
 | Passkeys replaced passwords | Viewers' weak or reused passwords were the easiest way in; a passkey can't be guessed, reused or phished |
 | Invite links last 24 hours, not 7 days | An unused link is an account for whoever opens it first |
 | Throttling per address only | The per-name lockout let anyone lock an account out |
-| Tailscale policy: no grants | The tailnet held only the Pi, which needed no tailnet access - Funnel isn't governed by grants. Edited by the account owner (below). Since 2026-10-05 one grant: the owner's devices may reach the phone app on the Pi, port 8443 only |
+| Tailscale policy: no grants | The tailnet held only the Pi, which needed no tailnet access - Funnel isn't governed by grants. Edited by the account owner (below). Since 2026-10-05 one grant: the owner's devices may reach the phone app on the Pi (8443); since 2026-10-10 also this page (443) |
 | UPnP off on the router | Nothing was using it (its table was empty); left on, any device could open ports to the internet |
 
 The tailnet policy (login.tailscale.com/admin/acls/file) keeps the Funnel
 permission and grants one thing: the account's own devices (the iPhone) may
-reach the phone app on the Pi, tailnet only, on port 8443 (docs/phone.md,
-Drop). Nothing else on the Pi is open to the tailnet. A device's traffic
+reach the Pi on two ports - 8443, the phone app, tailnet only (docs/phone.md,
+Drop), and 443, this page. A device running Tailscale resolves
+`cam.taile847cc.ts.net` through MagicDNS to the Pi's tailnet address, not to
+Funnel, so without 443 the page timed out on the iPhone (see below). That
+adds no exposure: the same page is already public. Nothing else on the Pi
+is open to the tailnet. A device's traffic
 the policy doesn't allow shows in the Pi's tailscaled log as
 `Drop: TCP{...} no rules matched`.
 
@@ -298,8 +303,9 @@ the policy doesn't allow shows in the Pi's tailscaled log as
 		"pi": "100.77.161.83",
 	},
 	"grants": [
-		// Your own devices (the iPhone) may reach the phone app on the Pi - port 8443 only.
-		{"src": ["autogroup:member"], "dst": ["pi"], "ip": ["tcp:8443"]},
+		// Your own devices (the iPhone) may reach the Pi: the phone app (8443) and,
+		// since MagicDNS sends them here instead of through Funnel, this page (443).
+		{"src": ["autogroup:member"], "dst": ["pi"], "ip": ["tcp:443", "tcp:8443"]},
 	],
 	"nodeAttrs": [
 		{"target": ["autogroup:member"], "attr": ["funnel"]},
