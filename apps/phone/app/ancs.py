@@ -6,9 +6,14 @@ is already the iPhone's hands-free unit, and the same pairing covers this
 (proved by a prototype, 2026-10-17): the iPhone links to the Pi over LE as
 well, and offers ANCS on that link.
 
-This keeps an LE advertisement up that asks for ANCS, so the iPhone links
-back after Bluetooth drops; whenever the iPhone's ANCS service is there it
-subscribes, and fetches each new notification's app, title and message. The
+This keeps an LE advertisement up that asks for ANCS. The iPhone doesn't
+link back over LE by itself after Bluetooth drops, but it accepts a link
+the Pi opens (2026-10-27): while the link is down, the kernel is told to
+auto-connect the iPhone (le-autoconnect.sh) and a short scan runs every
+minute so it hears it - the kernel's own background scan doesn't (this
+radio can't resolve the iPhone's private address itself). Scans skip
+while a call or music is on the Pi: the radio is shared. Whenever the
+iPhone's ANCS service is there it subscribes, and fetches each new notification's app, title and message. The
 backlog sent on subscribing is skipped (on every reconnect it's the whole
 Notification Center again), and so are calls - the bridge already handles
 those. What's left goes to `on_notification`, kept in memory only (hub.py).
@@ -59,6 +64,9 @@ NOTIFICATION_ATTRS = [(ATTR_APP_ID, None), (ATTR_TITLE, 64), (ATTR_MESSAGE, 256)
 APP_DISPLAY_NAME = 0
 
 CHECK_SECONDS = 5  # looking for the iPhone's ANCS service, and at the LE link
+SCAN_EVERY_SECONDS = 60  # while the LE link is down
+SCAN_SECONDS = 10  # each scan; it ends sooner once linked
+AUTOCONNECT = ["sudo", "-n", "/usr/local/sbin/phone-bridge-le-autoconnect"]
 HCIGETCONNLIST = 0x800448D4
 LE_LINK = 0x80  # hci_conn_info.type for an LE connection
 
@@ -167,10 +175,11 @@ class Advertisement(ServiceInterface):
 
 
 class Ancs:
-    def __init__(self, on_notification, on_removed=None, enabled=lambda: True):
+    def __init__(self, on_notification, on_removed=None, enabled=lambda: True, busy=lambda: False):
         self.on_notification = on_notification  # (dict) -> None
         self.on_removed = on_removed  # (uid) -> None
         self.enabled = enabled  # () -> bool: the Settings switch
+        self.busy = busy  # () -> bool: a call or music on the Pi - no scanning
         self.bus: MessageBus | None = None
         self.service: str | None = None  # the ANCS service's object path while subscribed
         self.chars: dict[str, str] = {}
@@ -185,6 +194,8 @@ class Ancs:
         # bluetoothd's bus name when the advertisement was registered: a
         # restarted bluetoothd has a new one and has forgotten it.
         self.adv_owner: str | None = None
+        self.last_scan = float("-inf")
+        self.scan_task: asyncio.Task | None = None
 
     async def _call(self, path, iface, member, signature="", body=()):
         try:
@@ -256,12 +267,16 @@ class Ancs:
             return
         linked = le_linked()
         if linked != self.linked:
-            log.info("iPhone LE link %s", "up" if linked else "down - only the iPhone can bring it back")
+            log.info("iPhone LE link %s", "up" if linked else "down - scanning for it every minute")
             self.linked = linked
         if not linked:
             # Gone: its GATT objects linger, so forget them, or a returning
             # link would look already subscribed.
             self.service, self.chars, self.queue, self.waiting = None, {}, [], None
+            now = time.monotonic()
+            if not (self.scan_task and not self.scan_task.done()) and not self.busy()                     and now - self.last_scan >= SCAN_EVERY_SECONDS:
+                self.last_scan = now
+                self.scan_task = asyncio.create_task(self.scan())
             return
         [objects] = await self._call("/", "org.freedesktop.DBus.ObjectManager", "GetManagedObjects")
         service = next((p for p, i in objects.items()
@@ -279,6 +294,37 @@ class Ancs:
         if not all(u in chars for u in (NOTIFICATION_SOURCE, CONTROL_POINT, DATA_SOURCE)):
             return  # still being discovered: the next check
         await self.subscribe(service, chars)
+
+    async def autoconnect(self) -> None:
+        """The iPhone on the kernel's auto-connect list (needs root: the
+        helper). Every time: bluetoothd clears the list when it restarts."""
+        proc = await asyncio.create_subprocess_exec(
+            *AUTOCONNECT, stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.PIPE)
+        _, err = await proc.communicate()
+        if proc.returncode:
+            raise RuntimeError(err.decode().strip() or "couldn't set auto-connect")
+
+    async def scan(self) -> None:
+        """A short LE scan, so the kernel hears the iPhone and connects it.
+        Ends early once linked, or when a call or music starts."""
+        adapter = "org.bluez.Adapter1"
+        try:
+            await self.autoconnect()
+            await self._call(ADAPTER, adapter, "SetDiscoveryFilter", "a{sv}", [{"Transport": Variant("s", "le")}])
+            await self._call(ADAPTER, adapter, "StartDiscovery")
+        except (RuntimeError, OSError) as e:
+            log.info("no LE scan for the iPhone: %s", e)
+            return
+        try:
+            for _ in range(SCAN_SECONDS):
+                await asyncio.sleep(1)
+                if le_linked() or self.busy():
+                    break
+        finally:
+            try:
+                await self._call(ADAPTER, adapter, "StopDiscovery")
+            except RuntimeError:
+                pass
 
     async def subscribe(self, service: str, chars: dict[str, str]) -> None:
         for uuid in (NOTIFICATION_SOURCE, DATA_SOURCE):

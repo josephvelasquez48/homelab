@@ -1429,7 +1429,7 @@ function renderNotifications(x) {
   if (currentTab === "notifications") { try { localStorage.setItem("notify-seen", String(newest)); } catch {} }
   $("notify-dot").hidden = currentTab === "notifications" || newest <= seen;
   $("notify-empty").hidden = list.length > 0 && x.notifyActive;
-  $("notify-empty").textContent = x.notifyActive ? "None yet." : "iPhone not linked - turn its Bluetooth off and on to link it again.";
+  $("notify-empty").textContent = x.notifyActive ? "None yet." : "iPhone not linked - the Pi looks for it every minute (or turn the iPhone's Bluetooth off and on).";
   $("notify-clear").hidden = !list.length;
   $("notify-list").replaceChildren(...list.slice(0, NOTIFY_SHOWN).map((n) => {
     const item = document.createElement("li");
@@ -1441,7 +1441,7 @@ function renderNotifications(x) {
     item.append(body, actionButton("✕", () => send({ action: "dismiss-notification", uid: n.uid }), "small ghost"));
     return item;
   }));
-  $("notify-state").textContent = x.notifyActive ? "Linked to the iPhone over Bluetooth" : "iPhone not linked - turn its Bluetooth off and on";
+  $("notify-state").textContent = x.notifyActive ? "Linked to the iPhone over Bluetooth" : "iPhone not linked - the Pi looks for it every minute";
   const apps = x.notifyApps || [];
   $("notify-apps-head").hidden = !apps.length;
   $("notify-apps").replaceChildren(...apps.map((a) => {

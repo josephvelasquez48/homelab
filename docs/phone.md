@@ -215,12 +215,18 @@ over LE as well and offers ANCS there. The bridge keeps an LE advertisement
 up asking for ANCS, so the iPhone links back by itself after Bluetooth drops
 (proved 2026-10-17: off and on, it resubscribed in 2 s).
 
-**The LE link only comes back from the iPhone's side.** After it goes out of
-range and back (2026-10-18, overnight), calls and music reconnected - the Pi
-does that - but the LE link didn't: the Pi sees the iPhone's LE broadcasts
-(resolved to it, -54 dBm) but they aren't connectable, and a kernel
-auto-connect got nowhere. Turning the iPhone's Bluetooth off and on brings
-it back. The bridge follows the link from the kernel's own connection list
+**The Pi brings the LE link back.** iOS doesn't relink an LE accessory by
+itself (2026-10-18: out of range overnight, calls and music came back - the
+Pi does that - but the LE link didn't). It does accept a link the Pi opens
+(2026-10-27, with LE privacy on its broadcasts are connectable and resolve
+to it). So while the link is down the bridge puts the iPhone on the
+kernel's auto-connect list (`le-autoconnect.sh`, root via sudoers; every
+time, since bluetoothd clears that list when it starts) and runs a 10 s LE
+scan every minute: the kernel's own background scan never hears it - this
+radio can't resolve the iPhone's private address itself - but during a scan
+the kernel recognises it and connects within seconds. No scans while a call
+or music is on the Pi (the radio is shared). Turning the iPhone's Bluetooth
+off and on still works too. The bridge follows the link from the kernel's own connection list
 (`le_linked()`), since BlueZ kept the GATT objects and their Notifying for
 20 hours with no link; when it drops the pages say "iPhone not linked", and
 when it returns the bridge subscribes afresh.
