@@ -194,6 +194,7 @@ class Ancs:
         # bluetoothd's bus name when the advertisement was registered: a
         # restarted bluetoothd has a new one and has forgotten it.
         self.adv_owner: str | None = None
+        self.adv_error = ""  # the last failure, logged once rather than every check
         self.last_scan = float("-inf")
         self.scan_task: asyncio.Task | None = None
 
@@ -234,7 +235,11 @@ class Ancs:
     async def keep_advertising(self) -> None:
         """Register the advertisement, and again whenever bluetoothd has
         restarted (a new bus name) or released it: it dropped it twice on
-        2026-10-18, and the iPhone needs it to link over LE."""
+        2026-10-18, and the iPhone needs it to link over LE. Not while
+        linked: this radio refuses to advertise with an LE link open
+        (2026-10-27, "Failed (0x03)" every check), and it isn't needed then."""
+        if self.linked:
+            return
         reply = await asyncio.wait_for(self.bus.call(Message(
             destination="org.freedesktop.DBus", path="/org/freedesktop/DBus", interface="org.freedesktop.DBus",
             member="GetNameOwner", signature="s", body=[BLUEZ])), CALL_SECONDS)
@@ -244,13 +249,14 @@ class Ancs:
         try:
             await self._call(ADAPTER, "org.bluez.LEAdvertisingManager1", "RegisterAdvertisement",
                              "oa{sv}", [ADV_PATH, {}])
-            self.adv_owner = owner
+            self.adv_owner, self.adv_error = owner, ""
             log.info("LE advertisement registered")
         except RuntimeError as e:
             if "AlreadyExists" in str(e):
                 self.adv_owner = owner
-            else:
-                log.warning("no LE advertisement (the iPhone can't link over LE): %s", e)
+            elif str(e) != self.adv_error:
+                self.adv_error = str(e)
+                log.warning("no LE advertisement (the Pi's scans still link the iPhone): %s", e)
 
     @property
     def active(self) -> bool:
