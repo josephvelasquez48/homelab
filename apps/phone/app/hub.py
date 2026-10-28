@@ -277,6 +277,12 @@ class Hub:
             except Exception:
                 pass
 
+    def radio_busy(self) -> bool:
+        """A call or music on the Pi's Bluetooth: no LE scans (ancs.py) -
+        the radio is shared, and a scan could break up the audio."""
+        state = self.tel.state
+        return bool(state.calls or state.audio_on_pi or (self.media and self.media.node))
+
     def _want_reject_sco(self) -> bool:
         if not self.audio_clients or self._phone_held:
             return True

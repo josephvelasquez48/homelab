@@ -326,3 +326,67 @@ async def test_a_bluez_call_that_never_answers_gives_up(monkeypatch):
     a.bus = Bus()
     with pytest.raises(RuntimeError, match="no reply from BlueZ"):
         await a._call("/", "org.freedesktop.DBus.ObjectManager", "GetManagedObjects")
+
+
+@pytest.mark.asyncio
+async def test_while_unlinked_it_scans_every_minute_but_not_during_a_call(monkeypatch):
+    now = {"t": 1000.0}
+    monkeypatch.setattr(ancs.time, "monotonic", lambda: now["t"])
+    monkeypatch.setattr(ancs, "le_linked", lambda: False)
+    busy = {"on": False}
+    a = Ancs(lambda n: None, busy=lambda: busy["on"])
+    scans = []
+
+    async def scan():
+        scans.append(now["t"])
+
+    a.scan = scan
+    await a.check()
+    await asyncio.sleep(0)
+    assert scans == [1000.0]
+    now["t"] += 30
+    await a.check()
+    await asyncio.sleep(0)
+    assert len(scans) == 1  # not yet a minute
+    now["t"] += 30
+    busy["on"] = True
+    await a.check()
+    await asyncio.sleep(0)
+    assert len(scans) == 1  # a call on the Pi: the radio's busy
+    busy["on"] = False
+    await a.check()
+    await asyncio.sleep(0)
+    assert len(scans) == 2
+
+
+@pytest.mark.asyncio
+async def test_a_scan_sets_auto_connect_and_stops_once_linked(monkeypatch):
+    link = {"up": False}
+    monkeypatch.setattr(ancs, "le_linked", lambda: link["up"])
+    calls = []
+    a = Ancs(lambda n: None)
+
+    async def call(path, iface, member, signature="", body=()):
+        calls.append(member)
+        if member == "StartDiscovery":
+            link["up"] = True  # the kernel connected it during the scan
+        return []
+
+    async def autoconnect():
+        calls.append("autoconnect")
+
+    async def sleep(_):
+        pass
+
+    monkeypatch.setattr(ancs.asyncio, "sleep", sleep)
+    a._call, a.autoconnect = call, autoconnect
+    await a.scan()
+    assert calls == ["autoconnect", "SetDiscoveryFilter", "StartDiscovery", "StopDiscovery"]
+
+    async def no_helper():
+        raise RuntimeError("sudo: a password is required")
+
+    calls.clear()
+    a.autoconnect = no_helper
+    await a.scan()
+    assert calls == []  # no auto-connect entry: a scan alone wouldn't link it

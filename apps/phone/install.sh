@@ -47,9 +47,15 @@ dpkg -s bluez-obexd >/dev/null 2>&1 || sudo apt-get install -y bluez-obexd
 
 # "Send call audio to iPhone" drops the audio link with an HCI command,
 # which needs root: a root-owned script, and sudo for exactly that script.
+# Reconnecting the iPhone's notifications link (LE) needs root the same
+# way: the kernel's auto-connect list - see le-autoconnect.sh.
 sudo install -o root -g root -m 755 "$APP_DIR/release-sco.sh" /usr/local/sbin/phone-bridge-release-sco
+sudo install -o root -g root -m 755 "$APP_DIR/le-autoconnect.sh" /usr/local/sbin/phone-bridge-le-autoconnect
 sudoers_tmp="$(mktemp)"
-echo "$USER ALL=(root) NOPASSWD: /usr/local/sbin/phone-bridge-release-sco" > "$sudoers_tmp"
+{
+  echo "$USER ALL=(root) NOPASSWD: /usr/local/sbin/phone-bridge-release-sco"
+  echo "$USER ALL=(root) NOPASSWD: /usr/local/sbin/phone-bridge-le-autoconnect"
+} > "$sudoers_tmp"
 sudo visudo -cf "$sudoers_tmp" >/dev/null
 sudo install -o root -g root -m 440 "$sudoers_tmp" /etc/sudoers.d/phone-bridge
 rm -f "$sudoers_tmp"
