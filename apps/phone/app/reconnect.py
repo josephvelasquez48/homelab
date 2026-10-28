@@ -46,6 +46,9 @@ A2DP_SOURCE_UUID = "0000110a-0000-1000-8000-00805f9b34fb"  # the phone's media s
 INTERVAL_SECONDS = 30  # between connect attempts
 CHECK_SECONDS = 5  # between looks at the PC and the phone
 CONNECT_TIMEOUT = 30
+# Any one D-Bus call, past the connect timeouts below: only a call bluetoothd
+# never answers - it stalled once, and this loop went silent with it.
+CALL_SECONDS = 45
 # Long enough for the agent to restart after a crash (the supervisor waits
 # 5 s and more) or the PC to reboot quickly, without dropping the phone.
 PC_GONE_SECONDS = 120
@@ -119,9 +122,12 @@ class Reconnector:
         self.powered: bool | None = None  # the adapter, as of the last check
 
     async def _call(self, path, iface, member, signature="", body=()):
-        reply = await self.bus.call(
-            Message(destination=BLUEZ, path=path, interface=iface, member=member, signature=signature, body=list(body))
-        )
+        try:
+            reply = await asyncio.wait_for(self.bus.call(
+                Message(destination=BLUEZ, path=path, interface=iface, member=member, signature=signature, body=list(body))
+            ), CALL_SECONDS)
+        except asyncio.TimeoutError:
+            raise RuntimeError(f"no reply from BlueZ to {member} in {CALL_SECONDS} s")
         if reply.message_type == MessageType.ERROR:
             raise RuntimeError(f"{reply.error_name}: {reply.body[0] if reply.body else ''}")
         return reply.body
