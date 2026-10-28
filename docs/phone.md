@@ -237,6 +237,10 @@ with an agent that accepts). iOS doesn't list LE accessories under
 Settings > Bluetooth, so connect from **nRF Connect** (Nordic, free): scan,
 **Connect** on **Homelab**, accept the pairing; then pair the Pi for calls
 from Settings > Bluetooth and turn **Sync Contacts** back on.
+Then, once, `sudo systemctl restart bluetooth` (drops calls and music for
+~10 s): a device first paired over LE never gets its classic address on
+the kernel's accept list until bluetoothd reloads it from storage, and
+without that the kernel refuses the iPhone's call audio (2026-10-27).
 
 ## Design choices
 
@@ -319,6 +323,7 @@ Each made a working call look broken. Found by measuring, not guessing.
 | Noise filter seemed not to work | RNNoise filters one channel; the Samson can be stereo | Mix the mic to mono first |
 | Turning the PC on mid-call silenced the call | The PC coming back reconnects the iPhone, and iOS moves a call in progress to the hands-free unit that just connected - the Pi, with nothing playing it | For 10 s after the iPhone connects, a call already going (or its audio arriving) is kept on the iPhone: RejectSCO on, the audio sent back if it came. *Move call audio to this PC* still takes it |
 | Calls and music never came back after Bluetooth went off and on | The reconnect skipped devices BlueZ calls Connected - true while any link is up, and the iPhone kept a Bluetooth LE link (its notifications) | Reconnect whenever the hands-free link is down, whatever else is connected |
+| *Move call audio to this PC* did nothing (since a re-pair) | The iPhone's call audio (eSCO) refused by the kernel - "Unacceptable BD_ADDR": paired over LE first, the iPhone wasn't on the accept list, and the adapter isn't connectable | Restart bluetoothd once after pairing; it loads the iPhone's classic address onto the list |
 
 ## Setup
 
