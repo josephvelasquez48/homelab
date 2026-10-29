@@ -418,6 +418,8 @@ async def test_a_scan_sets_auto_connect_and_stops_once_linked(monkeypatch):
         raise RuntimeError("sudo: a password is required")
 
     calls.clear()
+    link["up"] = False
     a.autoconnect = no_helper
     await a.scan()
-    assert calls == []  # no auto-connect entry: a scan alone wouldn't link it
+    # The kernel refused the entry, but it can still hold one from before.
+    assert calls == ["SetDiscoveryFilter", "StartDiscovery", "StopDiscovery"]

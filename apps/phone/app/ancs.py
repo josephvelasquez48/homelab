@@ -195,6 +195,7 @@ class Ancs:
         # restarted bluetoothd has a new one and has forgotten it.
         self.adv_owner: str | None = None
         self.adv_error = ""  # the last failure, logged once rather than every check
+        self.autoconnect_error = ""  # likewise
         self.last_scan = float("-inf")
         self.scan_task: asyncio.Task | None = None
 
@@ -314,8 +315,17 @@ class Ancs:
         """A short LE scan, so the kernel hears the iPhone and connects it.
         Ends early once linked, or when a call or music starts."""
         adapter = "org.bluez.Adapter1"
+        # Scan even if this fails: with the link down the kernel answered
+        # "Failed (0x03)" all day (2026-10-28), though the entry from before
+        # was still there - and skipping the scan left the link down 19 h.
         try:
             await self.autoconnect()
+            self.autoconnect_error = ""
+        except (RuntimeError, OSError) as e:
+            if str(e) != self.autoconnect_error:
+                self.autoconnect_error = str(e)
+                log.info("auto-connect not set (scanning anyway): %s", " ".join(str(e).split()))
+        try:
             await self._call(ADAPTER, adapter, "SetDiscoveryFilter", "a{sv}", [{"Transport": Variant("s", "le")}])
             await self._call(ADAPTER, adapter, "StartDiscovery")
         except (RuntimeError, OSError) as e:
