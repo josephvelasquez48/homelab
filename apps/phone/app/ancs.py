@@ -175,11 +175,14 @@ class Advertisement(ServiceInterface):
 
 
 class Ancs:
-    def __init__(self, on_notification, on_removed=None, enabled=lambda: True, busy=lambda: False):
+    def __init__(self, on_notification, on_removed=None, enabled=lambda: True, busy=lambda: False,
+                 in_call=lambda: False):
         self.on_notification = on_notification  # (dict) -> None
         self.on_removed = on_removed  # (uid) -> None
         self.enabled = enabled  # () -> bool: the Settings switch
         self.busy = busy  # () -> bool: a call or music on the Pi - no scanning
+        self.in_call = in_call  # () -> bool: a call - the LE link is closed for it
+        self.paused = False  # closed for a call
         self.bus: MessageBus | None = None
         self.service: str | None = None  # the ANCS service's object path while subscribed
         self.chars: dict[str, str] = {}
@@ -238,8 +241,9 @@ class Ancs:
         restarted (a new bus name) or released it: it dropped it twice on
         2026-10-18, and the iPhone needs it to link over LE. Not while
         linked: this radio refuses to advertise with an LE link open
-        (2026-10-27, "Failed (0x03)" every check), and it isn't needed then."""
-        if self.linked:
+        (2026-10-27, "Failed (0x03)" every check), and it isn't needed then.
+        Nor during a call (pause)."""
+        if self.linked or self.paused:
             return
         reply = await asyncio.wait_for(self.bus.call(Message(
             destination="org.freedesktop.DBus", path="/org/freedesktop/DBus", interface="org.freedesktop.DBus",
@@ -270,7 +274,9 @@ class Ancs:
             log.info("no reply to an ANCS request; moving on")
             self.waiting, self.buffer = None, b""
             await self.next_request()
-        if not self.enabled():
+        if self.in_call() != self.paused:
+            await (self.pause() if not self.paused else self.resume())
+        if self.paused or not self.enabled():
             return
         linked = le_linked()
         if linked != self.linked:
@@ -302,11 +308,39 @@ class Ancs:
             return  # still being discovered: the next check
         await self.subscribe(service, chars)
 
-    async def autoconnect(self) -> None:
+    async def pause(self) -> None:
+        """A call: no notifications until it ends. The advertisement goes,
+        the iPhone comes off the auto-connect list and the LE link closes,
+        so the call has the radio to itself - with the LE link up its link
+        kept timing out, and the audio swapped between PC and iPhone with
+        every reconnect (2026-10-29)."""
+        self.paused = True
+        log.info("call: notifications paused, LE link closed until it ends")
+        try:
+            await self._call(ADAPTER, "org.bluez.LEAdvertisingManager1", "UnregisterAdvertisement", "o", [ADV_PATH])
+        except RuntimeError:
+            pass  # wasn't registered
+        self.adv_owner = None  # registered again after the call
+        try:
+            await self.autoconnect("off")
+        except (RuntimeError, OSError) as e:
+            log.info("LE link not closed for the call: %s", " ".join(str(e).split()))
+        self.linked, self.service, self.chars, self.queue, self.waiting = False, None, {}, [], None
+
+    async def resume(self) -> None:
+        """The call is over: the next checks advertise and scan again (and
+        the scan puts the iPhone back on the auto-connect list)."""
+        self.paused = False
+        self.last_scan = float("-inf")
+        log.info("call over: notifications back")
+
+    async def autoconnect(self, mode: str = "on") -> None:
         """The iPhone on the kernel's auto-connect list (needs root: the
-        helper). Every time: bluetoothd clears the list when it restarts."""
+        helper), or with "off", off it and the LE link closed. Every time:
+        bluetoothd clears the list when it restarts."""
         proc = await asyncio.create_subprocess_exec(
-            *AUTOCONNECT, stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.PIPE)
+            *AUTOCONNECT, *([mode] if mode != "on" else []),
+            stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.PIPE)
         _, err = await proc.communicate()
         if proc.returncode:
             raise RuntimeError(err.decode().strip() or "couldn't set auto-connect")

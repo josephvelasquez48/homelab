@@ -283,6 +283,11 @@ class Hub:
         state = self.tel.state
         return bool(state.calls or state.audio_on_pi or (self.media and self.media.node))
 
+    def call_on(self) -> bool:
+        """A call going (ancs.py closes the LE link for it)."""
+        state = self.tel.state
+        return bool(state.calls or state.audio_on_pi)
+
     def _want_reject_sco(self) -> bool:
         if not self.audio_clients or self._phone_held:
             return True

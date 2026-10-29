@@ -74,7 +74,7 @@ if os.environ.get("PHONE_EXTRAS", "1") == "1":
     hub.links_base = GUEST_URL
     hub.apply_limits()
     hub.ancs = Ancs(hub.add_notification, hub.remove_notification, lambda: hub.settings["phoneNotifications"],
-                    hub.radio_busy)
+                    hub.radio_busy, hub.call_on)
 
 
 class _GuestServer(uvicorn.Server):

@@ -423,3 +423,32 @@ async def test_a_scan_sets_auto_connect_and_stops_once_linked(monkeypatch):
     await a.scan()
     # The kernel refused the entry, but it can still hold one from before.
     assert calls == ["SetDiscoveryFilter", "StartDiscovery", "StopDiscovery"]
+
+
+@pytest.mark.asyncio
+async def test_a_call_closes_the_le_link_until_it_ends(monkeypatch):
+    monkeypatch.setattr(ancs, "le_linked", lambda: True)
+    call = {"on": False}
+    calls = []
+    a = Ancs(lambda n: None, in_call=lambda: call["on"])
+
+    async def bluez(path, iface, member, signature="", body=()):
+        calls.append(member)
+        return [{}] if member == "GetManagedObjects" else []
+
+    async def autoconnect(mode="on"):
+        calls.append(f"autoconnect {mode}")
+
+    a._call, a.autoconnect = bluez, autoconnect
+    a.linked, a.service, a.adv_owner = True, "/svc", ":1.10"
+    call["on"] = True
+    await a.check()
+    assert a.paused and not a.active and a.adv_owner is None
+    assert calls == ["UnregisterAdvertisement", "autoconnect off"]
+    calls.clear()
+    await a.check()
+    await a.keep_advertising()
+    assert calls == []  # nothing for the rest of the call
+    call["on"] = False
+    await a.check()
+    assert not a.paused and "GetManagedObjects" in calls  # back to following the link

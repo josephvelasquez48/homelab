@@ -225,7 +225,12 @@ time, since bluetoothd clears that list when it starts) and runs a 10 s LE
 scan every minute: the kernel's own background scan never hears it - this
 radio can't resolve the iPhone's private address itself - but during a scan
 the kernel recognises it and connects within seconds. No scans while a call
-or music is on the Pi (the radio is shared). Turning the iPhone's Bluetooth
+or music is on the Pi (the radio is shared). During a call the
+notifications pause altogether: the advertisement goes, the iPhone comes
+off the auto-connect list and the LE link closes (`le-autoconnect.sh off`),
+and all three come back when it ends - with the LE link up, a call's link
+kept timing out and the audio swapped between the PC and the iPhone with
+every reconnect (2026-10-29). Turning the iPhone's Bluetooth
 off and on still works too. The bridge follows the link from the kernel's own connection list
 (`le_linked()`), since BlueZ kept the GATT objects and their Notifying for
 20 hours with no link; when it drops the pages say "iPhone not linked", and
