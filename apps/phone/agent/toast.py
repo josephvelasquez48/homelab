@@ -117,6 +117,10 @@ def show(n: dict) -> bool:
     xml = (f'<toast><visual><binding template="ToastGeneric">'
            f'<image placement="appLogoOverride" src="{escape(icon.as_uri())}"/>{lines}'
            f'</binding></visual></toast>')
+    # ASCII only, the rest as XML character references: PowerShell's stdin
+    # is the Windows code page, which has no emoji - "🤍" broke
+    # every toast with one (2026-10-29).
+    xml = xml.encode("ascii", "xmlcharrefreplace").decode("ascii")
     try:
         done = subprocess.run(
             ["powershell", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", SHOW],
